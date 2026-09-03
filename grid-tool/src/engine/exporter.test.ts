@@ -90,3 +90,56 @@ describe("buildDrive", () => {
     expect(twoLater).toBeGreaterThan(2 * quiet);
   });
 });
+
+describe("buildDrive per-reel fields", () => {
+  let d2: DriveJson;
+  beforeAll(() => {
+    const signal = synthTestTrack({ bpm: 140, offsetMs: 150, bars: 2, sampleRate: SR });
+    const features = extractFeatures(signal, SR, { fps: 30 });
+    d2 = buildDrive({
+      fileName: "test.wav",
+      sha1: "abc123",
+      durationSec: signal.length / SR,
+      grid,
+      fps: 30,
+      scene: "void",
+      mood: "smoke",
+      features,
+      range: { start: 1.0, end: 3.0 },
+      sections: [{ t: 2.0, kind: "drop" }],
+      cuts: [0.15, 1.864],
+      leadMs: 20,
+    });
+  });
+
+  test("range passes through untouched (it is an audio trim, not a grid event)", () => {
+    expect(d2.range).toEqual({ start: 1.0, end: 3.0 });
+  });
+
+  test("grid events shift earlier by leadMs: beats, downbeats, cuts, sections", () => {
+    expect(d2.beats[0]).toBeCloseTo(0.13, 6);
+    expect(d2.downbeats[0]).toBeCloseTo(0.13, 6);
+    expect(d2.cuts).toHaveLength(2);
+    expect(d2.cuts[0]).toBeCloseTo(0.13, 6);
+    expect(d2.cuts[1]).toBeCloseTo(1.844, 6);
+    expect(d2.sections[0]!.t).toBeCloseTo(1.98, 6);
+    expect(d2.sections[0]!.kind).toBe("drop");
+  });
+
+  test("lead never pushes an event below zero", () => {
+    const g0 = { ...grid, offsetMs: 5 };
+    const signal = synthTestTrack({ bpm: 140, offsetMs: 5, bars: 1, sampleRate: SR });
+    const features = extractFeatures(signal, SR, { fps: 30 });
+    const d = buildDrive({
+      fileName: "t.wav", sha1: "x", durationSec: signal.length / SR,
+      grid: g0, fps: 30, scene: "void", mood: "smoke", features, leadMs: 20,
+    });
+    expect(d.beats[0]).toBeGreaterThanOrEqual(0);
+  });
+
+  test("fields default to empty/absent when not supplied", () => {
+    expect(drive.range).toBeUndefined();
+    expect(drive.cuts).toEqual([]);
+    expect(drive.sections).toEqual([]);
+  });
+});

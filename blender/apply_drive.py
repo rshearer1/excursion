@@ -88,6 +88,29 @@ if slate_mat is not None and slate_mat.node_tree is not None:
         flash,
     )
 
+# render range: drive.range (seconds) -> frame window --------------------
+rng = data.get("range")
+if rng:
+    scene.frame_start = max(1, round(rng["start"] * fps) + 1)
+    scene.frame_end = min(len(frames), round(rng["end"] * fps))
+    print(f"range: rendering frames {scene.frame_start}..{scene.frame_end}")
+
+# camera cuts: timeline markers bound round-robin over all cameras -------
+cuts = data.get("cuts", [])
+cameras = sorted((o for o in scene.objects if o.type == "CAMERA"), key=lambda o: o.name)
+if cuts and len(cameras) > 1:
+    cut_frames = sorted({scene.frame_start} | {round(t * fps) + 1 for t in cuts})
+    n = 0
+    for fr in cut_frames:
+        if fr < scene.frame_start or fr > scene.frame_end:
+            continue
+        marker = scene.timeline_markers.new(f"cut{n}", frame=fr)
+        marker.camera = cameras[n % len(cameras)]
+        n += 1
+    print(f"cuts: {n} camera switches over {len(cameras)} cameras")
+elif cuts:
+    print(f"note: {len(cuts)} cuts in drive but the scene has one camera — add more cameras to use them")
+
 # engine + render settings ---------------------------------------------
 if args.engine == "cycles":
     scene.render.engine = "CYCLES"

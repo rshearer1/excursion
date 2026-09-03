@@ -38,6 +38,8 @@ function run(cmd, argv, label) {
 }
 
 const drive = JSON.parse(await readFile(drivePath, "utf8"));
+const range = drive.range;
+const startFrame = range ? Math.max(1, Math.round(range.start * drive.fps) + 1) : 1;
 const name = path.basename(drivePath).replace(/\.drive\.json$/, "");
 const sceneName = drive.scene || "void";
 const sceneBlend = path.join(root, "blender", "scenes", `${sceneName}.blend`);
@@ -70,9 +72,11 @@ const reel = path.join(outDir, `${name}${draft ? ".draft" : ""}.mp4`);
 const ffmpegArgs = [
   "-y",
   "-framerate", String(drive.fps),
+  "-start_number", String(startFrame),
   "-i", path.join(framesDir, "%04d.png"),
 ];
 if (await exists(audio)) {
+  if (range) ffmpegArgs.push("-ss", String(range.start), "-t", String(range.end - range.start));
   ffmpegArgs.push("-i", audio, "-c:a", "aac", "-shortest");
 } else {
   console.warn(`warning: audio not found at ${audio} — writing silent video (use --audio)`);

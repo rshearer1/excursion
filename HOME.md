@@ -33,6 +33,9 @@ Downloads the studio HDRI (Poly Haven) and plastic PBR set (ambientCG) into
 3. Drop the track (44.1 kHz WAV — put the same audio file into `blender/jobs/` too,
    next to its drive.json, so the mux can find it). Set BPM, click a kick in the
    beat lane, nudge until the metronome disappears into the drums. Pick scene + mood.
+   Then the per-reel controls: `I`/`O` set the render range (a reel is 15–60 s, not the
+   whole track), `M`/`B` drop and break markers, the **cuts** select picks camera-cut
+   cadence, and the **drive** checkbox previews the woofer envelope before you render.
 4. **Export drive.json**, then:
    ```
    node blender/make_reel.mjs blender/jobs/<track>.drive.json --draft

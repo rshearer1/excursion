@@ -8,6 +8,10 @@ import {
 import { extractFeatures } from "./engine/features";
 import { buildDrive } from "./engine/exporter";
 import { synthTestTrack } from "./engine/synth";
+import { computeCuts } from "./engine/cuts";
+import { envelopeFollow } from "./engine/envelope";
+import { autoGain } from "./engine/autogain";
+import type { FrameFeatures } from "./engine/features";
 
 declare global {
   interface Window {
@@ -33,6 +37,11 @@ const metroChk = $<HTMLInputElement>("metro");
 const moodSel = $<HTMLSelectElement>("mood");
 const sceneSel = $<HTMLSelectElement>("scene");
 const linkBtn = $<HTMLButtonElement>("linkdir");
+const driveChk = $<HTMLInputElement>("driveOverlay");
+const cutsSel = $<HTMLSelectElement>("cuts");
+const cutMarkersChk = $<HTMLInputElement>("cutMarkers");
+const fpsSel = $<HTMLSelectElement>("fps");
+const leadInput = $<HTMLInputElement>("lead");
 const exportBtn = $<HTMLButtonElement>("export");
 const bpmInput = $<HTMLInputElement>("bpm");
 const tapBtn = $<HTMLButtonElement>("tap");
@@ -64,6 +73,12 @@ let startOffsetSec = 0; // song position at that moment
 let schedUntil = 0; // song time up to which metronome clicks are scheduled
 let taps: number[] = [];
 let projectDir: FileSystemDirectoryHandle | null = null;
+let rangeIn: number | null = null;
+let rangeOut: number | null = null;
+let markers: { t: number; kind: "drop" | "break" }[] = [];
+let driveCache: FrameFeatures | null = null; // 30fps features for the overlay
+let overlayBass: Float32Array | null = null;
+let overlayOnsets: number[] = [];
 
 const status = (msg: string, err = false): void => {
   statusEl.textContent = msg;
@@ -85,6 +100,13 @@ interface Saved {
   scene: string;
   mood: string;
   trim: number;
+  rangeIn: number | null;
+  rangeOut: number | null;
+  markers: { t: number; kind: "drop" | "break" }[];
+  cutsEveryBars: number;
+  cutMarkers: boolean;
+  fps: number;
+  leadMs: number;
 }
 const storeKey = (sha1: string): string => `excursion:grid:${sha1}`;
 function saveState(): void {
@@ -97,6 +119,13 @@ function saveState(): void {
     scene: sceneSel.value,
     mood: moodSel.value,
     trim: Number(trimInput.value) || 1,
+    rangeIn,
+    rangeOut,
+    markers,
+    cutsEveryBars: Number(cutsSel.value) || 0,
+    cutMarkers: cutMarkersChk.checked,
+    fps: Number(fpsSel.value) || 30,
+    leadMs: Number(leadInput.value) || 0,
   };
   try {
     localStorage.setItem(storeKey(track.sha1), JSON.stringify(saved));
@@ -113,6 +142,13 @@ function loadState(sha1: string): boolean {
     moodSel.value = s.mood;
     if (s.scene) sceneSel.value = s.scene;
     trimInput.value = String(s.trim);
+    rangeIn = s.rangeIn ?? null;
+    rangeOut = s.rangeOut ?? null;
+    markers = s.markers ?? [];
+    if (s.cutsEveryBars !== undefined) cutsSel.value = String(s.cutsEveryBars);
+    if (s.cutMarkers !== undefined) cutMarkersChk.checked = s.cutMarkers;
+    if (s.fps) fpsSel.value = String(s.fps);
+    if (s.leadMs !== undefined) leadInput.value = String(s.leadMs);
     syncControls();
     return true;
   } catch {
@@ -164,6 +200,12 @@ function adoptTrack(name: string, sha1: string, buffer: AudioBuffer): void {
   const mono = monoMix(buffer);
   track = { name, sha1, buffer, mono, peaks: computePeaks(mono, overviewCanvas.width) };
   startOffsetSec = 0;
+  rangeIn = null;
+  rangeOut = null;
+  markers = [];
+  driveCache = null;
+  overlayBass = null;
+  overlayOnsets = [];
   trackNameEl.textContent = `${name} — ${buffer.duration.toFixed(2)}s @ ${buffer.sampleRate}Hz`;
   playBtn.disabled = false;
   exportBtn.disabled = false;
@@ -313,6 +355,15 @@ function drawOverview(): void {
     if (!b.downbeat) continue;
     ovCtx.fillRect((b.t / dur) * W, 0, 1, H);
   }
+  // dim outside the render range
+  ovCtx.fillStyle = "rgba(0,0,0,0.55)";
+  if (rangeIn !== null) ovCtx.fillRect(0, 0, (rangeIn / dur) * W, H);
+  if (rangeOut !== null) ovCtx.fillRect((rangeOut / dur) * W, 0, W - (rangeOut / dur) * W, H);
+  // markers
+  for (const m of markers) {
+    ovCtx.fillStyle = m.kind === "drop" ? "#ff5f52" : "#d4b64e";
+    ovCtx.fillRect((m.t / dur) * W, 0, 2, H);
+  }
   // zoom viewport
   const { start, dur: zdur } = zoomWindow();
   ovCtx.fillStyle = "rgba(78,201,212,0.12)";
@@ -382,6 +433,41 @@ function drawZoom(): void {
     zmCtx.fillRect(x, 0, downbeat ? 3 : 1, H);
   }
 
+  // drive overlay: what the woofer will actually do
+  if (driveChk.checked && overlayBass) {
+    zmCtx.fillStyle = "rgba(240,138,46,0.35)";
+    for (let x = 0; x < W; x++) {
+      const idx = Math.round((start + (x / W) * dur) * 30);
+      const v = idx >= 0 && idx < overlayBass.length ? overlayBass[idx]! : 0;
+      if (v > 0.005) zmCtx.fillRect(x, H - v * H * 0.4, 1, v * H * 0.4);
+    }
+    zmCtx.fillStyle = "#ffd9a8";
+    for (const i of overlayOnsets) {
+      const x = xOf(i / 30);
+      if (x >= 0 && x < W) zmCtx.fillRect(x, H - 14, 2, 14);
+    }
+  }
+
+  // range edges + markers
+  zmCtx.font = "24px monospace";
+  const edge = (t: number | null, label: string): void => {
+    if (t === null) return;
+    const x = xOf(t);
+    if (x < -20 || x > W + 20) return;
+    zmCtx.fillStyle = "#9fe8ef";
+    zmCtx.fillRect(x, 0, 2, H);
+    zmCtx.fillText(label, x + 6, 28);
+  };
+  edge(rangeIn, "IN");
+  edge(rangeOut, "OUT");
+  for (const m of markers) {
+    const x = xOf(m.t);
+    if (x < 0 || x > W) continue;
+    zmCtx.fillStyle = m.kind === "drop" ? "#ff5f52" : "#d4b64e";
+    zmCtx.fillRect(x, 0, 2, H);
+    zmCtx.fillText(m.kind === "drop" ? "D" : "B", x + 6, H - 20);
+  }
+
   // centre playhead
   zmCtx.fillStyle = "#e8ebe6";
   zmCtx.fillRect(W / 2 - 1, 0, 3, H);
@@ -404,6 +490,22 @@ function draw(): void {
   scheduleClicks();
 }
 
+// ---------- drive overlay ----------
+async function ensureOverlay(): Promise<void> {
+  if (!track) return;
+  if (!driveCache) {
+    status("Analysing for drive overlay…");
+    await new Promise((r) => setTimeout(r, 30));
+    driveCache = extractFeatures(track.mono, track.buffer.sampleRate, { fps: 30 });
+  }
+  const gain = { percentile: 0.95, target: 0.9, trim: Number(trimInput.value) || 1 };
+  overlayBass = autoGain(envelopeFollow(driveCache.bass, 0.6, 0.12), gain);
+  const flux = autoGain(driveCache.flux, gain);
+  overlayOnsets = [];
+  for (let i = 0; i < flux.length; i++) if (flux[i]! > 0.5) overlayOnsets.push(i);
+  status("Drive overlay on — orange fill is the woofer, pale ticks are onsets.");
+}
+
 // ---------- export ----------
 async function exportDrive(): Promise<void> {
   if (!track) return;
@@ -411,16 +513,29 @@ async function exportDrive(): Promise<void> {
   exportBtn.disabled = true;
   await new Promise((r) => setTimeout(r, 30)); // let the status paint
   try {
-    const features = extractFeatures(track.mono, track.buffer.sampleRate, { fps: 30 });
+    const fps = Number(fpsSel.value) || 30;
+    const features = extractFeatures(track.mono, track.buffer.sampleRate, { fps });
+    const sortedMarkers = [...markers].sort((a, b) => a.t - b.t);
+    const range =
+      rangeIn !== null && rangeOut !== null && rangeOut > rangeIn
+        ? { start: rangeIn, end: rangeOut }
+        : undefined;
     const drive = buildDrive({
       fileName: track.name,
       sha1: track.sha1,
       durationSec: track.buffer.duration,
       grid,
-      fps: 30,
+      fps,
       scene: sceneSel.value,
       mood: moodSel.value,
       features,
+      range,
+      sections: sortedMarkers,
+      cuts: computeCuts(grid, track.buffer.duration, {
+        everyBars: Number(cutsSel.value) || 0,
+        markerTimes: cutMarkersChk.checked ? sortedMarkers.map((m) => m.t) : [],
+      }),
+      leadMs: Number(leadInput.value) || 0,
       tuning: { trim: Number(trimInput.value) || 1 },
     });
     const json = JSON.stringify(drive);
@@ -481,6 +596,14 @@ zoomCanvas.addEventListener("click", (e) => {
   const rect = zoomCanvas.getBoundingClientRect();
   const { start, dur } = zoomWindow();
   const t = start + ((e.clientX - rect.left) / rect.width) * dur;
+  const tolerance = (6 / rect.width) * dur; // ~6 css px
+  const hit = markers.findIndex((m) => Math.abs(m.t - t) < tolerance);
+  if (hit >= 0) {
+    const gone = markers.splice(hit, 1)[0]!;
+    saveState();
+    status(`Deleted ${gone.kind} marker.`);
+    return;
+  }
   grid = { ...grid, offsetMs: Math.round(t * 1000) };
   gridChanged();
   status(`Downbeat set at ${grid.offsetMs} ms — nudge to fine-tune.`);
@@ -488,7 +611,17 @@ zoomCanvas.addEventListener("click", (e) => {
 exportBtn.addEventListener("click", () => void exportDrive());
 moodSel.addEventListener("change", saveState);
 sceneSel.addEventListener("change", saveState);
-trimInput.addEventListener("change", saveState);
+trimInput.addEventListener("change", () => {
+  saveState();
+  if (driveChk.checked) void ensureOverlay();
+});
+driveChk.addEventListener("change", () => {
+  if (driveChk.checked) void ensureOverlay();
+});
+cutsSel.addEventListener("change", saveState);
+cutMarkersChk.addEventListener("change", saveState);
+fpsSel.addEventListener("change", saveState);
+leadInput.addEventListener("change", saveState);
 linkBtn.addEventListener("click", async () => {
   if (!window.showDirectoryPicker) {
     status("This browser has no folder access — use Chrome or Edge, or keep using downloads.", true);
@@ -563,6 +696,19 @@ document.addEventListener("keydown", (e) => {
   } else if (e.code === "ArrowRight") {
     e.preventDefault();
     nudge(e.shiftKey ? 1 : 10);
+  } else if (e.code === "KeyI" && track) {
+    rangeIn = e.shiftKey ? null : songTime();
+    saveState();
+    status(rangeIn === null ? "Range in cleared." : `Range in: ${fmtTime(rangeIn)}`);
+  } else if (e.code === "KeyO" && track) {
+    rangeOut = e.shiftKey ? null : songTime();
+    saveState();
+    status(rangeOut === null ? "Range out cleared." : `Range out: ${fmtTime(rangeOut)}`);
+  } else if ((e.code === "KeyM" || e.code === "KeyB") && track) {
+    const kind = e.code === "KeyM" ? ("drop" as const) : ("break" as const);
+    markers.push({ t: songTime(), kind });
+    saveState();
+    status(`${kind} marker at ${fmtTime(songTime())} — click its line to delete.`);
   }
 });
 
