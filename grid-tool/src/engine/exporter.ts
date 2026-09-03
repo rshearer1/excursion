@@ -15,6 +15,7 @@ export interface DriveJson {
   audio: { file: string; sha1: string; duration: number };
   grid: { bpm: number; offsetMs: number; beatsPerBar: number; halftime: boolean };
   fps: number;
+  scene: string;
   mood: string;
   beats: number[];
   downbeats: number[];
@@ -40,6 +41,7 @@ export interface BuildDriveInput {
   durationSec: number;
   grid: Grid;
   fps: number;
+  scene: string;
   mood: string;
   features: FrameFeatures;
   tuning?: DriveTuning;
@@ -49,7 +51,7 @@ const round6 = (x: number): number => Math.round(x * 1e6) / 1e6;
 
 /** Assemble the drive.json payload the Blender side consumes. */
 export function buildDrive(input: BuildDriveInput): DriveJson {
-  const { fileName, sha1, durationSec, grid, fps, mood, features, tuning = {} } = input;
+  const { fileName, sha1, durationSec, grid, fps, scene, mood, features, tuning = {} } = input;
   const {
     attack = 0.6,
     release = 0.3,
@@ -86,6 +88,7 @@ export function buildDrive(input: BuildDriveInput): DriveJson {
       halftime: grid.halftime,
     },
     fps,
+    scene,
     mood,
     beats: beats.map((b) => b.t),
     downbeats: beats.filter((b) => b.downbeat).map((b) => b.t),

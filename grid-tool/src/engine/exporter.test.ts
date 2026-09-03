@@ -23,17 +23,19 @@ beforeAll(() => {
     durationSec: duration,
     grid,
     fps: 30,
-    mood: "void",
+    scene: "void",
+    mood: "smoke",
     features,
   });
 });
 
 describe("buildDrive", () => {
-  test("carries audio, grid and mood metadata through", () => {
+  test("carries audio, grid, scene and mood metadata through", () => {
     expect(drive.audio).toEqual({ file: "test.wav", sha1: "abc123", duration });
     expect(drive.grid).toEqual({ bpm: 140, offsetMs: 150, beatsPerBar: 4, halftime: true });
     expect(drive.fps).toBe(30);
-    expect(drive.mood).toBe("void");
+    expect(drive.scene).toBe("void");
+    expect(drive.mood).toBe("smoke");
   });
 
   test("emits one frame per feature frame, JSON-serialisable", () => {

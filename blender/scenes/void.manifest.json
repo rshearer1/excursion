@@ -1,0 +1,7 @@
+{
+  "scene": "void",
+  "assets": [
+    { "id": "polyhaven:studio_small_09", "kind": "hdri", "res": "2k" },
+    { "id": "ambientcg:Plastic006", "res": "2K" }
+  ]
+}

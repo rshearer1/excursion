@@ -9,6 +9,13 @@ import { extractFeatures } from "./engine/features";
 import { buildDrive } from "./engine/exporter";
 import { synthTestTrack } from "./engine/synth";
 
+declare global {
+  interface Window {
+    /** File System Access API — Chromium only; feature-detected before use. */
+    showDirectoryPicker?: (options?: { mode?: "read" | "readwrite" }) => Promise<FileSystemDirectoryHandle>;
+  }
+}
+
 // ---------- dom ----------
 function $<T extends HTMLElement>(id: string): T {
   const el = document.getElementById(id);
@@ -24,6 +31,8 @@ const playBtn = $<HTMLButtonElement>("play");
 const timeEl = $<HTMLSpanElement>("time");
 const metroChk = $<HTMLInputElement>("metro");
 const moodSel = $<HTMLSelectElement>("mood");
+const sceneSel = $<HTMLSelectElement>("scene");
+const linkBtn = $<HTMLButtonElement>("linkdir");
 const exportBtn = $<HTMLButtonElement>("export");
 const bpmInput = $<HTMLInputElement>("bpm");
 const tapBtn = $<HTMLButtonElement>("tap");
@@ -54,6 +63,7 @@ let startCtxTime = 0; // AudioContext.currentTime when playback started
 let startOffsetSec = 0; // song position at that moment
 let schedUntil = 0; // song time up to which metronome clicks are scheduled
 let taps: number[] = [];
+let projectDir: FileSystemDirectoryHandle | null = null;
 
 const status = (msg: string, err = false): void => {
   statusEl.textContent = msg;
@@ -72,6 +82,7 @@ interface Saved {
   offsetMs: number;
   beatsPerBar: number;
   halftime: boolean;
+  scene: string;
   mood: string;
   trim: number;
 }
@@ -83,6 +94,7 @@ function saveState(): void {
     offsetMs: grid.offsetMs,
     beatsPerBar: grid.beatsPerBar,
     halftime: grid.halftime,
+    scene: sceneSel.value,
     mood: moodSel.value,
     trim: Number(trimInput.value) || 1,
   };
@@ -99,6 +111,7 @@ function loadState(sha1: string): boolean {
     const s = JSON.parse(raw) as Saved;
     grid = { bpm: s.bpm, offsetMs: s.offsetMs, beatsPerBar: s.beatsPerBar, halftime: s.halftime };
     moodSel.value = s.mood;
+    if (s.scene) sceneSel.value = s.scene;
     trimInput.value = String(s.trim);
     syncControls();
     return true;
@@ -405,18 +418,31 @@ async function exportDrive(): Promise<void> {
       durationSec: track.buffer.duration,
       grid,
       fps: 30,
+      scene: sceneSel.value,
       mood: moodSel.value,
       features,
       tuning: { trim: Number(trimInput.value) || 1 },
     });
-    const blob = new Blob([JSON.stringify(drive)], { type: "application/json" });
-    const a = document.createElement("a");
-    a.href = URL.createObjectURL(blob);
-    a.download = `${track.name.replace(/\.[^.]+$/, "")}.drive.json`;
-    a.click();
-    URL.revokeObjectURL(a.href);
+    const json = JSON.stringify(drive);
+    const fname = `${track.name.replace(/\.[^.]+$/, "")}.drive.json`;
+    if (projectDir) {
+      const blenderDir = await projectDir.getDirectoryHandle("blender", { create: true });
+      const jobsDir = await blenderDir.getDirectoryHandle("jobs", { create: true });
+      const fileHandle = await jobsDir.getFileHandle(fname, { create: true });
+      const writable = await fileHandle.createWritable();
+      await writable.write(json);
+      await writable.close();
+      status(`Wrote blender/jobs/${fname} — ${drive.frames.length} frames, ${drive.beats.length} beats.`);
+    } else {
+      const blob = new Blob([json], { type: "application/json" });
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = fname;
+      a.click();
+      URL.revokeObjectURL(a.href);
+      status(`Downloaded ${fname} — ${drive.frames.length} frames, ${drive.beats.length} beats. Link a folder to write straight into blender/jobs/.`);
+    }
     saveState();
-    status(`Exported ${drive.frames.length} frames, ${drive.beats.length} beats.`);
   } catch (e) {
     status(`Export failed: ${e instanceof Error ? e.message : String(e)}`, true);
   } finally {
@@ -461,7 +487,21 @@ zoomCanvas.addEventListener("click", (e) => {
 });
 exportBtn.addEventListener("click", () => void exportDrive());
 moodSel.addEventListener("change", saveState);
+sceneSel.addEventListener("change", saveState);
 trimInput.addEventListener("change", saveState);
+linkBtn.addEventListener("click", async () => {
+  if (!window.showDirectoryPicker) {
+    status("This browser has no folder access — use Chrome or Edge, or keep using downloads.", true);
+    return;
+  }
+  try {
+    projectDir = await window.showDirectoryPicker({ mode: "readwrite" });
+    linkBtn.textContent = `→ ${projectDir.name}/blender/jobs`;
+    status(`Linked. Exports now write straight into ${projectDir.name}/blender/jobs/.`);
+  } catch {
+    /* picker cancelled */
+  }
+});
 
 bpmInput.addEventListener("change", () => {
   const v = Number(bpmInput.value);

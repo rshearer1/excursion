@@ -34,7 +34,8 @@ Grid settings persist per track (keyed by file SHA-1) in localStorage.
   "audio": { "file": "...", "sha1": "...", "duration": 214.3 },
   "grid": { "bpm": 140, "offsetMs": 150, "beatsPerBar": 4, "halftime": true },
   "fps": 30,
-  "mood": "void",
+  "scene": "void",
+  "mood": "smoke",
   "beats": [0.15, 0.578, ...],
   "downbeats": [0.15, 1.864, ...],
   "frames": [{ "bass": 0.82, "mid": 0.34, "high": 0.11, "onset": 1, "beatPhase": 0.0 }, ...]

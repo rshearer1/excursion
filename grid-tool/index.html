@@ -152,8 +152,8 @@
 
       <fieldset class="strip" style="border:1px solid var(--line)">
         <legend>Export</legend>
-        <label>mood
-          <select id="mood">
+        <label>scene
+          <select id="scene">
             <option value="void">void</option>
             <option value="concrete">concrete</option>
             <option value="macro">macro</option>
@@ -161,6 +161,14 @@
             <option value="desk">desk</option>
           </select>
         </label>
+        <label>mood
+          <select id="mood">
+            <option value="smoke">smoke</option>
+            <option value="neon">neon</option>
+            <option value="clean">clean</option>
+          </select>
+        </label>
+        <button id="linkdir" title="Choose your excursion project folder — exports then write straight into blender/jobs/">Link folder</button>
         <button id="export" class="export" disabled>Export drive.json</button>
       </fieldset>
     </div>
