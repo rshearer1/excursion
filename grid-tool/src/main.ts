@@ -1,4 +1,10 @@
-import { type Grid, beatTimes, beatPhaseAt, beatPosition, beatDurationSec } from "./engine/grid";
+import {
+  type Grid,
+  beatTimes,
+  beatPhaseAt,
+  beatPosition,
+  beatDurationSec,
+} from "./engine/grid";
 import { extractFeatures } from "./engine/features";
 import { buildDrive } from "./engine/exporter";
 import { synthTestTrack } from "./engine/synth";
@@ -12,7 +18,8 @@ function $<T extends HTMLElement>(id: string): T {
 const fileInput = $<HTMLInputElement>("file");
 const demoBtn = $<HTMLButtonElement>("demo");
 const trackNameEl = $<HTMLSpanElement>("trackname");
-const canvas = $<HTMLCanvasElement>("wave");
+const overviewCanvas = $<HTMLCanvasElement>("overview");
+const zoomCanvas = $<HTMLCanvasElement>("wave");
 const playBtn = $<HTMLButtonElement>("play");
 const timeEl = $<HTMLSpanElement>("time");
 const metroChk = $<HTMLInputElement>("metro");
@@ -21,11 +28,14 @@ const exportBtn = $<HTMLButtonElement>("export");
 const bpmInput = $<HTMLInputElement>("bpm");
 const tapBtn = $<HTMLButtonElement>("tap");
 const offsetInput = $<HTMLInputElement>("offset");
+const offsetValEl = $<HTMLSpanElement>("offsetVal");
 const halftimeChk = $<HTMLInputElement>("halftime");
 const bpbInput = $<HTMLInputElement>("bpb");
 const trimInput = $<HTMLInputElement>("trim");
 const statusEl = $<HTMLDivElement>("status");
-const dropZone = $<HTMLDivElement>("drop");
+const loadRow = $<HTMLDivElement>("drop");
+
+const ZOOM_BEATS = 8; // width of the beat lane window
 
 // ---------- state ----------
 interface Track {
@@ -99,6 +109,7 @@ function loadState(sha1: string): boolean {
 function syncControls(): void {
   bpmInput.value = String(grid.bpm);
   offsetInput.value = String(grid.offsetMs);
+  offsetValEl.textContent = String(grid.offsetMs);
   halftimeChk.checked = grid.halftime;
   bpbInput.value = String(grid.beatsPerBar);
 }
@@ -138,16 +149,17 @@ function computePeaks(mono: Float32Array, columns: number): Track["peaks"] {
 function adoptTrack(name: string, sha1: string, buffer: AudioBuffer): void {
   stop();
   const mono = monoMix(buffer);
-  track = { name, sha1, buffer, mono, peaks: computePeaks(mono, canvas.width) };
+  track = { name, sha1, buffer, mono, peaks: computePeaks(mono, overviewCanvas.width) };
   startOffsetSec = 0;
   trackNameEl.textContent = `${name} — ${buffer.duration.toFixed(2)}s @ ${buffer.sampleRate}Hz`;
   playBtn.disabled = false;
   exportBtn.disabled = false;
   const restored = loadState(sha1);
+  syncControls();
   status(
     restored
       ? "Loaded. Grid restored from last session."
-      : "Loaded. Set BPM, then nudge the offset until the clicks disappear into the drums.",
+      : "Loaded. Set BPM, then click a kick in the beat lane to set the downbeat — nudge from there.",
   );
 }
 async function loadFile(file: File): Promise<void> {
@@ -248,53 +260,134 @@ function scheduleClicks(): void {
 }
 function gridChanged(): void {
   schedUntil = songTime();
+  syncControls();
   saveState();
 }
 
 // ---------- drawing ----------
-const c2d = canvas.getContext("2d");
+const ovCtx = overviewCanvas.getContext("2d");
+const zmCtx = zoomCanvas.getContext("2d");
 function fmtTime(t: number): string {
   const m = Math.floor(t / 60);
   const s = t - m * 60;
   return `${m}:${s.toFixed(3).padStart(6, "0")}`;
 }
-function draw(): void {
-  requestAnimationFrame(draw);
-  if (!c2d) return;
-  const W = canvas.width;
-  const H = canvas.height;
-  c2d.fillStyle = "#171b1e";
-  c2d.fillRect(0, 0, W, H);
+function zoomWindow(): { start: number; dur: number } {
+  const dur = ZOOM_BEATS * beatDurationSec(grid);
+  return { start: songTime() - dur / 2, dur };
+}
+function drawOverview(): void {
+  if (!ovCtx) return;
+  const W = overviewCanvas.width;
+  const H = overviewCanvas.height;
+  ovCtx.fillStyle = "#12161a";
+  ovCtx.fillRect(0, 0, W, H);
   if (!track) return;
-
   const dur = track.buffer.duration;
   const mid = H / 2;
-  c2d.fillStyle = "#3d565e";
+
+  ovCtx.fillStyle = "#31454d";
   for (let x = 0; x < W; x++) {
     const lo = track.peaks.min[x]!;
     const hi = track.peaks.max[x]!;
-    const y0 = mid - hi * (mid - 6);
-    const y1 = mid - lo * (mid - 6);
-    c2d.fillRect(x, y0, 1, Math.max(1, y1 - y0));
+    const y0 = mid - hi * (mid - 3);
+    const y1 = mid - lo * (mid - 3);
+    ovCtx.fillRect(x, y0, 1, Math.max(1, y1 - y0));
   }
+  // downbeats only — the full grid would be an unreadable comb at this scale
+  ovCtx.fillStyle = "rgba(240,138,46,0.55)";
   for (const b of beatTimes(grid, dur)) {
-    const x = (b.t / dur) * W;
-    c2d.fillStyle = b.downbeat ? "#f08a2e" : "rgba(78,201,212,0.45)";
-    c2d.fillRect(x, 0, b.downbeat ? 2 : 1, H);
+    if (!b.downbeat) continue;
+    ovCtx.fillRect((b.t / dur) * W, 0, 1, H);
   }
-  const t = songTime();
-  c2d.fillStyle = "#e9ebe7";
-  c2d.fillRect((t / dur) * W, 0, 2, H);
+  // zoom viewport
+  const { start, dur: zdur } = zoomWindow();
+  ovCtx.fillStyle = "rgba(78,201,212,0.12)";
+  ovCtx.fillRect((start / dur) * W, 0, (zdur / dur) * W, H);
+  // playhead
+  ovCtx.fillStyle = "#e8ebe6";
+  ovCtx.fillRect((songTime() / dur) * W, 0, 2, H);
+}
+function drawZoom(): void {
+  if (!zmCtx) return;
+  const W = zoomCanvas.width;
+  const H = zoomCanvas.height;
+  zmCtx.fillStyle = "#12161a";
+  zmCtx.fillRect(0, 0, W, H);
+  if (!track) return;
 
+  const sr = track.buffer.sampleRate;
+  const mono = track.mono;
+  const { start, dur } = zoomWindow();
+  const xOf = (t: number): number => ((t - start) / dur) * W;
+
+  // alternating bar tint for orientation
+  const beatDur = beatDurationSec(grid);
+  const barDur = grid.beatsPerBar * beatDur;
+  const offsetSec = grid.offsetMs / 1000;
+  const firstBar = Math.floor((start - offsetSec) / barDur) - 1;
+  for (let bar = firstBar; ; bar++) {
+    const t0 = offsetSec + bar * barDur;
+    if (t0 > start + dur) break;
+    if (bar % 2 !== 0) continue;
+    const x0 = Math.max(0, xOf(t0));
+    const x1 = Math.min(W, xOf(t0 + barDur));
+    if (x1 <= 0) continue;
+    zmCtx.fillStyle = "rgba(255,255,255,0.022)";
+    zmCtx.fillRect(x0, 0, x1 - x0, H);
+  }
+
+  // waveform at window resolution
+  const mid = H / 2;
+  zmCtx.fillStyle = "#3d565e";
+  const samplesPerCol = (dur * sr) / W;
+  for (let x = 0; x < W; x++) {
+    const s0 = Math.floor((start + (x / W) * dur) * sr);
+    const s1 = Math.floor(s0 + samplesPerCol) + 1;
+    if (s1 < 0 || s0 >= mono.length) continue;
+    let lo = 0;
+    let hi = 0;
+    for (let i = Math.max(0, s0); i < Math.min(mono.length, s1); i++) {
+      const v = mono[i]!;
+      if (v < lo) lo = v;
+      if (v > hi) hi = v;
+    }
+    const y0 = mid - hi * (mid - 8);
+    const y1 = mid - lo * (mid - 8);
+    zmCtx.fillRect(x, y0, 1, Math.max(1, y1 - y0));
+  }
+
+  // beat lines
+  const firstBeat = Math.floor((start - offsetSec) / beatDur);
+  for (let k = firstBeat; ; k++) {
+    const t = offsetSec + k * beatDur;
+    if (t > start + dur) break;
+    const x = xOf(t);
+    if (x < 0) continue;
+    const downbeat = ((k % grid.beatsPerBar) + grid.beatsPerBar) % grid.beatsPerBar === 0;
+    zmCtx.fillStyle = downbeat ? "#f08a2e" : "rgba(78,201,212,0.5)";
+    zmCtx.fillRect(x, 0, downbeat ? 3 : 1, H);
+  }
+
+  // centre playhead
+  zmCtx.fillStyle = "#e8ebe6";
+  zmCtx.fillRect(W / 2 - 1, 0, 3, H);
+
+  // beat flash
   if (playing && metroChk.checked) {
-    const phase = beatPhaseAt(grid, t);
+    const phase = beatPhaseAt(grid, songTime());
     const alpha = Math.max(0, 1 - phase * 4);
     if (alpha > 0) {
-      c2d.fillStyle = `rgba(240,138,46,${(alpha * 0.8).toFixed(3)})`;
-      c2d.fillRect(0, 0, W, 8);
+      zmCtx.fillStyle = `rgba(240,138,46,${(alpha * 0.75).toFixed(3)})`;
+      zmCtx.fillRect(0, 0, W, 10);
     }
   }
-  timeEl.textContent = `${fmtTime(t)} / ${fmtTime(dur)}`;
+}
+function draw(): void {
+  requestAnimationFrame(draw);
+  drawOverview();
+  drawZoom();
+  if (track) timeEl.textContent = `${fmtTime(songTime())} / ${fmtTime(track.buffer.duration)}`;
   scheduleClicks();
 }
 
@@ -336,23 +429,35 @@ fileInput.addEventListener("change", () => {
   const f = fileInput.files?.[0];
   if (f) void loadFile(f);
 });
-dropZone.addEventListener("dragover", (e) => {
+// whole page is a drop target
+window.addEventListener("dragover", (e) => {
   e.preventDefault();
-  dropZone.classList.add("armed");
+  loadRow.classList.add("armed");
 });
-dropZone.addEventListener("dragleave", () => dropZone.classList.remove("armed"));
-dropZone.addEventListener("drop", (e) => {
+window.addEventListener("dragleave", (e) => {
+  if (!e.relatedTarget) loadRow.classList.remove("armed");
+});
+window.addEventListener("drop", (e) => {
   e.preventDefault();
-  dropZone.classList.remove("armed");
+  loadRow.classList.remove("armed");
   const f = e.dataTransfer?.files?.[0];
   if (f) void loadFile(f);
 });
 demoBtn.addEventListener("click", () => void loadDemo());
 playBtn.addEventListener("click", () => (playing ? pause() : play()));
-canvas.addEventListener("click", (e) => {
+overviewCanvas.addEventListener("click", (e) => {
   if (!track) return;
-  const rect = canvas.getBoundingClientRect();
+  const rect = overviewCanvas.getBoundingClientRect();
   seek(((e.clientX - rect.left) / rect.width) * track.buffer.duration);
+});
+zoomCanvas.addEventListener("click", (e) => {
+  if (!track) return;
+  const rect = zoomCanvas.getBoundingClientRect();
+  const { start, dur } = zoomWindow();
+  const t = start + ((e.clientX - rect.left) / rect.width) * dur;
+  grid = { ...grid, offsetMs: Math.round(t * 1000) };
+  gridChanged();
+  status(`Downbeat set at ${grid.offsetMs} ms — nudge to fine-tune.`);
 });
 exportBtn.addEventListener("click", () => void exportDrive());
 moodSel.addEventListener("change", saveState);
@@ -382,7 +487,6 @@ bpbInput.addEventListener("change", () => {
 });
 function nudge(deltaMs: number): void {
   grid = { ...grid, offsetMs: grid.offsetMs + deltaMs };
-  offsetInput.value = String(grid.offsetMs);
   gridChanged();
   status(`offset ${grid.offsetMs} ms`);
 }
@@ -398,7 +502,6 @@ tapBtn.addEventListener("click", () => {
     const diffs = taps.slice(1).map((t, i) => t - taps[i]!);
     const bpm = Math.round((60 / (diffs.reduce((a, b) => a + b, 0) / diffs.length)) * 10) / 10;
     grid = { ...grid, bpm };
-    bpmInput.value = String(bpm);
     gridChanged();
     status(`tap: ${bpm} BPM from ${taps.length} taps`);
   } else {
@@ -425,4 +528,4 @@ document.addEventListener("keydown", (e) => {
 
 syncControls();
 draw();
-status("Drop a track or load the demo to start.");
+status("Drop a track anywhere, or load the demo.");
