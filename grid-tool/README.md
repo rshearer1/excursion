@@ -15,6 +15,8 @@ npm install
 npm run dev        # local UI at the printed URL
 npm test           # engine unit tests (vitest)
 npm run typecheck  # tsc --noEmit
+npm run demo-job   # write the 140 BPM test track + drive.json into ../blender/jobs/
+npm run track-job -- track.wav --start 20 --end 40 [--bpm 140 --offset 0]   # real track, no UI
 ```
 
 ## Layout

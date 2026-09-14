@@ -5,8 +5,12 @@
 // Manifest shape:
 //   { "assets": [
 //       { "id": "polyhaven:studio_small_09", "kind": "hdri", "res": "2k" },
-//       { "id": "ambientcg:Plastic006", "res": "2K" }
+//       { "id": "ambientcg:Plastic006", "res": "2K" },
+//       { "id": "url:pmc/PMC6-2.stl", "url": "https://pmc-speakers.com/wp-content/uploads/2024/05/PMC6-2.stl" }
 //   ] }
+//
+// "url:<relative path>" fetches any direct download into assets/cache/<relative path>
+// (used for the PMC6-2 CAD model from pmc-speakers.com/3d-cad-downloads).
 //
 // Files land in assets/cache/<provider>/ (gitignored). Existing files are
 // skipped, so scenes rebuild identically on any machine. ambientCG zips are
@@ -88,6 +92,14 @@ async function fetchAmbientcg(id, { res = "2K" }) {
   return { dest: extractDir, cached: false };
 }
 
+async function fetchUrl(relPath, { url }) {
+  if (!url) throw new Error(`url:${relPath} needs a "url" field`);
+  const dest = path.join(cacheRoot, ...relPath.split("/"));
+  if (await exists(dest)) return { dest, cached: true };
+  await download(url, dest);
+  return { dest, cached: false };
+}
+
 const manifestPath = process.argv[2];
 if (!manifestPath) {
   console.error("usage: node scripts/fetch-assets.mjs <scene.manifest.json>");
@@ -97,9 +109,10 @@ const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
 
 let failures = 0;
 for (const asset of manifest.assets ?? []) {
-  const [provider, id] = asset.id.split(":");
+  const [provider, ...rest] = asset.id.split(":");
+  const id = rest.join(":");
   try {
-    const fetcher = { polyhaven: fetchPolyhaven, ambientcg: fetchAmbientcg }[provider];
+    const fetcher = { polyhaven: fetchPolyhaven, ambientcg: fetchAmbientcg, url: fetchUrl }[provider];
     if (!fetcher) throw new Error(`unknown provider "${provider}"`);
     const { dest, cached } = await fetcher(id, asset);
     console.log(`${cached ? "cached" : "fetched"}  ${asset.id}  ->  ${path.relative(root, dest)}`);
@@ -108,4 +121,6 @@ for (const asset of manifest.assets ?? []) {
     console.error(`FAILED  ${asset.id}  ${e instanceof Error ? e.message : e}`);
   }
 }
-process.exit(failures ? 1 : 0);
+// exitCode, not process.exit(): Node 24 on Windows can abort in libuv when exit() races the
+// closing download streams ("Assertion failed: !(handle->flags & UV_HANDLE_CLOSING)").
+process.exitCode = failures ? 1 : 0;

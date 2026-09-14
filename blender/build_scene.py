@@ -1,18 +1,49 @@
-# Excursion — placeholder "void" scene builder (phase 2).
+# Excursion — "void" scene builder (phase 3: real speaker).
 # Run once:  blender -b -P blender/build_scene.py
-# Creates scenes/void.blend with the kit-contract object names the pipeline binds to:
-#   Cabinet, Woofer_L, Woofer_R (shape key "Excursion"), Tweeter, Slate.
-# Uses the fetched studio HDRI if assets/cache has it; falls back to a dark world.
+#
+# Builds scenes/void.blend around PMC's official PMC6-2 CAD model when it is in the asset
+# cache (node scripts/fetch-assets.mjs blender/scenes/void.manifest.json fetches it from
+# pmc-speakers.com/3d-cad-downloads), and falls back to the phase-2 placeholder primitives
+# when it is not. Either way the kit-contract object names the pipeline binds to exist:
+#   Cabinet, Woofer_L, Woofer_R, Mid (shape key "Excursion"), Tweeter, Slate, Floor, Smoke (SmokeMat),
+#   Dust (DustField geometry nodes), KeyLight + KeyTarget (moving spot), Badge + Logo (LogoMat)
+# plus cameras Cam1_Wide (scene camera), Cam2_Woofers and Cam3_Macro for drive.json camera cuts,
+# each with a Focus_* empty carrying a "rack" (focus glides start -> end per shot).
+#
+# The STL is one closed solid in millimetres with the woofer cones modelled into the body
+# (and the baffle triangulated with long slivers, so face picking by radius gives a jagged
+# edge). Each driver is therefore cut out with an exact boolean cylinder: intersect gives the
+# piece, difference leaves the pocket, and the seam is a true circle on flat baffle where both
+# sides share the same box-projected material and normal. Measured in model space (mm):
+#   woofers   (107.5, 292.5) and (107.5, 107.5), fitted by concentricity: dust cap + cone r<46,
+#             surround roll 46-75 (crest at r~63), flat trim ring 76-88, baffle beyond
+#   tweeter   dome centre (260, 314), base r~9.5 at z 359, waveguide floor at z 356
+#   body      430 x 400 x 368, front baffle at z = 360-368
 
 import math
 import os
-import sys
 
+import bmesh
 import bpy
+from mathutils import Matrix, Vector
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
-HDRI = os.path.join(ROOT, "assets", "cache", "polyhaven", "studio_small_09_2k.hdr")
+CACHE = os.path.join(ROOT, "assets", "cache")
+HDRI = os.path.join(CACHE, "polyhaven", "studio_small_09_2k.hdr")
+CABINET_TEXTURE = ("Plastic012A", "4K")  # ambientCG id + resolution (see void.manifest.json)
+PLASTIC = os.path.join(CACHE, "ambientcg", f"{CABINET_TEXTURE[0]}_{CABINET_TEXTURE[1]}-JPG")
+STL = os.path.join(CACHE, "pmc", "PMC6-2.stl")
+
+EXCURSION = 0.014  # metres of cone travel at shape key value 1.0 (a real driver is ~10 mm; exaggerated to read on video)
+MID_EXCURSION = 0.003  # the 75 mm mid dome moves far less
+SHARP_ANGLE = math.radians(30)
+CABINET_ALBEDO = 0.3  # multiplier on the texture's colour map
+CABINET_ROUGHNESS = (0.2, 0.5)  # the roughness map is remapped into this range
+CABINET_BUMP = 0.35  # displacement-map bump strength on top of the normal map
+BOKEH_BLADES = 7  # aperture blades: highlights become heptagons instead of discs
+BOKEH_ROTATION = 12  # degrees
+BOKEH_RATIO = 1.4  # anamorphic squeeze: >1 stretches bokeh into ovals
 
 bpy.ops.wm.read_factory_settings(use_empty=True)
 scene = bpy.context.scene
@@ -41,76 +72,952 @@ def assign(obj, material):
     obj.data.materials.append(material)
 
 
-# cabinet ---------------------------------------------------------------
-bpy.ops.mesh.primitive_cube_add(location=(0, 0, 0))
-cabinet = bpy.context.object
-cabinet.name = "Cabinet"
-cabinet.dimensions = (0.30, 0.24, 0.55)
-bevel = cabinet.modifiers.new("Bevel", "BEVEL")
-bevel.width = 0.008
-bevel.segments = 3
-assign(cabinet, make_material("CabinetMat", rough=0.5))
+def plastic_material(name, scale=5.0):
+    """ambientCG PBR set box-projected in object space (the STL has no UVs): colour, roughness,
+    normal map and the displacement map as a bump on top, so the surface grain catches the
+    raking light. scale = tiles per metre."""
+    m = make_material(name, rough=0.5)
+    nt = m.node_tree
+    bsdf = nt.nodes["Principled BSDF"]
+    coord = nt.nodes.new("ShaderNodeTexCoord")
+    mapping = nt.nodes.new("ShaderNodeMapping")
+    mapping.inputs["Scale"].default_value = (scale, scale, scale)
+    nt.links.new(coord.outputs["Object"], mapping.inputs["Vector"])
 
-# woofers (stacked on the right, like the reference monitor) ------------
-woofer_mat = make_material("WooferMat", base=(0.01, 0.01, 0.01, 1), rough=0.8)
-for name, z in (("Woofer_L", 0.05), ("Woofer_R", -0.13)):
+    def tex(suffix, non_color):
+        path = os.path.join(PLASTIC, f"{CABINET_TEXTURE[0]}_{CABINET_TEXTURE[1]}-JPG_{suffix}.jpg")
+        if not os.path.exists(path):
+            return None
+        node = nt.nodes.new("ShaderNodeTexImage")
+        node.image = bpy.data.images.load(path)
+        node.projection = "BOX"
+        node.projection_blend = 0.25
+        if non_color:
+            node.image.colorspace_settings.name = "Non-Color"
+        nt.links.new(mapping.outputs["Vector"], node.inputs["Vector"])
+        return node
+
+    color = tex("Color", False)
+    rough = tex("Roughness", True)
+    normal = tex("NormalGL", True)
+    height = tex("Displacement", True)
+    if color:
+        # darken the albedo: the cabinet should only show where a beam or reflection lands
+        dark = nt.nodes.new("ShaderNodeMix")
+        dark.data_type = "RGBA"
+        dark.blend_type = "MULTIPLY"
+        dark.inputs["Factor"].default_value = 1.0
+        dark.inputs["B"].default_value = (CABINET_ALBEDO,) * 3 + (1.0,)
+        nt.links.new(color.outputs["Color"], dark.inputs["A"])
+        nt.links.new(dark.outputs["Result"], bsdf.inputs["Base Color"])
+    if rough:
+        # glossier than the scan so the placed lights read as reflections
+        gloss = nt.nodes.new("ShaderNodeMapRange")
+        gloss.inputs["To Min"].default_value = CABINET_ROUGHNESS[0]
+        gloss.inputs["To Max"].default_value = CABINET_ROUGHNESS[1]
+        nt.links.new(rough.outputs["Color"], gloss.inputs["Value"])
+        nt.links.new(gloss.outputs["Result"], bsdf.inputs["Roughness"])
+    shading_normal = None
+    if normal:
+        nmap = nt.nodes.new("ShaderNodeNormalMap")
+        nmap.inputs["Strength"].default_value = 0.8
+        nt.links.new(normal.outputs["Color"], nmap.inputs["Color"])
+        shading_normal = nmap.outputs["Normal"]
+    if height:
+        bump = nt.nodes.new("ShaderNodeBump")
+        bump.inputs["Strength"].default_value = CABINET_BUMP
+        bump.inputs["Distance"].default_value = 0.0005
+        nt.links.new(height.outputs["Color"], bump.inputs["Height"])
+        if shading_normal is not None:
+            nt.links.new(shading_normal, bump.inputs["Normal"])
+        shading_normal = bump.outputs["Normal"]
+    if shading_normal is not None:
+        nt.links.new(shading_normal, bsdf.inputs["Normal"])
+    if not (color or rough or normal):
+        print(f"note: {CABINET_TEXTURE[0]} textures not found — flat CabinetMat (run fetch-assets)")
+    return m
+
+
+def cone_material(name):
+    """The cabinet plastic with a woven-fibre cone inside each driver piece's cone radius.
+
+    The pieces (Woofer_L/R, Mid) carry cone_cx / cone_cz / cone_r as custom properties; the
+    shader reads them with Attribute nodes, so one material serves every driver and the trim
+    ring outside the cone keeps the box-projected cabinet finish (no seam)."""
+    m = plastic_material(name)
+    nt = m.node_tree
+    N, L = nt.nodes, nt.links
+    bsdf = N["Principled BSDF"]
+
+    def math_node(op, a, b=None):
+        n = N.new("ShaderNodeMath")
+        n.operation = op
+        for i, v in enumerate((a, b)):
+            if v is None:
+                continue
+            if isinstance(v, (int, float)):
+                n.inputs[i].default_value = v
+            else:
+                L.new(v, n.inputs[i])
+        return n.outputs[0]
+
+    def prop(name):
+        a = N.new("ShaderNodeAttribute")
+        a.attribute_type = "OBJECT"
+        a.attribute_name = name
+        return a.outputs["Fac"]
+
+    def upstream(socket):
+        return socket.links[0].from_socket if socket.links else None
+
+    coord = N.new("ShaderNodeTexCoord").outputs["Object"]
+    sep = N.new("ShaderNodeSeparateXYZ")
+    L.new(coord, sep.inputs[0])
+    dx = math_node("SUBTRACT", sep.outputs[0], prop("cone_cx"))
+    dz = math_node("SUBTRACT", sep.outputs[2], prop("cone_cz"))
+    r = math_node("SQRT", math_node("ADD", math_node("MULTIPLY", dx, dx), math_node("MULTIPLY", dz, dz)))
+    angle = math_node("ARCTAN2", dz, dx)
+    edge = N.new("ShaderNodeMapRange")
+    edge.interpolation_type = "SMOOTHSTEP"
+    L.new(r, edge.inputs["Value"])
+    L.new(math_node("MULTIPLY", prop("cone_r"), 0.94), edge.inputs["From Min"])
+    L.new(prop("cone_r"), edge.inputs["From Max"])
+    edge.inputs["To Min"].default_value = 1.0
+    edge.inputs["To Max"].default_value = 0.0
+    mask = edge.outputs["Result"]
+
+    # the weave: warp along the radius, weft around the angle, over/under from their product
+    rings = math_node("SINE", math_node("MULTIPLY", r, 2 * math.pi * WEAVE_PITCH))
+    spokes = math_node("SINE", math_node("MULTIPLY", angle, WEAVE_SPOKES))
+    height = math_node("ADD", 0.5, math_node("MULTIPLY", 0.5, math_node("MULTIPLY", rings, spokes)))
+    bump = N.new("ShaderNodeBump")
+    bump.inputs["Strength"].default_value = 0.35
+    bump.inputs["Distance"].default_value = 0.0003
+    L.new(height, bump.inputs["Height"])
+
+    def blend(input_name, data_type, cone_value, blend_type="MIX"):
+        mix = N.new("ShaderNodeMix")
+        mix.data_type = data_type
+        mix.blend_type = blend_type
+        L.new(mask, mix.inputs["Factor"])
+        key = {"RGBA": ("A_Color", "B_Color", "Result_Color"), "FLOAT": ("A_Float", "B_Float", "Result_Float"), "VECTOR": ("A_Vector", "B_Vector", "Result_Vector")}[data_type]
+        a_in, b_in, out = key
+        # ShaderNodeMix exposes typed sockets by identifier; look them up by identifier
+        a_sock = next(s for s in mix.inputs if s.identifier == a_in)
+        b_sock = next(s for s in mix.inputs if s.identifier == b_in)
+        o_sock = next(s for s in mix.outputs if s.identifier == out)
+        src = upstream(bsdf.inputs[input_name])
+        if src is not None:
+            L.new(src, a_sock)
+        else:
+            a_sock.default_value = bsdf.inputs[input_name].default_value
+        if isinstance(cone_value, (int, float, tuple)):
+            b_sock.default_value = cone_value
+        else:
+            L.new(cone_value, b_sock)
+        for link in list(bsdf.inputs[input_name].links):
+            L.remove(link)
+        L.new(o_sock, bsdf.inputs[input_name])
+
+    blend("Base Color", "RGBA", (0.02, 0.02, 0.022, 1.0))
+    blend("Roughness", "FLOAT", math_node("ADD", 0.42, math_node("MULTIPLY", 0.12, height)))
+    blend("Normal", "VECTOR", bump.outputs["Normal"])
+    return m
+
+
+WEAVE_PITCH = 380  # threads per metre along the radius (2.6 mm)
+WEAVE_SPOKES = 96  # threads around the cone
+
+
+def new_object(name, mesh):
+    obj = bpy.data.objects.new(name, mesh)
+    scene.collection.objects.link(obj)
+    return obj
+
+
+def mark_sharp(bm):
+    """Smooth faces + sharp edges above SHARP_ANGLE == 'shade smooth by angle' (Blender 4.1+)."""
+    for f in bm.faces:
+        f.smooth = True
+    for e in bm.edges:
+        if len(e.link_faces) == 2:
+            e.smooth = e.calc_face_angle(0.0) < SHARP_ANGLE
+
+
+def apply_modifier(obj, mod):
+    bpy.ops.object.select_all(action="DESELECT")
+    obj.select_set(True)
+    bpy.context.view_layer.objects.active = obj
+    bpy.ops.object.modifier_apply(modifier=mod.name)
+
+
+def cut_piece(body, name, cx, cz, radius, y_front, y_back):
+    """Exact-boolean a cylinder (axis along Y, spanning y_front..y_back) out of body.
+
+    Returns the intersected piece as a new object; body keeps the pocket. The piece is a closed
+    solid: front skin + pocket wall + floor, the latter two hidden inside the cabinet."""
     bpy.ops.mesh.primitive_cylinder_add(
-        radius=0.085, depth=0.02, location=(0.06, -0.125, z), rotation=(math.pi / 2, 0, 0)
+        vertices=128,
+        radius=radius,
+        depth=abs(y_back - y_front),
+        location=(cx, (y_front + y_back) / 2, cz),
+        rotation=(math.pi / 2, 0, 0),
     )
-    woofer = bpy.context.object
-    woofer.name = name
-    assign(woofer, woofer_mat)
-    woofer.shape_key_add(name="Basis")
-    key = woofer.shape_key_add(name="Excursion")
-    for v in key.data:
-        v.co.z += 0.006  # local +Z is world -Y after the rotation: toward the camera
+    cutter = bpy.context.object
+    cutter.name = f"{name}_cutter"
+    piece = new_object(name, body.data.copy())
+    piece.data.name = name
+    for target, op in ((piece, "INTERSECT"), (body, "DIFFERENCE")):
+        mod = target.modifiers.new(f"cut_{name}", "BOOLEAN")
+        mod.operation = op
+        mod.solver = "EXACT"
+        mod.object = cutter
+        apply_modifier(target, mod)
+    bpy.data.objects.remove(cutter)
+    return piece
 
-# tweeter ---------------------------------------------------------------
-bpy.ops.mesh.primitive_uv_sphere_add(radius=0.028, location=(-0.07, -0.125, 0.16))
-tweeter = bpy.context.object
-tweeter.name = "Tweeter"
-assign(tweeter, make_material("TweeterMat", base=(0.02, 0.02, 0.02, 1), emission=(0.9, 0.95, 1.0, 1)))
 
-# sync slate — a flat panel that flashes on beats (the phase-2 proof) ---
-bpy.ops.mesh.primitive_plane_add(size=0.5, location=(0, 0.05, 0.48), rotation=(math.pi / 2, 0, 0))
+def smoothstep(x):
+    x = min(1.0, max(0.0, x))
+    return x * x * (3 - 2 * x)
+
+
+def add_excursion_key(obj, cx, cz, r_in, r_out, y_skin, amount=EXCURSION):
+    """Piston shape key: full travel inside r_in, easing to zero at the surround edge r_out.
+
+    Only the front skin (y < y_skin) moves; the piece's hidden pocket wall and floor stay put."""
+    obj.shape_key_add(name="Basis", from_mix=False)
+    key = obj.shape_key_add(name="Excursion", from_mix=False)
+    for pt in key.data:
+        if pt.co.y >= y_skin:
+            continue
+        r = math.hypot(pt.co.x - cx, pt.co.z - cz)
+        w = smoothstep(1.0 - (r - r_in) / (r_out - r_in))
+        pt.co.y -= amount * w  # -Y is toward the camera
+    return key
+
+
+
+
+# badge + logo: "BIGHECK" engraved into a plate that fills the PMC badge slot ---------------
+# The STL has a 60 x 12 mm rounded slot on the mid/tweeter plate, centred at model (260, 76),
+# floor ~12 mm below the front face. A satin Badge fills it; the lettering is booleaned 0.8 mm
+# into the Badge (a true engraving) and an emissive Logo inlay sits in the cut, so the letters
+# read as engraved when dark and as backlit glass when apply_drive flashes them on the beat.
+LOGO_TEXT = "BIGHECK"
+LOGO_FONTS = [r"C:\Windows\Fonts\impact.ttf", r"C:\Windows\Fonts\ariblk.ttf", r"C:\Windows\Fonts\arialbd.ttf"]
+BADGE_CENTRE = (0.045, -0.124)  # scene x, z
+BADGE_SIZE = (0.058, 0.0105)  # w, h (the slot is 60 x 12)
+BADGE_FRONT = -0.1780  # 0.6 mm proud of the plate at y = -0.1774
+BADGE_DEPTH = 0.004
+ENGRAVE = 0.0008
+
+
+def rounded_box(name, cx, cz, w, h, y_front, depth, radius):
+    bpy.ops.mesh.primitive_cube_add(size=1, location=(cx, y_front + depth / 2, cz))
+    box = bpy.context.object
+    box.name = name
+    box.scale = (w, depth, h)
+    bpy.ops.object.transform_apply(scale=True)
+    bevel = box.modifiers.new("Round", "BEVEL")
+    bevel.width = radius
+    bevel.segments = 8
+    bevel.limit_method = "ANGLE"
+    apply_modifier(box, bevel)
+    return box
+
+
+def text_mesh(name, text, size, extrude):
+    bpy.ops.object.text_add(location=(0, 0, 0))
+    obj = bpy.context.object
+    obj.name = name
+    obj.data.body = text
+    obj.data.size = size
+    obj.data.extrude = extrude / 2  # extrude is applied both ways
+    obj.data.align_x = "CENTER"
+    obj.data.align_y = "CENTER"
+    for font in LOGO_FONTS:
+        if os.path.exists(font):
+            obj.data.font = bpy.data.fonts.load(font)
+            break
+    else:
+        print("note: no bold system font found — logo uses Blender's default font")
+    bpy.ops.object.convert(target="MESH")
+    obj = bpy.context.object
+    obj.data.name = name
+    return obj
+
+
+def build_logo(cabinet_mat):
+    cx, cz = BADGE_CENTRE
+    w, h = BADGE_SIZE
+    badge = rounded_box("Badge", cx, cz, w, h, BADGE_FRONT, BADGE_DEPTH, 0.0015)
+    badge_mat = make_material("BadgeMat", base=(0.02, 0.02, 0.022, 1), rough=0.35)
+    assign(badge, badge_mat)
+
+    # text in the XY plane facing +Z, then measured, scaled to fit, and stood up facing -Y
+    text = text_mesh("Logo", LOGO_TEXT, 0.01, ENGRAVE + 0.002)
+    xs = [v.co.x for v in text.data.vertices]
+    ys = [v.co.y for v in text.data.vertices]
+    fit = min((w - 0.006) / (max(xs) - min(xs)), (h - 0.0025) / (max(ys) - min(ys)))
+    centre = Vector(((max(xs) + min(xs)) / 2, (max(ys) + min(ys)) / 2, 0))
+    text.data.transform(
+        Matrix.Rotation(math.pi / 2, 4, "X") @ Matrix.Scale(fit, 4) @ Matrix.Translation(-centre)
+    )
+    # front face of the extrusion sits at the badge face; the rest goes back into the badge
+    front = min(v.co.y for v in text.data.vertices)
+    text.data.transform(Matrix.Translation((cx, BADGE_FRONT - front - 0.001, cz)))
+    text.location = (0, 0, 0)
+
+    cutter = new_object("Logo_cutter", text.data.copy())
+    cutter.data.transform(Matrix.Translation((0, 0, 0)))
+    mod = badge.modifiers.new("engrave", "BOOLEAN")
+    mod.operation = "DIFFERENCE"
+    mod.solver = "EXACT"
+    mod.object = cutter
+    # the cutter extends 1 mm in front of the badge (already) and ENGRAVE behind its face
+    for v in cutter.data.vertices:
+        if v.co.y > BADGE_FRONT + 0.0001:
+            v.co.y = BADGE_FRONT + ENGRAVE
+    apply_modifier(badge, mod)
+    bpy.data.objects.remove(cutter)
+
+    # the inlay: same letters, 4 % smaller so no face is coplanar with the pocket walls, front
+    # 0.3 mm below the badge face (inside the 0.8 mm engraving), back buried in the badge
+    for v in text.data.vertices:
+        v.co.x = cx + (v.co.x - cx) * 0.96
+        v.co.z = cz + (v.co.z - cz) * 0.96
+        v.co.y = BADGE_FRONT + 0.0003 if v.co.y < BADGE_FRONT + ENGRAVE else BADGE_FRONT + BADGE_DEPTH - 0.0005
+    logo_mat = make_material("LogoMat", base=(0.9, 0.55, 0.3, 1), rough=0.4, emission=(1.0, 0.62, 0.3, 1))
+    logo_mat.node_tree.nodes["Principled BSDF"].inputs["Emission Strength"].default_value = 0.0
+    assign(text, logo_mat)
+    print(f"logo: '{LOGO_TEXT}' engraved {ENGRAVE * 1000:.1f} mm into the badge at scene ({cx}, {cz})")
+    return badge, text
+
+
+# ---------------------------------------------------------------------------------------
+def build_pmc():
+    bpy.ops.wm.stl_import(filepath=STL, global_scale=0.001)
+    body = bpy.context.selected_objects[0]
+    body.name = "Cabinet"
+    me = body.data
+    me.name = "Cabinet"
+    # bake the importer's object scale into the mesh, centre the box on the origin, then
+    # Y-up -> Z-up so the baffle faces -Y (the camera side)
+    me.transform(
+        Matrix.Rotation(math.pi / 2, 4, "X")
+        @ Matrix.Translation((-0.215, -0.200, -0.184))
+        @ body.matrix_world
+    )
+    body.matrix_world = Matrix.Identity(4)
+    lo = [min(v.co[i] for v in me.vertices) for i in range(3)]
+    hi = [max(v.co[i] for v in me.vertices) for i in range(3)]
+    print("cabinet bounds (m):", [round(x, 3) for x in lo], [round(x, 3) for x in hi])
+
+    bm = bmesh.new()
+    bm.from_mesh(me)
+    bmesh.ops.remove_doubles(bm, verts=bm.verts, dist=1e-5)
+    mark_sharp(bm)
+    bm.to_mesh(me)
+    bm.free()
+    cabinet_mat = plastic_material("CabinetMat")
+    assign(body, cabinet_mat)
+
+    # model-space (mm) measurements -> scene space (m): x = X-215, z = Y-200, y = -(Z-184)
+    front = -0.184
+    woofers = {"Woofer_L": (-0.1075, 0.0925), "Woofer_R": (-0.1075, -0.0925)}  # upper, lower
+    r_cone, r_surround, r_cut = 0.046, 0.075, 0.082  # cut lands on the flat trim ring
+    woofer_mat = cone_material("WooferMat")
+    for name, (cx, cz) in woofers.items():
+        piece = cut_piece(body, name, cx, cz, r_cut, front - 0.02, front + 0.03)
+        add_excursion_key(piece, cx, cz, r_cone, r_surround, y_skin=front + 0.025)
+        piece.data.materials[0] = woofer_mat
+        piece["cone_cx"], piece["cone_cz"], piece["cone_r"] = cx, cz, r_cone
+        print(f"{name}: {len(piece.data.polygons)} faces, excursion key {EXCURSION * 1000:.0f} mm")
+
+    # mid dome: the 75 mm soft dome sits in its waveguide, apex 9.5 mm below the front face and
+    # 22 mm deep at its edge (r 26). Cut inside the groove and give it a small dome key.
+    mx, mz = 0.042, 0.001
+    mid = cut_piece(body, "Mid", mx, mz, 0.027, front - 0.02, front + 0.030)
+    add_excursion_key(mid, mx, mz, 0.016, 0.026, y_skin=front + 0.028, amount=MID_EXCURSION)
+    mid.data.materials[0] = woofer_mat
+    mid["cone_cx"], mid["cone_cz"], mid["cone_r"] = mx, mz, 0.026
+    print(f"Mid: {len(mid.data.polygons)} faces, excursion key {MID_EXCURSION * 1000:.0f} mm")
+
+    tx, tz = 0.045, 0.114
+    tweeter = cut_piece(body, "Tweeter", tx, tz, 0.0105, front - 0.02, front + 0.010)
+    tweeter.data.materials[0] = make_material("TweeterMat", base=(0.02, 0.02, 0.022, 1), rough=0.2)
+    tweeter.data.materials[0].node_tree.nodes["Principled BSDF"].inputs["Metallic"].default_value = 0.6
+    build_logo(cabinet_mat)
+    print(f"Tweeter: {len(tweeter.data.polygons)} faces")
+    print(f"Cabinet: {len(me.polygons)} faces")
+    return body
+
+
+def build_placeholder():
+    bpy.ops.mesh.primitive_cube_add(location=(0, 0, 0))
+    cabinet = bpy.context.object
+    cabinet.name = "Cabinet"
+    cabinet.dimensions = (0.30, 0.24, 0.55)
+    bevel = cabinet.modifiers.new("Bevel", "BEVEL")
+    bevel.width = 0.008
+    bevel.segments = 3
+    assign(cabinet, make_material("CabinetMat", rough=0.5))
+
+    woofer_mat = make_material("WooferMat", base=(0.01, 0.01, 0.01, 1), rough=0.8)
+    for name, z in (("Woofer_L", 0.05), ("Woofer_R", -0.13)):
+        bpy.ops.mesh.primitive_cylinder_add(
+            radius=0.085, depth=0.02, location=(0.06, -0.125, z), rotation=(math.pi / 2, 0, 0)
+        )
+        woofer = bpy.context.object
+        woofer.name = name
+        assign(woofer, woofer_mat)
+        woofer.shape_key_add(name="Basis")
+        key = woofer.shape_key_add(name="Excursion")
+        for v in key.data:
+            v.co.z += 0.006  # local +Z is world -Y after the rotation: toward the camera
+
+    bpy.ops.mesh.primitive_uv_sphere_add(radius=0.028, location=(-0.07, -0.125, 0.16))
+    tweeter = bpy.context.object
+    tweeter.name = "Tweeter"
+    assign(tweeter, make_material("TweeterMat", base=(0.02, 0.02, 0.022, 1), rough=0.2))
+    return cabinet
+
+
+def add_camera(name, location, target, lens):
+    cam_data = bpy.data.cameras.new(name)
+    cam_data.lens = lens
+    cam = new_object(name, cam_data)
+    cam.location = location
+    cam.rotation_euler = (Vector(target) - Vector(location)).to_track_quat("-Z", "Y").to_euler()
+    return cam
+
+
+# ---------------------------------------------------------------------------------------
+if os.path.exists(STL):
+    print(f"building around {STL}")
+    cabinet = build_pmc()
+    front_y, top_z, half_w = -0.184, 0.200, 0.215
+    woofer_x, woofer_z_mid, woofer_z_half = -0.1075, 0.0, 0.0925
+    tweeter_xz, badge_xz = (0.045, 0.114), BADGE_CENTRE
+else:
+    print(
+        "note: PMC6-2.stl not cached — building placeholder primitives "
+        "(run: node scripts/fetch-assets.mjs blender/scenes/void.manifest.json)"
+    )
+    cabinet = build_placeholder()
+    front_y, top_z, half_w = -0.12, 0.275, 0.15
+    woofer_x, woofer_z_mid, woofer_z_half = 0.06, -0.04, 0.09
+    tweeter_xz, badge_xz = (-0.07, 0.16), (0.06, -0.24)
+
+# sync slate — a flat panel above the speaker that flashes on beats (the phase-2 proof) ---
+bpy.ops.mesh.primitive_plane_add(size=0.3, location=(0, 0.05, top_z + 0.17), rotation=(math.pi / 2, 0, 0))
 slate = bpy.context.object
 slate.name = "Slate"
-assign(slate, make_material("SlateMat", base=(0, 0, 0, 1), emission=(1.0, 0.55, 0.18, 1)))
+slate_mat = make_material("SlateMat", base=(0, 0, 0, 1), rough=1.0, emission=(1.0, 0.55, 0.18, 1))
+slate_mat.node_tree.nodes["Principled BSDF"].inputs["Specular IOR Level"].default_value = 0.0  # dark when idle
+assign(slate, slate_mat)
+slate.hide_render = True  # apply_drive shows it only with --slate
 
-# camera ----------------------------------------------------------------
-bpy.ops.object.camera_add(location=(0, -1.05, 0.03), rotation=(math.pi / 2, 0, 0))
-cam = bpy.context.object
-cam.name = "Camera"
-cam.data.lens = 60
-scene.camera = cam
+# floor: dark satin ground under the speaker — contact shadow, and the red rims reflect in it
+bpy.ops.mesh.primitive_plane_add(size=8, location=(0, 0, -top_z - 0.0005))
+floor = bpy.context.object
+floor.name = "Floor"
+assign(floor, make_material("FloorMat", base=(0.012, 0.012, 0.014, 1), rough=0.3))
 
-# lights ----------------------------------------------------------------
-bpy.ops.object.light_add(type="AREA", location=(0.7, -0.7, 0.7))
-key_light = bpy.context.object
-key_light.name = "KeyLight"
-key_light.data.energy = 120
-key_light.rotation_euler = (math.radians(55), 0, math.radians(45))
+# cameras: sorted by name, apply_drive cycles drive.json cuts round-robin over them ---------
+# Both hang off CamRig, an empty at the speaker's centre; apply_drive swings its Z rotation
+# across the render range, so every camera orbits the speaker together (the sweep).
+rig = bpy.data.objects.new("CamRig", None)
+scene.collection.objects.link(rig)
 
-bpy.ops.object.light_add(type="AREA", location=(-0.8, 0.4, 0.4))
-rim = bpy.context.object
-rim.name = "RimLight"
-rim.data.energy = 60
-rim.data.color = (0.55, 0.85, 0.9)
-rim.rotation_euler = (math.radians(70), 0, math.radians(-130))
 
-# world -----------------------------------------------------------------
+def add_focus(name, location):
+    empty = bpy.data.objects.new(name, None)
+    empty.empty_display_size = 0.02
+    empty.location = location
+    scene.collection.objects.link(empty)
+    return empty
+
+
+def set_dof(cam, focus, fstop, rack=None):
+    """Depth of field with a bladed, slightly anamorphic aperture so highlights bloom into
+    lens-shaped bokeh. rack=(start, end): apply_drive glides the focus point from start to end
+    over every shot this camera gets."""
+    dof = cam.data.dof
+    dof.use_dof = True
+    dof.focus_object = focus
+    dof.aperture_fstop = fstop
+    dof.aperture_blades = BOKEH_BLADES
+    dof.aperture_rotation = math.radians(BOKEH_ROTATION)
+    dof.aperture_ratio = BOKEH_RATIO
+    cam.parent = rig
+    if rack:
+        focus["rack"] = [c for point in rack for c in point]
+
+
+upper, lower = woofer_z_mid + woofer_z_half, woofer_z_mid - woofer_z_half
+wide = add_camera("Cam1_Wide", (0, front_y - 1.30, 0.02), (0, front_y, 0.0), 50)
+set_dof(
+    wide,
+    add_focus("Focus_Wide", (woofer_x, front_y, upper)),
+    2.8,
+    rack=((woofer_x, front_y, upper), (badge_xz[0], front_y, badge_xz[1])),
+)
+# close-up: a long lens further back flattens the perspective and avoids the edge-on framing
+close = add_camera("Cam2_Woofers", (woofer_x + 0.04, front_y - 0.74, 0.10), (woofer_x, front_y, woofer_z_mid), 90)
+set_dof(
+    close,
+    add_focus("Focus_Woofers", (woofer_x, front_y, upper)),
+    4.0,
+    rack=((woofer_x - 0.16, front_y - 0.03, upper + 0.02), (woofer_x, front_y, lower)),
+)
+# macro: tweeter and badge from the right; focus racks down the plate from the dome to the logo
+macro = add_camera(
+    "Cam3_Macro",
+    (tweeter_xz[0] + 0.25, front_y - 0.65, 0.0),
+    (tweeter_xz[0], front_y, (tweeter_xz[1] + badge_xz[1]) / 2),
+    85,
+)
+set_dof(
+    macro,
+    add_focus("Focus_Macro", (tweeter_xz[0], front_y, tweeter_xz[1])),
+    2.8,
+    rack=((tweeter_xz[0], front_y, tweeter_xz[1]), (badge_xz[0], front_y, badge_xz[1])),
+)
+scene.camera = wide
+
+# lights: no ambient at all — every highlight comes from an aimed spot ---------------------
+# The world is black and EEVEE's bounce light is off, so what is not in a beam stays black.
+#   KeyLight  warm, high front-left, tracks KeyTarget: apply_drive glides the target along
+#             KeyTarget["path"] over the reel, so the pool of light travels across the drivers
+#             and its beam sweeps through the smoke and dust
+#   Graze     low from the left, raking across the baffle: the surround rolls catch it, so
+#             every cone movement shows as a moving highlight
+#   TopBack   dark red, behind and above: traces the top edges, glows through the haze behind
+#   RimLeft / RimRight  dark red, behind each side at a grazing angle: their reflections
+#             streak down the side panels as the camera orbits past
+def add_spot(name, location, target, watts, color, cone_deg, blend=0.3, radius=0.02, volume=1.0):
+    data = bpy.data.lights.new(name, "SPOT")
+    data.energy = watts
+    data.color = color
+    data.spot_size = math.radians(cone_deg)
+    data.spot_blend = blend
+    data.shadow_soft_size = radius  # small source: hard shadows; larger: readable reflections
+    data.volume_factor = volume  # how much the beam lights the smoke
+    light = new_object(name, data)
+    light.location = location
+    light.rotation_euler = (Vector(target) - Vector(location)).to_track_quat("-Z", "Y").to_euler()
+    return light
+
+
+WARM, DARK_RED = (1.0, 0.84, 0.66), (0.55, 0.035, 0.02)
+upper = woofer_z_mid + woofer_z_half
+lower = woofer_z_mid - woofer_z_half
+
+key_target = bpy.data.objects.new("KeyTarget", None)
+key_target.empty_display_size = 0.03
+key_target.location = (woofer_x, front_y, upper)
+scene.collection.objects.link(key_target)
+# the pool's route across the baffle: above the upper woofer -> mid dome -> lower woofer -> tweeter
+key_target["path"] = [
+    woofer_x - 0.10, front_y, upper + 0.08,
+    0.04, front_y, woofer_z_mid,
+    woofer_x + 0.02, front_y, lower,
+    0.05, front_y, upper + 0.03,
+]
+key = add_spot("KeyLight", (-0.30, front_y - 0.85, 0.70), key_target.location, 450, WARM, 18, blend=0.6)
+track = key.constraints.new("TRACK_TO")
+track.target = key_target
+track.track_axis = "TRACK_NEGATIVE_Z"
+track.up_axis = "UP_Y"
+
+add_spot("Graze", (-0.80, front_y - 0.12, -0.02), (0.10, front_y - 0.02, 0.0), 220, (1.0, 0.95, 0.9), 22, radius=0.01)
+add_spot("TopBack", (0.10, 0.60, 0.70), (0.0, -0.12, top_z), 900, DARK_RED, 30, blend=0.8, radius=0.06, volume=0.35)
+add_spot("RimLeft", (-0.95, 0.55, 0.30), (-half_w, 0.0, 0.0), 320, DARK_RED, 24, blend=0.8, radius=0.06, volume=0.05)
+add_spot("RimRight", (0.95, 0.55, -0.05), (half_w, 0.0, 0.0), 260, DARK_RED, 24, blend=0.8, radius=0.06, volume=0.05)
+if hasattr(slate, "visible_shadow"):
+    slate.visible_shadow = False  # the sync slate must never shadow the back light
+
+
+# dust: thousands of tiny glossy motes floating in front of the speaker ---------------------
+# Geometry nodes, so every frame is computed on its own (no particle cache): random points in
+# a box, drifting toward camera, streamed and puffed by the woofers' air (see build_dust) and
+# wandering on 4D noise over Time. They carry no emission — they only sparkle where a beam
+# catches them, and out of focus they open into soft bokeh shapes.
+DUST_COUNT = 2500
+DUST_BOX = ((-0.55, -0.50, -0.45), (0.55, 0.15, 0.60))  # stops short of the close-up lens
+DUST_SIZE = (0.0002, 0.0006)  # metres
+
+
+def build_dust(front, wx, wz_mid, wz_half):
+    """Dust field with wind from the woofers. Inputs keyed by apply_drive:
+    Drift  slow room drift toward camera (shared with the smoke)
+    Gust   running total of air the cones have moved: motes in the column in front of the
+           woofers stream toward camera at a speed that follows the bass, and wrap round
+    Push   the current hit (decaying): motes just in front of a cone jump forward and outward
+    Time   turbulence"""
+    ng = bpy.data.node_groups.new("DustField", "GeometryNodeTree")
+    ng.interface.new_socket("Geometry", in_out="OUTPUT", socket_type="NodeSocketGeometry")
+    for name in ("Drift", "Gust", "Push", "Time"):
+        ng.interface.new_socket(name, in_out="INPUT", socket_type="NodeSocketFloat")
+    N, L = ng.nodes, ng.links
+    gin = N.new("NodeGroupInput")
+    gout = N.new("NodeGroupOutput")
+
+    def math_node(op, *inputs):
+        n = N.new("ShaderNodeMath")
+        n.operation = op
+        for i, v in enumerate(inputs):
+            if isinstance(v, (int, float)):
+                n.inputs[i].default_value = v
+            else:
+                L.new(v, n.inputs[i])
+        return n.outputs[0]
+
+    def map_range(v, fmin, fmax, tmin, tmax):
+        n = N.new("ShaderNodeMapRange")
+        n.interpolation_type = "SMOOTHSTEP"
+        n.clamp = True
+        L.new(v, n.inputs["Value"])
+        for key, val in (("From Min", fmin), ("From Max", fmax), ("To Min", tmin), ("To Max", tmax)):
+            n.inputs[key].default_value = val
+        return n.outputs["Result"]
+
+    (x0, y0, z0), (x1, y1, z1) = DUST_BOX
+    rand_pos = N.new("FunctionNodeRandomValue")
+    rand_pos.data_type = "FLOAT_VECTOR"
+    rand_pos.inputs["Min"].default_value = (x0, y0, z0)
+    rand_pos.inputs["Max"].default_value = (x1, y1, z1)
+    rand_pos.inputs["Seed"].default_value = 7
+
+    points = N.new("GeometryNodePoints")
+    points.inputs["Count"].default_value = DUST_COUNT
+    L.new(rand_pos.outputs["Value"], points.inputs["Position"])
+
+    pos = N.new("GeometryNodeInputPosition").outputs[0]
+    sep = N.new("ShaderNodeSeparateXYZ")
+    L.new(pos, sep.inputs[0])
+    px, py, pz = sep.outputs[0], sep.outputs[1], sep.outputs[2]
+
+    # the wind column: a stadium around the two woofer axes, 1 on axis fading to 0 at 16 cm
+    dx = math_node("SUBTRACT", px, wx)
+    dz_signed = math_node("SUBTRACT", pz, wz_mid)
+    dz = math_node("MAXIMUM", math_node("SUBTRACT", math_node("ABSOLUTE", dz_signed), wz_half), 0.0)
+    r = math_node("SQRT", math_node("ADD", math_node("MULTIPLY", dx, dx), math_node("MULTIPLY", dz, dz)))
+    column = map_range(r, 0.05, 0.16, 1.0, 0.0)
+    r_safe = math_node("MAXIMUM", r, 0.01)
+    nx = math_node("DIVIDE", dx, r_safe)
+    nz = math_node("DIVIDE", math_node("MULTIPLY", math_node("SIGN", dz_signed), dz), r_safe)
+
+    # forward travel: room drift everywhere, plus the stream inside the column; wrap round
+    stream = math_node("MULTIPLY", math_node("MULTIPLY", gin.outputs["Gust"], DUST_STREAM), column)
+    y = math_node("WRAP", math_node("SUBTRACT", math_node("SUBTRACT", py, math_node("MULTIPLY", gin.outputs["Drift"], 0.5)), stream), y1, y0)
+
+    # the puff: motes just ahead of a cone jump forward and spread outward on a hit
+    ahead = math_node("SUBTRACT", front, y)
+    axial = math_node("MULTIPLY", map_range(ahead, -0.01, 0.03, 0.0, 1.0), map_range(ahead, 0.12, 0.45, 1.0, 0.0))
+    puff = math_node("MULTIPLY", math_node("MULTIPLY", column, axial), gin.outputs["Push"])
+    spread = math_node("MULTIPLY", puff, DUST_SPREAD)
+    comb = N.new("ShaderNodeCombineXYZ")
+    L.new(math_node("ADD", px, math_node("MULTIPLY", nx, spread)), comb.inputs[0])
+    L.new(math_node("SUBTRACT", y, math_node("MULTIPLY", puff, DUST_PUFF)), comb.inputs[1])
+    L.new(math_node("ADD", pz, math_node("MULTIPLY", nz, spread)), comb.inputs[2])
+
+    noise = N.new("ShaderNodeTexNoise")
+    noise.noise_dimensions = "4D"
+    noise.inputs["Scale"].default_value = 1.5
+    noise.inputs["Detail"].default_value = 1.0
+    L.new(comb.outputs[0], noise.inputs["Vector"])
+    L.new(math_node("MULTIPLY", gin.outputs["Time"], 0.06), noise.inputs["W"])
+    centred = N.new("ShaderNodeVectorMath")
+    centred.operation = "SUBTRACT"
+    L.new(noise.outputs["Color"], centred.inputs[0])
+    centred.inputs[1].default_value = (0.5, 0.5, 0.5)
+    wander = N.new("ShaderNodeVectorMath")
+    wander.operation = "SCALE"
+    L.new(centred.outputs[0], wander.inputs[0])
+    wander.inputs["Scale"].default_value = 0.12
+    moved = N.new("ShaderNodeVectorMath")
+    moved.operation = "ADD"
+    L.new(comb.outputs[0], moved.inputs[0])
+    L.new(wander.outputs[0], moved.inputs[1])
+
+    set_pos = N.new("GeometryNodeSetPosition")
+    L.new(points.outputs[0], set_pos.inputs["Geometry"])
+    L.new(moved.outputs[0], set_pos.inputs["Position"])
+
+    mote = N.new("GeometryNodeMeshIcoSphere")
+    mote.inputs["Radius"].default_value = 1.0
+    mote.inputs["Subdivisions"].default_value = 1
+    mat_node = N.new("GeometryNodeSetMaterial")
+    L.new(mote.outputs["Mesh"], mat_node.inputs["Geometry"])
+    dust_mat = make_material("DustMat", base=(0.04, 0.04, 0.04, 1), rough=0.22)  # dark: glints, not blobs
+    mat_node.inputs["Material"].default_value = dust_mat
+
+    rand_size = N.new("FunctionNodeRandomValue")
+    rand_size.data_type = "FLOAT"
+    rand_size.inputs["Min"].default_value = DUST_SIZE[0]
+    rand_size.inputs["Max"].default_value = DUST_SIZE[1]
+    rand_size.inputs["Seed"].default_value = 3
+
+    inst = N.new("GeometryNodeInstanceOnPoints")
+    L.new(set_pos.outputs["Geometry"], inst.inputs["Points"])
+    L.new(mat_node.outputs["Geometry"], inst.inputs["Instance"])
+    L.new(rand_size.outputs["Value"], inst.inputs["Scale"])
+    L.new(inst.outputs["Instances"], gout.inputs["Geometry"])
+
+    obj = new_object("Dust", bpy.data.meshes.new("Dust"))
+    mod = obj.modifiers.new("Dust", "NODES")
+    mod.node_group = ng
+    obj.data.materials.append(dust_mat)
+    return obj
+
+
+DUST_STREAM = 1.0  # multiplier on Gust (metres of air the cones have moved) for the column stream
+DUST_PUFF = 0.05  # metres a mote right in front of a cone jumps on a full hit
+DUST_SPREAD = 0.025  # metres it spreads outward at the same time
+build_dust(front_y, woofer_x, woofer_z_mid, woofer_z_half)
+
+# world: black to camera and to lighting. Raise WORLD_STRENGTH to bring back the studio HDRI
+# as soft fill / reflections. --------------------------------------------------------------
+WORLD_STRENGTH = 0.0
 world = bpy.data.worlds.new("VoidWorld")
 scene.world = world
 world.use_nodes = True
-bg = world.node_tree.nodes["Background"]
-if os.path.exists(HDRI):
-    env = world.node_tree.nodes.new("ShaderNodeTexEnvironment")
+wn, wl = world.node_tree.nodes, world.node_tree.links
+bg = wn["Background"]
+black = wn.new("ShaderNodeBackground")
+black.inputs["Color"].default_value = (0, 0, 0, 1)
+black.inputs["Strength"].default_value = 0.0
+light_path = wn.new("ShaderNodeLightPath")
+mix = wn.new("ShaderNodeMixShader")
+wl.new(light_path.outputs["Is Camera Ray"], mix.inputs["Fac"])
+wl.new(bg.outputs["Background"], mix.inputs[1])
+wl.new(black.outputs["Background"], mix.inputs[2])
+wl.new(mix.outputs["Shader"], wn["World Output"].inputs["Surface"])
+bg.inputs["Strength"].default_value = WORLD_STRENGTH
+if WORLD_STRENGTH > 0 and os.path.exists(HDRI):
+    env = wn.new("ShaderNodeTexEnvironment")
     env.image = bpy.data.images.load(HDRI)
-    world.node_tree.links.new(env.outputs["Color"], bg.inputs["Color"])
-    bg.inputs["Strength"].default_value = 0.25
+    wl.new(env.outputs["Color"], bg.inputs["Color"])
 else:
-    bg.inputs["Color"].default_value = (0.004, 0.005, 0.006, 1)
-    print("note: HDRI not found — run: node scripts/fetch-assets.mjs blender/scenes/void.manifest.json")
+    bg.inputs["Color"].default_value = (0, 0, 0, 1)
+scene.eevee.use_raytracing = False
+scene.eevee.use_fast_gi = False
+
+# motion blur: the per-frame cone vibration from apply_drive smears like a real driver
+scene.render.use_motion_blur = True
+scene.render.motion_blur_shutter = 0.5
+scene.eevee.motion_blur_steps = 3  # real time slices: the cone moves along the view axis, which vector blur cannot show
+
+
+# smoke: a procedural volume the woofers shove forward ---------------------------------------
+# apply_drive keys three Value nodes per frame: Push (kick transient, bends the smoke out of
+# the woofers), Drift (running sum of bass, the whole cloud creeps toward camera) and Time
+# (slow turbulence). No simulation bake, so it renders the same way for every track.
+def build_smoke(front, wx, wz_mid, wz_half):
+    # y -1.0 .. +0.02: stops short of the wide camera, and ends just behind the baffle so
+    # nothing lit sits behind the slate (it would silhouette)
+    bpy.ops.mesh.primitive_cube_add(size=1, location=(0, -0.49, 0.10))
+    smoke = bpy.context.object
+    smoke.name = "Smoke"
+    smoke.scale = (1.5, 1.02, 1.4)
+    m = bpy.data.materials.new("SmokeMat")
+    m.use_nodes = True
+    nt = m.node_tree
+    N, L = nt.nodes, nt.links
+    N.remove(N["Principled BSDF"])
+    out_node = N["Material Output"]
+
+    def math_node(op, a, b=None):
+        n = N.new("ShaderNodeMath")
+        n.operation = op
+        for i, v in enumerate((a, b)):
+            if v is None:
+                continue
+            if isinstance(v, (int, float)):
+                n.inputs[i].default_value = v
+            else:
+                L.new(v, n.inputs[i])
+        return n.outputs[0]
+
+    def map_range(v, fmin, fmax, tmin, tmax):
+        n = N.new("ShaderNodeMapRange")
+        n.interpolation_type = "SMOOTHSTEP"
+        n.clamp = True
+        L.new(v, n.inputs["Value"])
+        for key, val in (("From Min", fmin), ("From Max", fmax), ("To Min", tmin), ("To Max", tmax)):
+            n.inputs[key].default_value = val
+        return n.outputs["Result"]
+
+    def value(name):
+        n = N.new("ShaderNodeValue")
+        n.name = n.label = name
+        n.outputs[0].default_value = 0.0
+        return n.outputs[0]
+
+    push, drift, time = value("Push"), value("Drift"), value("Time")
+
+    pos = N.new("ShaderNodeNewGeometry").outputs["Position"]
+    sep = N.new("ShaderNodeSeparateXYZ")
+    L.new(pos, sep.inputs[0])
+    px, py, pz = sep.outputs[0], sep.outputs[1], sep.outputs[2]
+
+    # jet mask: 1 on the woofer axes just in front of the baffle, 0 away from them
+    dx = math_node("SUBTRACT", px, wx)
+    dz = math_node("SUBTRACT", math_node("ABSOLUTE", math_node("SUBTRACT", pz, wz_mid)), wz_half)
+    r = math_node("SQRT", math_node("ADD", math_node("MULTIPLY", dx, dx), math_node("MULTIPLY", dz, dz)))
+    radial = map_range(r, 0.03, 0.17, 1.0, 0.0)
+    ahead = math_node("SUBTRACT", front, py)  # metres in front of the baffle
+    axial = math_node("MULTIPLY", map_range(ahead, -0.02, 0.01, 0.0, 1.0), map_range(ahead, 0.05, 0.75, 1.0, 0.0))
+    jet = math_node("MULTIPLY", radial, axial)
+    kick = math_node("MULTIPLY", push, jet)
+
+    # sample the noise at a shifted point: a +y offset slides the pattern toward the camera (-y)
+    shove = math_node("ADD", drift, math_node("MULTIPLY", kick, 0.09))
+    comb = N.new("ShaderNodeCombineXYZ")
+    L.new(shove, comb.inputs["Y"])
+    coord = N.new("ShaderNodeVectorMath")
+    coord.operation = "ADD"
+    L.new(pos, coord.inputs[0])
+    L.new(comb.outputs[0], coord.inputs[1])
+
+    noise = N.new("ShaderNodeTexNoise")
+    noise.noise_dimensions = "4D"
+    noise.inputs["Scale"].default_value = 2.4
+    noise.inputs["Detail"].default_value = 6.0
+    noise.inputs["Roughness"].default_value = 0.58
+    noise.inputs["Distortion"].default_value = 0.35
+    L.new(coord.outputs[0], noise.inputs["Vector"])
+    L.new(math_node("MULTIPLY", time, 0.07), noise.inputs["W"])
+    wisps = map_range(noise.outputs["Fac"], 0.5, 0.85, 0.0, 1.0)
+
+    # large, slow clumps so the smoke has gaps of clean black between banks
+    clumps = N.new("ShaderNodeTexNoise")
+    clumps.noise_dimensions = "4D"
+    clumps.inputs["Scale"].default_value = 0.9
+    clumps.inputs["Detail"].default_value = 1.0
+    L.new(coord.outputs[0], clumps.inputs["Vector"])
+    L.new(math_node("MULTIPLY", time, 0.03), clumps.inputs["W"])
+    wisps = math_node("MULTIPLY", wisps, map_range(clumps.outputs["Fac"], 0.42, 0.62, 0.0, 1.0))
+
+    # fade to nothing at the box walls so the domain never reads as a shape
+    gen = N.new("ShaderNodeTexCoord").outputs["Generated"]
+    inv = N.new("ShaderNodeVectorMath")
+    inv.operation = "SUBTRACT"
+    inv.inputs[0].default_value = (1, 1, 1)
+    L.new(gen, inv.inputs[1])
+    edge = N.new("ShaderNodeVectorMath")
+    edge.operation = "MINIMUM"
+    L.new(gen, edge.inputs[0])
+    L.new(inv.outputs[0], edge.inputs[1])
+    esep = N.new("ShaderNodeSeparateXYZ")
+    L.new(edge.outputs[0], esep.inputs[0])
+    wall = math_node("MINIMUM", math_node("MINIMUM", esep.outputs[0], esep.outputs[1]), esep.outputs[2])
+    fade = map_range(wall, 0.0, 0.2, 0.0, 1.0)
+
+    base = value("Density")
+    base.node.outputs[0].default_value = SMOKE_DENSITY
+    thickness = math_node("MULTIPLY", base, math_node("ADD", 1.0, math_node("MULTIPLY", kick, 2.0)))
+    density = math_node("MULTIPLY", math_node("MULTIPLY", wisps, fade), thickness)
+
+    vol = N.new("ShaderNodeVolumePrincipled")
+    vol.inputs["Color"].default_value = (0.8, 0.8, 0.82, 1)
+    vol.inputs["Anisotropy"].default_value = 0.45  # forward scatter: backlights bloom through it
+    L.new(density, vol.inputs["Density"])
+    L.new(vol.outputs["Volume"], out_node.inputs["Volume"])
+    smoke.data.materials.append(m)
+    return smoke
+
+
+SMOKE_DENSITY = 0.6
+build_smoke(front_y, woofer_x, woofer_z_mid, woofer_z_half)
+ee = scene.eevee
+ee.use_volumetric_shadows = True
+ee.volumetric_tile_size = "4"
+ee.volumetric_samples = 96
+ee.use_volume_custom_range = True
+ee.volumetric_start = 0.1
+ee.volumetric_end = 3.0
+
+# compositor: the lens finish — bloom on the logo and glints, a touch of chromatic aberration
+# and barrel distortion, a vignette, film grain (apply_drive re-seeds it every frame) and a
+# gentle S-curve. Cheap enough to stay on for drafts. ----------------------------------------
+COMP_BLOOM = 0.12
+COMP_CHROMATIC = 0.02
+COMP_VIGNETTE = 0.45  # how dark the corners go (0 = off)
+COMP_GRAIN = 0.03
+
+
+def build_compositor():
+    ng = bpy.data.node_groups.new("VoidComp", "CompositorNodeTree")
+    scene.compositing_node_group = ng
+    scene.render.use_compositing = True
+    ng.interface.new_socket("Image", in_out="OUTPUT", socket_type="NodeSocketColor")
+    N, L = ng.nodes, ng.links
+    img = N.new("CompositorNodeRLayers").outputs["Image"]
+
+    glare = N.new("CompositorNodeGlare")
+    glare.inputs["Type"].default_value = "Bloom"
+    glare.inputs["Highlights Threshold"].default_value = 1.0
+    glare.inputs["Strength"].default_value = COMP_BLOOM
+    L.new(img, glare.inputs["Image"])
+    img = glare.outputs["Image"]
+
+    lens = N.new("CompositorNodeLensdist")
+    lens.inputs["Distortion"].default_value = 0.012
+    lens.inputs["Dispersion"].default_value = COMP_CHROMATIC
+    L.new(img, lens.inputs["Image"])
+    img = lens.outputs["Image"]
+
+    curve = N.new("CompositorNodeCurveRGB")
+    c = curve.mapping.curves[3]  # combined
+    c.points.new(0.25, 0.22)
+    c.points.new(0.75, 0.78)
+    curve.mapping.update()
+    L.new(img, curve.inputs["Image"])
+    img = curve.outputs["Image"]
+
+    if COMP_VIGNETTE > 0:
+        mask = N.new("CompositorNodeEllipseMask")
+        mask.inputs["Size"].default_value = (1.15, 1.15)
+        blur = N.new("CompositorNodeBlur")
+        blur.inputs["Size"].default_value = (420, 420)
+        L.new(mask.outputs["Mask"], blur.inputs["Image"])
+        lift = N.new("ShaderNodeMapRange")
+        lift.inputs["To Min"].default_value = 1.0 - COMP_VIGNETTE
+        L.new(blur.outputs["Image"], lift.inputs["Value"])
+        vig = N.new("ShaderNodeMix")
+        vig.data_type = "RGBA"
+        vig.blend_type = "MULTIPLY"
+        vig.inputs["Factor"].default_value = 1.0
+        L.new(img, vig.inputs["A"])
+        L.new(lift.outputs["Result"], vig.inputs["B"])
+        img = vig.outputs["Result"]
+
+    if COMP_GRAIN > 0:
+        noise = N.new("ShaderNodeTexNoise")
+        noise.name = noise.label = "Grain"
+        noise.noise_dimensions = "4D"
+        noise.inputs["Scale"].default_value = 1200
+        noise.inputs["Detail"].default_value = 0.0
+        grain = N.new("ShaderNodeMapRange")
+        grain.inputs["To Min"].default_value = -COMP_GRAIN
+        grain.inputs["To Max"].default_value = COMP_GRAIN
+        L.new(noise.outputs["Fac"], grain.inputs["Value"])
+        add = N.new("ShaderNodeMix")
+        add.data_type = "RGBA"
+        add.blend_type = "ADD"
+        add.inputs["Factor"].default_value = 1.0
+        L.new(img, add.inputs["A"])
+        L.new(grain.outputs["Result"], add.inputs["B"])
+        img = add.outputs["Result"]
+
+    L.new(img, N.new("NodeGroupOutput").inputs[0])
+
+
+build_compositor()
 
 out = os.path.join(HERE, "scenes", "void.blend")
 os.makedirs(os.path.dirname(out), exist_ok=True)

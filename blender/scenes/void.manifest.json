@@ -2,6 +2,7 @@
   "scene": "void",
   "assets": [
     { "id": "polyhaven:studio_small_09", "kind": "hdri", "res": "2k" },
-    { "id": "ambientcg:Plastic006", "res": "2K" }
+    { "id": "ambientcg:Plastic012A", "res": "4K" },
+    { "id": "url:pmc/PMC6-2.stl", "url": "https://pmc-speakers.com/wp-content/uploads/2024/05/PMC6-2.stl" }
   ]
 }

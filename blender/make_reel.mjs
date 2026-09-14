@@ -1,6 +1,6 @@
 // Excursion — one command from drive.json to reel.mp4.
 //
-//   node blender/make_reel.mjs blender/jobs/track.drive.json [--engine eevee|cycles] [--draft] [--audio path]
+//   node blender/make_reel.mjs blender/jobs/track.drive.json [--engine eevee|cycles] [--draft] [--audio path] [--sweep deg] [--shutter 0..1] [--slate] [--crf n]
 //
 // Steps: fetch scene assets -> build scene if missing -> apply drive + render frames -> ffmpeg mux.
 // Audio is resolved from drive.audio.file sitting NEXT TO the drive.json (or pass --audio).
@@ -65,6 +65,9 @@ const applyArgs = [
   "--", path.resolve(drivePath), "--render", "--out", framesDir, "--engine", engine,
 ];
 if (draft) applyArgs.push("--draft");
+if (opt("--sweep")) applyArgs.push("--sweep", opt("--sweep"));
+if (opt("--shutter")) applyArgs.push("--shutter", opt("--shutter"));
+if (flag("--slate")) applyArgs.push("--slate");
 await run(blender, applyArgs, "apply drive + render");
 
 await mkdir(outDir, { recursive: true });
@@ -81,7 +84,7 @@ if (await exists(audio)) {
 } else {
   console.warn(`warning: audio not found at ${audio} — writing silent video (use --audio)`);
 }
-ffmpegArgs.push("-c:v", "libx264", "-crf", "18", "-pix_fmt", "yuv420p", reel);
+ffmpegArgs.push("-c:v", "libx264", "-crf", opt("--crf", "20"), "-pix_fmt", "yuv420p", reel);
 await run("ffmpeg", ffmpegArgs, "mux reel");
 
 console.log(`\ndone: ${reel}`);

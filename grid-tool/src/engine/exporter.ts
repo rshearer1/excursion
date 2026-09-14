@@ -9,6 +9,10 @@ export interface DriveFrame {
   high: number;
   onset: 0 | 1;
   beatPhase: number;
+  /** Woofer cone extremes during this frame's exposure, time-ordered, -1..1 (see cone.ts). */
+  cone?: [number, number];
+  /** Mid dome extremes, same convention, from the mid band through MID_DOME. */
+  dome?: [number, number];
 }
 
 export interface DriveJson {
@@ -50,6 +54,10 @@ export interface BuildDriveInput {
   scene: string;
   mood: string;
   features: FrameFeatures;
+  /** Per-frame cone motion from coneMotion(); frames carry it as `cone` when given. */
+  cone?: [number, number][];
+  /** Per-frame mid-dome motion from coneMotion(pcm, sr, MID_DOME); frames carry it as `dome`. */
+  dome?: [number, number][];
   range?: { start: number; end: number };
   sections?: { t: number; kind: string }[];
   cuts?: number[];
@@ -59,6 +67,7 @@ export interface BuildDriveInput {
 }
 
 const round6 = (x: number): number => Math.round(x * 1e6) / 1e6;
+const round4 = (x: number): number => Math.round(x * 1e4) / 1e4 + 0;
 
 /** Assemble the drive.json payload the Blender side consumes. */
 export function buildDrive(input: BuildDriveInput): DriveJson {
@@ -71,6 +80,8 @@ export function buildDrive(input: BuildDriveInput): DriveJson {
     scene,
     mood,
     features,
+    cone,
+    dome,
     range,
     sections = [],
     cuts = [],
@@ -104,6 +115,8 @@ export function buildDrive(input: BuildDriveInput): DriveJson {
       high: round6(high[f]!),
       onset: fluxNorm[f]! > onsetThreshold ? 1 : 0,
       beatPhase: phase >= 1 ? 0.999999 : phase,
+      ...(cone?.[f] ? { cone: [round4(cone[f]![0]), round4(cone[f]![1])] as [number, number] } : {}),
+      ...(dome?.[f] ? { dome: [round4(dome[f]![0]), round4(dome[f]![1])] as [number, number] } : {}),
     });
   }
 

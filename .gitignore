@@ -3,3 +3,5 @@ blender/jobs/
 frames/
 out/
 *.blend1
+blender/scenes/*.blend
+node_modules/

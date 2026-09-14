@@ -7,6 +7,7 @@ import {
 } from "./engine/grid";
 import { extractFeatures } from "./engine/features";
 import { buildDrive } from "./engine/exporter";
+import { coneMotion, MID_DOME } from "./engine/cone";
 import { synthTestTrack } from "./engine/synth";
 import { computeCuts } from "./engine/cuts";
 import { envelopeFollow } from "./engine/envelope";
@@ -529,6 +530,8 @@ async function exportDrive(): Promise<void> {
       scene: sceneSel.value,
       mood: moodSel.value,
       features,
+      cone: coneMotion(track.mono, track.buffer.sampleRate, { fps }),
+      dome: coneMotion(track.mono, track.buffer.sampleRate, { fps, ...MID_DOME }),
       range,
       sections: sortedMarkers,
       cuts: computeCuts(grid, track.buffer.duration, {

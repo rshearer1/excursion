@@ -2,6 +2,7 @@ import { describe, test, expect, beforeAll } from "vitest";
 import { buildDrive, type DriveJson } from "./exporter";
 import { extractFeatures } from "./features";
 import { synthTestTrack } from "./synth";
+import { coneMotion } from "./cone";
 import type { Grid } from "./grid";
 
 const SR = 44100;
@@ -30,6 +31,30 @@ beforeAll(() => {
 });
 
 describe("buildDrive", () => {
+  test("carries per-frame cone motion when given, and omits it otherwise", () => {
+    const signal = synthTestTrack({ bpm: 140, offsetMs: 150, bars: 1, sampleRate: SR });
+    const features = extractFeatures(signal, SR, { fps: 30 });
+    const cone = coneMotion(signal, SR, { fps: 30 });
+    const base = {
+      fileName: "t.wav",
+      sha1: "x",
+      durationSec: signal.length / SR,
+      grid,
+      fps: 30,
+      scene: "void",
+      mood: "smoke",
+      features,
+    };
+    const withCone = buildDrive({ ...base, cone });
+    expect(withCone.frames).toHaveLength(cone.length);
+    for (const fr of withCone.frames) {
+      expect(fr.cone).toHaveLength(2);
+      for (const v of fr.cone!) expect(Math.abs(v)).toBeLessThanOrEqual(1);
+    }
+    expect(withCone.frames.some((fr) => Math.abs(fr.cone![1] - fr.cone![0]) > 0.2)).toBe(true);
+    expect(buildDrive(base).frames[0]).not.toHaveProperty("cone");
+  });
+
   test("carries audio, grid, scene and mood metadata through", () => {
     expect(drive.audio).toEqual({ file: "test.wav", sha1: "abc123", duration });
     expect(drive.grid).toEqual({ bpm: 140, offsetMs: 150, beatsPerBar: 4, halftime: true });
