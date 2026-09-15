@@ -1,0 +1,57 @@
+{
+  "model": "PMC8-2INCSTAND",
+  "stl": "assets/cache/pmc/PMC8-2INCSTAND.stl",
+  "size_mm": [
+    551.0,
+    1623.8,
+    429.2
+  ],
+  "front_z_mm": 429.2,
+  "faces": 1616034,
+  "drivers": [
+    {
+      "kind": "woofer",
+      "x_mm": 150.0,
+      "y_mm": 1490.9,
+      "r_cone_mm": 64.0,
+      "r_surround_mm": 99.0,
+      "r_cut_mm": 104.0,
+      "depth_mm": 19.4,
+      "plate_depth_mm": 4.6,
+      "back_mm": 24.0
+    },
+    {
+      "kind": "tweeter",
+      "x_mm": 364.0,
+      "y_mm": 1477.3,
+      "r_cone_mm": 7.0,
+      "r_surround_mm": 11.0,
+      "r_cut_mm": 12.0,
+      "depth_mm": 10.5,
+      "plate_depth_mm": 16.5,
+      "back_mm": 15.6
+    },
+    {
+      "kind": "mid",
+      "x_mm": 364.0,
+      "y_mm": 1356.6,
+      "r_cone_mm": 16.0,
+      "r_surround_mm": 26.0,
+      "r_cut_mm": 27.0,
+      "depth_mm": 13.5,
+      "plate_depth_mm": 25.5,
+      "back_mm": 25.5
+    },
+    {
+      "kind": "woofer",
+      "x_mm": 150.0,
+      "y_mm": 1222.9,
+      "r_cone_mm": 64.0,
+      "r_surround_mm": 99.0,
+      "r_cut_mm": 104.0,
+      "depth_mm": 19.4,
+      "plate_depth_mm": 4.6,
+      "back_mm": 24.0
+    }
+  ]
+}

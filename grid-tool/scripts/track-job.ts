@@ -2,7 +2,12 @@
 //
 //   npm run track-job -- <track.wav> [--start s --end s] [--bpm n] [--offset ms]
 //                        [--cuts bars] [--mood smoke|neon|clean] [--name slug]
-//                        [--drop s[,s]] [--break s[,s]]
+//                        [--drop s[,s]] [--break s[,s]] [--auto seconds]
+//
+// --auto 20 picks the reel window for you: it finds the first drop (where the bass level
+// first climbs to 70 % of the track's peak), starts a bar before it on a downbeat, runs for
+// the given seconds, and adds a drop marker there unless --drop was given. The bass level is
+// averaged over 4 s so an opening hit followed by an intro does not count.
 //
 // Copies the WAV into blender/jobs/<slug>.wav and writes <slug>.drive.json beside it, using
 // the same feature extraction, cut cadence and drive builder the grid tool calls. Without
@@ -204,20 +209,48 @@ if (bpmArg !== undefined && offsetArg !== undefined) {
   );
 }
 
-const start = num("--start");
-const end = num("--end");
-const range =
-  start !== undefined && end !== undefined && end > start
-    ? { start, end: Math.min(end, durationSec) }
-    : undefined;
+
+const features = extractFeatures(mono, sampleRate, { fps: FPS });
+
+// --auto N: choose the window around the first drop from the bass envelope
+let autoDrop: number | undefined;
+let start = num("--start");
+let end = num("--end");
+const autoLen = num("--auto");
+if (autoLen !== undefined && (start === undefined || end === undefined)) {
+  const bass = features.bass;
+  const win = 4 * FPS; // 4 s moving average: a single opening hit does not count as a drop
+  const avg = new Float32Array(bass.length);
+  let acc = 0;
+  for (let i = 0; i < bass.length; i++) {
+    acc += bass[i]!;
+    if (i >= win) acc -= bass[i - win]!;
+    avg[i] = acc / Math.min(i + 1, win);
+  }
+  const full = avg.subarray(win); // only complete windows count
+  const peak = Math.max(...full);
+  const dropFrame = win + full.findIndex((v) => v >= 0.7 * peak);
+  const dropSec = Math.max(0, (dropFrame - win / 2) / FPS); // the average lags the edge by half a window
+  const bar = (60 / grid.bpm) * grid.beatsPerBar;
+  const offset = grid.offsetMs / 1000;
+  const barsBefore = Math.floor((dropSec - offset) / bar) - 1;
+  start = Math.max(0, offset + barsBefore * bar);
+  end = Math.min(durationSec, start + autoLen);
+  autoDrop = dropSec;
+  console.log(`auto window: drop at ${dropSec.toFixed(2)} s -> range ${start.toFixed(2)}-${end.toFixed(2)} s`);
+}
 
 // --drop 26.5,58 / --break 40: section markers the scene reacts to (smoke, lights, camera)
 const sections = [
   ...(opt("--drop") ?? "").split(",").filter(Boolean).map((t) => ({ t: Number(t), kind: "drop" })),
   ...(opt("--break") ?? "").split(",").filter(Boolean).map((t) => ({ t: Number(t), kind: "break" })),
 ].sort((a, b) => a.t - b.t);
+if (autoDrop !== undefined && !sections.some((s) => s.kind === "drop")) sections.push({ t: autoDrop, kind: "drop" });
+const range =
+  start !== undefined && end !== undefined && end > start
+    ? { start, end: Math.min(end, durationSec) }
+    : undefined;
 
-const features = extractFeatures(mono, sampleRate, { fps: FPS });
 const drive = buildDrive({
   fileName: `${slug}.wav`,
   sha1: createHash("sha1").update(bytes).digest("hex"),

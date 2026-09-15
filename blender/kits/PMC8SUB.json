@@ -1,0 +1,24 @@
+{
+  "model": "PMC8SUB",
+  "stl": "assets/cache/pmc/PMC8SUB.stl",
+  "size_mm": [
+    551.0,
+    266.0,
+    441.0
+  ],
+  "front_z_mm": 441.0,
+  "faces": 122434,
+  "drivers": [
+    {
+      "kind": "woofer",
+      "x_mm": 150.0,
+      "y_mm": 133.0,
+      "r_cone_mm": 64.0,
+      "r_surround_mm": 99.0,
+      "r_cut_mm": 104.0,
+      "depth_mm": 19.2,
+      "plate_depth_mm": 4.7,
+      "back_mm": 23.9
+    }
+  ]
+}

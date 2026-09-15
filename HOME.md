@@ -24,7 +24,8 @@ One-time setup, then the pipeline is: grid a track in the browser → one comman
 node scripts/fetch-assets.mjs blender/scenes/void.manifest.json
 ```
 Downloads the studio HDRI (Poly Haven, CC0), the Plastic012A 4K PBR set (ambientCG, CC0: fine-grain matte black, colour + roughness + normal + displacement-as-bump) and
-PMC's official **PMC6-2 CAD model** (pmc-speakers.com/3d-cad-downloads) into
+PMC's official CAD models (pmc-speakers.com/3d-cad-downloads): **PMC6-2**, PMC6, the PMC8-2
+stand, PMC8-2 SUB, PMC8 SUB and PMC8-2 on its stand (80 MB) into
 `assets/cache/`. `make_reel` also runs this automatically. Then build the scene once:
 
 ```
@@ -55,6 +56,9 @@ when you know the grid pass `--bpm 140 --offset 0` (offset = first downbeat in m
 `--cuts <bars>` (default 2), `--mood`, `--name`. Section markers:
 `--drop 26.57` / `--break 40` (comma-separate several) — a drop thickens the smoke, flares the
 red lights, slams the logo and the camera push-in; a break thins the smoke and dims the key.
+`--auto 20` picks the window itself: a bar before the first drop (where the 4 s bass average
+first reaches 70 % of its peak), 20 s long, with a drop marker. MP3s: convert first with
+`ffmpeg -i track.mp3 -ar 48000 track.wav`.
 
 ## 3. Per track
 
@@ -88,6 +92,27 @@ red lights, slams the logo and the camera push-in; a break thins the smoke and d
 | build_scene / apply_drive (Blender) | home | yes (fast with it) |
 | ffmpeg mux | anywhere | no |
 
+## The rig (phase 5 — the PMC family, 2026-09-15)
+
+Every speaker is built from a **kit**: `blender/kits/<Model>.json`, written by
+`measure_kit.py` from the STL (cabinet size, front face, and each driver's centre, cone,
+surround and cut radii — found from a ray-cast depth map of the baffle; dome centres come from
+`DOME_HINTS`). `build_speaker()` in `build_scene.py` imports the STL, cuts every driver out,
+keys it and places it. Re-measure a model with:
+
+```
+blender -b --factory-startup -P blender/measure_kit.py -- assets/cache/pmc/PMC6.stl
+```
+
+The hero PMC6-2 sits at the origin on a PMC8-2 stand (scaled to its width); the `RIG` table
+places the rest: a second PMC6-2 on a stand 1.8 m to the right, a PMC8-2 on its stand outside
+each (toed in 12 degrees, set back 0.35 m), and in the centre a PMC8-2 SUB with the PMC8 SUB
+and the PMC6 stacked on it. Every woofer and mid dome in the rig moves with the track; object
+names are prefixed (`R6-2_Woofer`, `L8-2_Mid`, `SUB_Woofer_1`, ...) and `apply_drive` binds
+by name. Models that are not cached are skipped. `Cam4_Rig` (28 mm, 6 m back) joins the cut
+rotation to show the whole wall. The hero's mid/tweeter plate carries a machined honeycomb
+relief (`PlateMat`, generated tile in `assets/generated/`).
+
 ## The scene (phase 3 — real speaker, done 2026-09-14)
 
 `build_scene.py` imports the PMC6-2 STL (one closed solid, mm, cones modelled into the
@@ -100,7 +125,8 @@ box-projected cabinet material (the STL has no UVs; `CABINET_TEXTURE` picks the 
 | `Cabinet` | body + tweeter plate + mid waveguide + vents | — |
 | `Woofer_L` / `Woofer_R` | upper / lower cone pieces, shape key `Excursion` (14 mm piston, -1..1, smooth falloff across the surround). `WooferMat`: the cabinet finish with a woven-fibre cone inside `cone_r` (`WEAVE_*`) | `frames[].cone`: audio-driven, see below |
 | `Mid` | the 75 mm mid dome cut out of its waveguide, 3 mm key, same woven material | `frames[].dome`: the mid band through `MID_DOME` |
-| `Floor` | dark satin ground under the speaker: contact shadow, rim reflections | — |
+| `Floor` | dark satin ground under the rig (1.29 m below the hero, at the stand feet) | — |
+| `Stand_L`, `R6-2_Stand` | PMC8-2 stands under the two PMC6-2s | — |
 | `Tweeter` | dome cap, dark metallic satin (no emission) | — |
 | `Badge` + `Logo` | satin plate filling the PMC badge slot with `BIGHECK` booleaned 0.8 mm into it and an emissive inlay in the cut (`LOGO_TEXT`, Impact/Arial Black from Windows fonts) | `beats[]`: idle glow, flash per beat, bigger on downbeats |
 | `Slate` | orange panel above the speaker; hidden unless you pass `--slate` | beats (sync proof) |

@@ -114,18 +114,17 @@ if frames and "cone" in frames[0]:
 else:
     cone_points = [(i + 1, b) for i, b in enumerate(bass)]
     cone_source = "bass level (old drive without cone data — re-export for audio-driven motion)"
-for name in ("Woofer_L", "Woofer_R"):
-    obj = bpy.data.objects.get(name)
-    if obj is not None and obj.data.shape_keys is not None:
-        obj.data.shape_keys.key_blocks["Excursion"].slider_min = -1.0  # the cone travels in too
-        fcurve_fill(obj.data.shape_keys, 'key_blocks["Excursion"].value', points=cone_points)
-    else:
-        print(f"warning: {name} missing or has no shape keys — skipped")
-print(f"woofers: {cone_source}")
+woofer_objs = [o for o in scene.objects if "Woofer" in o.name and o.type == "MESH" and o.data.shape_keys is not None]
+for obj in woofer_objs:
+    obj.data.shape_keys.key_blocks["Excursion"].slider_min = -1.0  # the cone travels in too
+    fcurve_fill(obj.data.shape_keys, 'key_blocks["Excursion"].value', points=cone_points)
+if not woofer_objs:
+    print("warning: no Woofer objects with shape keys — nothing to drive")
+print(f"woofers: {len(woofer_objs)} cones, {cone_source}")
 
 # mid dome: the mid band through its own driver model (frames[].dome) ----
-mid = bpy.data.objects.get("Mid")
-if mid is not None and mid.data.shape_keys is not None:
+mid_objs = [o for o in scene.objects if "Mid" in o.name and o.type == "MESH" and o.data.shape_keys is not None]
+if mid_objs:
     if frames and "dome" in frames[0]:
         dome_points = []
         for i, f in enumerate(frames):
@@ -136,9 +135,10 @@ if mid is not None and mid.data.shape_keys is not None:
     else:
         dome_points = [(i + 1, f["mid"]) for i, f in enumerate(frames)]
         dome_source = "mid level (re-export the drive for audio-driven motion)"
-    mid.data.shape_keys.key_blocks["Excursion"].slider_min = -1.0
-    fcurve_fill(mid.data.shape_keys, 'key_blocks["Excursion"].value', points=dome_points)
-    print(f"mid dome: {dome_source}")
+    for mid in mid_objs:
+        mid.data.shape_keys.key_blocks["Excursion"].slider_min = -1.0
+        fcurve_fill(mid.data.shape_keys, 'key_blocks["Excursion"].value', points=dome_points)
+    print(f"mid domes: {len(mid_objs)}, {dome_source}")
 
 
 # smoke: kicks shove it out of the woofers, bass keeps the cloud drifting ----

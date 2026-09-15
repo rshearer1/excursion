@@ -1,0 +1,57 @@
+{
+  "model": "PMC6-2",
+  "stl": "assets/cache/pmc/PMC6-2.stl",
+  "size_mm": [
+    430.0,
+    400.0,
+    367.9
+  ],
+  "front_z_mm": 367.9,
+  "faces": 216212,
+  "drivers": [
+    {
+      "kind": "tweeter",
+      "x_mm": 260.0,
+      "y_mm": 314.0,
+      "r_cone_mm": 7.0,
+      "r_surround_mm": 11.0,
+      "r_cut_mm": 12.0,
+      "depth_mm": 4.0,
+      "plate_depth_mm": 11.1,
+      "back_mm": 10.1
+    },
+    {
+      "kind": "woofer",
+      "x_mm": 107.6,
+      "y_mm": 292.5,
+      "r_cone_mm": 49.0,
+      "r_surround_mm": 70.0,
+      "r_cut_mm": 78.0,
+      "depth_mm": 15.9,
+      "plate_depth_mm": 4.0,
+      "back_mm": 19.9
+    },
+    {
+      "kind": "mid",
+      "x_mm": 260.0,
+      "y_mm": 200.0,
+      "r_cone_mm": 16.0,
+      "r_surround_mm": 26.0,
+      "r_cut_mm": 27.0,
+      "depth_mm": 9.6,
+      "plate_depth_mm": 21.5,
+      "back_mm": 21.5
+    },
+    {
+      "kind": "woofer",
+      "x_mm": 107.6,
+      "y_mm": 107.6,
+      "r_cone_mm": 49.0,
+      "r_surround_mm": 70.0,
+      "r_cut_mm": 78.0,
+      "depth_mm": 15.9,
+      "plate_depth_mm": 4.0,
+      "back_mm": 19.9
+    }
+  ]
+}

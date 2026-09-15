@@ -7,7 +7,7 @@
 # when it is not. Either way the kit-contract object names the pipeline binds to exist:
 #   Cabinet, Woofer_L, Woofer_R, Mid (shape key "Excursion"), Tweeter, Slate, Floor, Smoke (SmokeMat),
 #   Dust (DustField geometry nodes), KeyLight + KeyTarget (moving spot), Badge + Logo (LogoMat)
-# plus cameras Cam1_Wide (scene camera), Cam2_Woofers and Cam3_Macro for drive.json camera cuts,
+# plus cameras Cam1_Wide (scene camera), Cam2_Woofers, Cam3_Macro and Cam4_Rig for drive.json cuts,
 # each with a Focus_* empty carrying a "rack" (focus glides start -> end per shot).
 #
 # The STL is one closed solid in millimetres with the woofer cones modelled into the body
@@ -20,11 +20,13 @@
 #   tweeter   dome centre (260, 314), base r~9.5 at z 359, waveguide floor at z 356
 #   body      430 x 400 x 368, front baffle at z = 360-368
 
+import json
 import math
 import os
 
 import bmesh
 import bpy
+import numpy as np
 from mathutils import Matrix, Vector
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -138,12 +140,15 @@ def plastic_material(name, scale=5.0):
     return m
 
 
-def cone_material(name):
-    """The cabinet plastic with a woven-fibre cone inside each driver piece's cone radius.
+def driver_material(name, kind):
+    """The cabinet plastic with a driver surface inside each piece's cone radius.
 
+    kind "cone": the woofers' fine woven fibre — a dense isotropic micro-bump with a faint
+    crossed-thread grain, slightly glossier than the cabinet.
+    kind "dome": the mid's soft fabric dome — matte, velvety (sheen), no visible pattern.
     The pieces (Woofer_L/R, Mid) carry cone_cx / cone_cz / cone_r as custom properties; the
-    shader reads them with Attribute nodes, so one material serves every driver and the trim
-    ring outside the cone keeps the box-projected cabinet finish (no seam)."""
+    shader reads them with Attribute nodes, so the trim ring outside the cone keeps the
+    box-projected cabinet finish (no seam)."""
     m = plastic_material(name)
     nt = m.node_tree
     N, L = nt.nodes, nt.links
@@ -161,10 +166,10 @@ def cone_material(name):
                 L.new(v, n.inputs[i])
         return n.outputs[0]
 
-    def prop(name):
+    def prop(pname):
         a = N.new("ShaderNodeAttribute")
         a.attribute_type = "OBJECT"
-        a.attribute_name = name
+        a.attribute_name = pname
         return a.outputs["Fac"]
 
     def upstream(socket):
@@ -176,7 +181,6 @@ def cone_material(name):
     dx = math_node("SUBTRACT", sep.outputs[0], prop("cone_cx"))
     dz = math_node("SUBTRACT", sep.outputs[2], prop("cone_cz"))
     r = math_node("SQRT", math_node("ADD", math_node("MULTIPLY", dx, dx), math_node("MULTIPLY", dz, dz)))
-    angle = math_node("ARCTAN2", dz, dx)
     edge = N.new("ShaderNodeMapRange")
     edge.interpolation_type = "SMOOTHSTEP"
     L.new(r, edge.inputs["Value"])
@@ -186,47 +190,61 @@ def cone_material(name):
     edge.inputs["To Max"].default_value = 0.0
     mask = edge.outputs["Result"]
 
-    # the weave: warp along the radius, weft around the angle, over/under from their product
-    rings = math_node("SINE", math_node("MULTIPLY", r, 2 * math.pi * WEAVE_PITCH))
-    spokes = math_node("SINE", math_node("MULTIPLY", angle, WEAVE_SPOKES))
-    height = math_node("ADD", 0.5, math_node("MULTIPLY", 0.5, math_node("MULTIPLY", rings, spokes)))
+    # surface grain: dense noise (fibre), plus for the cone a faint crossed thread pattern from
+    # two high-frequency waves at +-45 degrees — far below the pitch that reads as rings
+    grain = N.new("ShaderNodeTexNoise")
+    grain.inputs["Scale"].default_value = 2200 if kind == "cone" else 1400
+    grain.inputs["Detail"].default_value = 3.0
+    grain.inputs["Roughness"].default_value = 0.6
+    L.new(coord, grain.inputs["Vector"])
+    height = grain.outputs["Fac"]
+    if kind == "cone":
+        diag = math_node("ADD", sep.outputs[0], sep.outputs[2])
+        anti = math_node("SUBTRACT", sep.outputs[0], sep.outputs[2])
+        threads = math_node(
+            "MULTIPLY",
+            math_node("SINE", math_node("MULTIPLY", diag, 2 * math.pi * FIBRE_PITCH)),
+            math_node("SINE", math_node("MULTIPLY", anti, 2 * math.pi * FIBRE_PITCH)),
+        )
+        height = math_node("ADD", math_node("MULTIPLY", height, 0.7), math_node("MULTIPLY", threads, 0.15))
     bump = N.new("ShaderNodeBump")
-    bump.inputs["Strength"].default_value = 0.35
-    bump.inputs["Distance"].default_value = 0.0003
+    bump.inputs["Strength"].default_value = 0.25 if kind == "cone" else 0.12
+    bump.inputs["Distance"].default_value = 0.0002
     L.new(height, bump.inputs["Height"])
 
-    def blend(input_name, data_type, cone_value, blend_type="MIX"):
+    def blend(input_name, data_type, driver_value):
         mix = N.new("ShaderNodeMix")
         mix.data_type = data_type
-        mix.blend_type = blend_type
-        L.new(mask, mix.inputs["Factor"])
-        key = {"RGBA": ("A_Color", "B_Color", "Result_Color"), "FLOAT": ("A_Float", "B_Float", "Result_Float"), "VECTOR": ("A_Vector", "B_Vector", "Result_Vector")}[data_type]
-        a_in, b_in, out = key
-        # ShaderNodeMix exposes typed sockets by identifier; look them up by identifier
-        a_sock = next(s for s in mix.inputs if s.identifier == a_in)
-        b_sock = next(s for s in mix.inputs if s.identifier == b_in)
-        o_sock = next(s for s in mix.outputs if s.identifier == out)
+        ids = {"RGBA": ("A_Color", "B_Color", "Result_Color"), "FLOAT": ("A_Float", "B_Float", "Result_Float"), "VECTOR": ("A_Vector", "B_Vector", "Result_Vector")}[data_type]
+        a_sock = next(s for s in mix.inputs if s.identifier == ids[0])
+        b_sock = next(s for s in mix.inputs if s.identifier == ids[1])
+        o_sock = next(s for s in mix.outputs if s.identifier == ids[2])
+        L.new(mask, next(s for s in mix.inputs if s.identifier == "Factor_Float"))
         src = upstream(bsdf.inputs[input_name])
         if src is not None:
             L.new(src, a_sock)
         else:
             a_sock.default_value = bsdf.inputs[input_name].default_value
-        if isinstance(cone_value, (int, float, tuple)):
-            b_sock.default_value = cone_value
+        if isinstance(driver_value, (int, float, tuple)):
+            b_sock.default_value = driver_value
         else:
-            L.new(cone_value, b_sock)
+            L.new(driver_value, b_sock)
         for link in list(bsdf.inputs[input_name].links):
             L.remove(link)
         L.new(o_sock, bsdf.inputs[input_name])
 
-    blend("Base Color", "RGBA", (0.02, 0.02, 0.022, 1.0))
-    blend("Roughness", "FLOAT", math_node("ADD", 0.42, math_node("MULTIPLY", 0.12, height)))
+    if kind == "cone":
+        blend("Base Color", "RGBA", (0.014, 0.014, 0.016, 1.0))
+        blend("Roughness", "FLOAT", math_node("ADD", 0.38, math_node("MULTIPLY", 0.12, grain.outputs["Fac"])))
+    else:
+        blend("Base Color", "RGBA", (0.008, 0.008, 0.009, 1.0))
+        blend("Roughness", "FLOAT", 0.75)
+        blend("Sheen Weight", "FLOAT", 0.25)  # a little velvety edge glow, as on a fabric dome
     blend("Normal", "VECTOR", bump.outputs["Normal"])
     return m
 
 
-WEAVE_PITCH = 380  # threads per metre along the radius (2.6 mm)
-WEAVE_SPOKES = 96  # threads around the cone
+FIBRE_PITCH = 1600  # crossed threads per metre in the woofer cones (0.6 mm; reads as grain, not rings)
 
 
 def new_object(name, mesh):
@@ -395,65 +413,6 @@ def build_logo(cabinet_mat):
     return badge, text
 
 
-# ---------------------------------------------------------------------------------------
-def build_pmc():
-    bpy.ops.wm.stl_import(filepath=STL, global_scale=0.001)
-    body = bpy.context.selected_objects[0]
-    body.name = "Cabinet"
-    me = body.data
-    me.name = "Cabinet"
-    # bake the importer's object scale into the mesh, centre the box on the origin, then
-    # Y-up -> Z-up so the baffle faces -Y (the camera side)
-    me.transform(
-        Matrix.Rotation(math.pi / 2, 4, "X")
-        @ Matrix.Translation((-0.215, -0.200, -0.184))
-        @ body.matrix_world
-    )
-    body.matrix_world = Matrix.Identity(4)
-    lo = [min(v.co[i] for v in me.vertices) for i in range(3)]
-    hi = [max(v.co[i] for v in me.vertices) for i in range(3)]
-    print("cabinet bounds (m):", [round(x, 3) for x in lo], [round(x, 3) for x in hi])
-
-    bm = bmesh.new()
-    bm.from_mesh(me)
-    bmesh.ops.remove_doubles(bm, verts=bm.verts, dist=1e-5)
-    mark_sharp(bm)
-    bm.to_mesh(me)
-    bm.free()
-    cabinet_mat = plastic_material("CabinetMat")
-    assign(body, cabinet_mat)
-
-    # model-space (mm) measurements -> scene space (m): x = X-215, z = Y-200, y = -(Z-184)
-    front = -0.184
-    woofers = {"Woofer_L": (-0.1075, 0.0925), "Woofer_R": (-0.1075, -0.0925)}  # upper, lower
-    r_cone, r_surround, r_cut = 0.046, 0.075, 0.082  # cut lands on the flat trim ring
-    woofer_mat = cone_material("WooferMat")
-    for name, (cx, cz) in woofers.items():
-        piece = cut_piece(body, name, cx, cz, r_cut, front - 0.02, front + 0.03)
-        add_excursion_key(piece, cx, cz, r_cone, r_surround, y_skin=front + 0.025)
-        piece.data.materials[0] = woofer_mat
-        piece["cone_cx"], piece["cone_cz"], piece["cone_r"] = cx, cz, r_cone
-        print(f"{name}: {len(piece.data.polygons)} faces, excursion key {EXCURSION * 1000:.0f} mm")
-
-    # mid dome: the 75 mm soft dome sits in its waveguide, apex 9.5 mm below the front face and
-    # 22 mm deep at its edge (r 26). Cut inside the groove and give it a small dome key.
-    mx, mz = 0.042, 0.001
-    mid = cut_piece(body, "Mid", mx, mz, 0.027, front - 0.02, front + 0.030)
-    add_excursion_key(mid, mx, mz, 0.016, 0.026, y_skin=front + 0.028, amount=MID_EXCURSION)
-    mid.data.materials[0] = woofer_mat
-    mid["cone_cx"], mid["cone_cz"], mid["cone_r"] = mx, mz, 0.026
-    print(f"Mid: {len(mid.data.polygons)} faces, excursion key {MID_EXCURSION * 1000:.0f} mm")
-
-    tx, tz = 0.045, 0.114
-    tweeter = cut_piece(body, "Tweeter", tx, tz, 0.0105, front - 0.02, front + 0.010)
-    tweeter.data.materials[0] = make_material("TweeterMat", base=(0.02, 0.02, 0.022, 1), rough=0.2)
-    tweeter.data.materials[0].node_tree.nodes["Principled BSDF"].inputs["Metallic"].default_value = 0.6
-    build_logo(cabinet_mat)
-    print(f"Tweeter: {len(tweeter.data.polygons)} faces")
-    print(f"Cabinet: {len(me.polygons)} faces")
-    return body
-
-
 def build_placeholder():
     bpy.ops.mesh.primitive_cube_add(location=(0, 0, 0))
     cabinet = bpy.context.object
@@ -494,21 +453,246 @@ def add_camera(name, location, target, lens):
 
 
 # ---------------------------------------------------------------------------------------
-if os.path.exists(STL):
-    print(f"building around {STL}")
-    cabinet = build_pmc()
-    front_y, top_z, half_w = -0.184, 0.200, 0.215
-    woofer_x, woofer_z_mid, woofer_z_half = -0.1075, 0.0, 0.0925
-    tweeter_xz, badge_xz = (0.045, 0.114), BADGE_CENTRE
+# ---------------------------------------------------------------------------------------
+# Speakers are built from kits: blender/kits/<Model>.json, written by measure_kit.py from the
+# PMC STL (cabinet size, front face, every driver's centre and radii). build_speaker() imports
+# the STL centred on its own origin with the baffle facing -Y, cuts each driver out with an
+# exact boolean cylinder, keys it, and places the whole assembly in the rig. The hero PMC6-2
+# sits at the origin; everything else is positioned relative to it (see RIG below).
+KITS = os.path.join(HERE, "kits")
+PMC_DIR = os.path.join(CACHE, "pmc")
+STAND_STL = os.path.join(PMC_DIR, "PMC8-2STAND.stl")
+STAND_SIZE = (0.540, 1.090, 0.400)  # w, h, d of the PMC8-2 stand
+PLATE_REGION = (0.0, 0.135, -0.18, 0.2, 0.0065)  # hero mid/tweeter plate: local x0, x1, z0, z1, depth
+
+
+def load_kit(model):
+    with open(os.path.join(KITS, f"{model}.json"), encoding="utf-8") as fh:
+        return json.load(fh)
+
+
+def kit_ready(model):
+    if not os.path.exists(os.path.join(KITS, f"{model}.json")):
+        return False
+    return os.path.exists(os.path.join(ROOT, *load_kit(model)["stl"].split("/")))
+
+
+def hex_tile_image(path, R=40, nx=6, ny=4):
+    """A seamless pointy-top honeycomb height map: raised cells with bevelled edges."""
+    W, H = int(round(math.sqrt(3) * R * nx)), 3 * R * ny
+    R_x = W / (math.sqrt(3) * nx)  # slightly adjusted radius so the tile wraps exactly in x
+    ys, xs = np.mgrid[0:H, 0:W].astype(np.float64)
+    best = np.full((H, W), np.inf)
+    for row in range(-1, ny * 2 + 2):
+        cy = 1.5 * R * row
+        off = (math.sqrt(3) * R_x / 2) if row % 2 else 0.0
+        for col in range(-1, nx + 2):
+            cx = math.sqrt(3) * R_x * col + off
+            dx, dy = np.abs(xs - cx), np.abs(ys - cy)
+            d = np.maximum(dy, (math.sqrt(3) * dx + dy) / 2)  # hex metric, apothem = sqrt3/2 R
+            best = np.minimum(best, d)
+    edge = math.sqrt(3) / 2 * R - best  # distance to the cell edge
+    height = np.clip(edge / (0.16 * R), 0, 1)
+    height = height * height * (3 - 2 * height)
+    rgba = np.empty((H, W, 4), dtype=np.float32)
+    rgba[..., :3] = height[..., None]
+    rgba[..., 3] = 1.0
+    img = bpy.data.images.new("HexTile", W, H, alpha=False, float_buffer=True)
+    img.pixels.foreach_set(rgba.ravel())
+    img.filepath_raw = path
+    img.file_format = "PNG"
+    img.save()
+    img.colorspace_settings.name = "Non-Color"
+    return img, (W, H)
+
+
+def plate_material(name, cell_mm=6.0):
+    """The hero's mid/tweeter plate: the cabinet finish with a machined honeycomb relief."""
+    m = plastic_material(name)
+    nt = m.node_tree
+    N, L = nt.nodes, nt.links
+    bsdf = N["Principled BSDF"]
+    path = os.path.join(ROOT, "assets", "generated", "hex_tile.png")
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    img, (W, H) = hex_tile_image(path)
+    R_mm = cell_mm / math.sqrt(3)
+    tile_w, tile_h = W / (math.sqrt(3) * 40) * math.sqrt(3) * R_mm / 1000, H / (3 * 40) * 3 * R_mm / 1000
+    coord = N.new("ShaderNodeTexCoord")
+    mapping = N.new("ShaderNodeMapping")
+    mapping.inputs["Scale"].default_value = (1 / tile_w, 1 / tile_h, 1 / tile_h)
+    L.new(coord.outputs["Object"], mapping.inputs["Vector"])
+    tex = N.new("ShaderNodeTexImage")
+    tex.image = img
+    tex.projection = "BOX"
+    L.new(mapping.outputs["Vector"], tex.inputs["Vector"])
+    bump = N.new("ShaderNodeBump")
+    bump.inputs["Strength"].default_value = 0.45
+    bump.inputs["Distance"].default_value = 0.0003
+    L.new(tex.outputs["Color"], bump.inputs["Height"])
+    prev = bsdf.inputs["Normal"].links[0].from_socket if bsdf.inputs["Normal"].links else None
+    if prev is not None:
+        L.new(prev, bump.inputs["Normal"])
+    for link in list(bsdf.inputs["Normal"].links):
+        L.remove(link)
+    L.new(bump.outputs["Normal"], bsdf.inputs["Normal"])
+    bsdf.inputs["Metallic"].default_value = 0.35
+    # the cell tops sit a touch glossier than the edges
+    gloss = N.new("ShaderNodeMapRange")
+    gloss.inputs["To Min"].default_value = 0.45
+    gloss.inputs["To Max"].default_value = 0.28
+    L.new(tex.outputs["Color"], gloss.inputs["Value"])
+    for link in list(bsdf.inputs["Roughness"].links):
+        L.remove(link)
+    L.new(gloss.outputs["Result"], bsdf.inputs["Roughness"])
+    return m
+
+
+def build_speaker(model, prefix, location, yaw=0.0, hero=False, scale=(1, 1, 1)):
+    kit = load_kit(model)
+    stl = os.path.join(ROOT, *kit["stl"].split("/"))
+    w, h, d = (v / 1000 for v in kit["size_mm"])
+    bpy.ops.wm.stl_import(filepath=stl, global_scale=0.001)
+    body = bpy.context.selected_objects[0]
+    body.name = f"{prefix}Cabinet"
+    me = body.data
+    me.name = body.name
+    me.transform(Matrix.Rotation(math.pi / 2, 4, "X") @ Matrix.Translation((-w / 2, -h / 2, -d / 2)) @ body.matrix_world)
+    body.matrix_world = Matrix.Identity(4)
+    bm = bmesh.new()
+    bm.from_mesh(me)
+    bmesh.ops.remove_doubles(bm, verts=bm.verts, dist=1e-5)
+    mark_sharp(bm)
+    bm.to_mesh(me)
+    bm.free()
+    assign(body, cabinet_mat)
+    front = -d / 2
+    if hero:
+        me.materials.append(plate_material("PlateMat"))
+        x0, x1, z0, z1, depth = PLATE_REGION
+        n = 0
+        for poly in me.polygons:
+            c = poly.center
+            if x0 < c.x < x1 and z0 < c.z < z1 and abs(c.y - (front + depth)) < 0.0004 and poly.normal.y < -0.95:
+                poly.material_index = 1
+                n += 1
+        print(f"plate: {n} faces get the honeycomb finish")
+
+    def names_for(kind):
+        if kind == "woofer" and hero:
+            base = ["Woofer_L", "Woofer_R"]
+        else:
+            base = []
+        first = {"woofer": "Woofer", "mid": "Mid", "tweeter": "Tweeter"}[kind]
+        return iter(base + [f"{prefix}{first}" if k == 0 else f"{prefix}{first}_{k}" for k in range(9)])
+
+    names = {k: names_for(k) for k in ("woofer", "mid", "tweeter")}
+    parts, info = [body], {"front_y": front, "w": w, "h": h, "d": d, "drivers": []}
+    for drv in kit["drivers"]:
+        cx = drv["x_mm"] / 1000 - w / 2
+        cz = drv["y_mm"] / 1000 - h / 2
+        r_cone, r_surround, r_cut = (drv[k] / 1000 for k in ("r_cone_mm", "r_surround_mm", "r_cut_mm"))
+        back = front + drv.get("back_mm", 20.0) / 1000 + 0.008  # the cutter reaches behind the deepest point
+        name = next(names[drv["kind"]])
+        piece = cut_piece(body, name, cx, cz, r_cut, front - 0.02, back)
+        if drv["kind"] == "tweeter":
+            piece.data.materials[0] = tweeter_mat
+        else:
+            amount = EXCURSION if drv["kind"] == "woofer" else MID_EXCURSION
+            add_excursion_key(piece, cx, cz, r_cone, r_surround, y_skin=back - 0.002, amount=amount)
+            piece.data.materials[0] = woofer_mat if drv["kind"] == "woofer" else dome_mat
+            piece["cone_cx"], piece["cone_cz"], piece["cone_r"] = cx, cz, r_cone
+        parts.append(piece)
+        info["drivers"].append({"kind": drv["kind"], "name": name, "x": cx, "z": cz, "r": r_cone})
+    for obj in parts:
+        obj.location = location
+        obj.rotation_euler = (0, 0, yaw)
+        obj.scale = scale
+    print(f"{model} -> {prefix or 'hero'}: {len(kit['drivers'])} drivers cut, {len(me.polygons)} faces")
+    return body, info
+
+
+def place_stand(name, x, y, floor_z, width_scale):
+    bpy.ops.wm.stl_import(filepath=STAND_STL, global_scale=0.001)
+    stand = bpy.context.selected_objects[0]
+    stand.name = name
+    w, h, d = STAND_SIZE
+    stand.data.transform(Matrix.Rotation(math.pi / 2, 4, "X") @ Matrix.Translation((-w / 2, 0, -d / 2)) @ stand.matrix_world)
+    stand.matrix_world = Matrix.Identity(4)
+    bm = bmesh.new()
+    bm.from_mesh(stand.data)
+    mark_sharp(bm)
+    bm.to_mesh(stand.data)
+    bm.free()
+    assign(stand, stand_mat)
+    stand.location = (x, y, floor_z)
+    stand.scale = (width_scale, 1, 1)
+    return stand
+
+
+cabinet_mat = plastic_material("CabinetMat")
+woofer_mat = driver_material("WooferMat", "cone")
+dome_mat = driver_material("DomeMat", "dome")
+tweeter_mat = make_material("TweeterMat", base=(0.02, 0.02, 0.022, 1), rough=0.2)
+tweeter_mat.node_tree.nodes["Principled BSDF"].inputs["Metallic"].default_value = 0.6
+stand_mat = make_material("StandMat", base=(0.03, 0.03, 0.032, 1), rough=0.35)
+stand_mat.node_tree.nodes["Principled BSDF"].inputs["Metallic"].default_value = 0.9
+
+# the rig: model, object-name prefix, (x, y) of the cabinet centre, yaw (degrees, + faces
+# right), and how it stands: "stand" (a PMC stand under it), "floor", or a z offset above the
+# floor. Set back (y > 0) means behind the hero's baffle. Toe-in points the outer pair at the
+# listening position.
+RIG_SPACING = 1.8  # hero (left) to its twin (right)
+RIG = [
+    ("PMC6-2", "R6-2_", (RIG_SPACING, 0.0), 0.0, "stand"),
+    ("PMC8-2INCSTAND", "L8-2_", (-1.05, 0.35), 12.0, "floor"),
+    ("PMC8-2INCSTAND", "R8-2_", (RIG_SPACING + 1.05, 0.35), -12.0, "floor"),
+    ("PMC8-2SUB", "SUB_", (RIG_SPACING / 2, 0.15), 0.0, "floor"),
+    ("PMC8SUB", "SUB8_", (RIG_SPACING / 2, 0.15), 0.0, 0.534),
+    ("PMC6", "C6_", (RIG_SPACING / 2, 0.15), 0.0, 0.800),
+]
+
+if kit_ready("PMC6-2"):
+    cabinet, hero = build_speaker("PMC6-2", "", (0, 0, 0), hero=True)
+    front_y, top_z, half_w = hero["front_y"], hero["h"] / 2, hero["w"] / 2
+    woofers = [drv for drv in hero["drivers"] if drv["kind"] == "woofer"]
+    woofer_x = woofers[0]["x"]
+    woofer_zs = [drv["z"] for drv in woofers]
+    woofer_z_mid, woofer_z_half = (max(woofer_zs) + min(woofer_zs)) / 2, (max(woofer_zs) - min(woofer_zs)) / 2
+    tw = next(drv for drv in hero["drivers"] if drv["kind"] == "tweeter")
+    tweeter_xz, badge_xz = (tw["x"], tw["z"]), BADGE_CENTRE
+    build_logo(cabinet_mat)
+    floor_z = -top_z - STAND_SIZE[1] if os.path.exists(STAND_STL) else -top_z
+    if os.path.exists(STAND_STL):
+        place_stand("Stand_L", 0, 0, floor_z, hero["w"] / STAND_SIZE[0])
+    rig_built = []
+    for model, prefix, (x, y), yaw, how in RIG:
+        if not kit_ready(model):
+            print(f"note: {model} not cached — skipped (run fetch-assets + measure_kit)")
+            continue
+        h = load_kit(model)["size_mm"][1] / 1000
+        if how == "stand":
+            if os.path.exists(STAND_STL):
+                place_stand(f"{prefix}Stand", x, y, floor_z, load_kit(model)["size_mm"][0] / 1000 / STAND_SIZE[0])
+            z = floor_z + STAND_SIZE[1] + h / 2
+        elif how == "floor":
+            z = floor_z + h / 2
+        else:
+            z = floor_z + how + h / 2
+        build_speaker(model, prefix, (x, y, z), math.radians(yaw))
+        rig_built.append(prefix.rstrip("_"))
+    rig_x0, rig_x1 = -1.05 - 0.28, RIG_SPACING + 1.05 + 0.28
+    print(f"rig: hero + {', '.join(rig_built) or 'nothing'}; floor at z={floor_z:.3f}")
 else:
     print(
-        "note: PMC6-2.stl not cached — building placeholder primitives "
+        "note: PMC6-2 kit/STL not cached — building placeholder primitives "
         "(run: node scripts/fetch-assets.mjs blender/scenes/void.manifest.json)"
     )
     cabinet = build_placeholder()
     front_y, top_z, half_w = -0.12, 0.275, 0.15
     woofer_x, woofer_z_mid, woofer_z_half = 0.06, -0.04, 0.09
     tweeter_xz, badge_xz = (-0.07, 0.16), (0.06, -0.24)
+    floor_z = -top_z
+    rig_x0, rig_x1 = -half_w, half_w
 
 # sync slate — a flat panel above the speaker that flashes on beats (the phase-2 proof) ---
 bpy.ops.mesh.primitive_plane_add(size=0.3, location=(0, 0.05, top_z + 0.17), rotation=(math.pi / 2, 0, 0))
@@ -520,7 +704,7 @@ assign(slate, slate_mat)
 slate.hide_render = True  # apply_drive shows it only with --slate
 
 # floor: dark satin ground under the speaker — contact shadow, and the red rims reflect in it
-bpy.ops.mesh.primitive_plane_add(size=8, location=(0, 0, -top_z - 0.0005))
+bpy.ops.mesh.primitive_plane_add(size=16, location=(rig_x1 / 2, 0, floor_z - 0.0005))
 floor = bpy.context.object
 floor.name = "Floor"
 assign(floor, make_material("FloorMat", base=(0.012, 0.012, 0.014, 1), rough=0.3))
@@ -585,6 +769,8 @@ set_dof(
     2.8,
     rack=((tweeter_xz[0], front_y, tweeter_xz[1]), (badge_xz[0], front_y, badge_xz[1])),
 )
+rig_cam = add_camera("Cam4_Rig", (rig_mid_x := (rig_x0 + rig_x1) / 2, front_y - 4.6, -0.25), (rig_mid_x, 0.1, -0.5), 24)
+set_dof(rig_cam, add_focus("Focus_Rig", (0.0, front_y, 0.0)), 5.6, rack=((rig_mid_x, front_y, -0.3), (0.0, front_y, 0.0)))
 scene.camera = wide
 
 # lights: no ambient at all — every highlight comes from an aimed spot ---------------------
@@ -633,9 +819,14 @@ track.track_axis = "TRACK_NEGATIVE_Z"
 track.up_axis = "UP_Y"
 
 add_spot("Graze", (-0.80, front_y - 0.12, -0.02), (0.10, front_y - 0.02, 0.0), 220, (1.0, 0.95, 0.9), 22, radius=0.01)
-add_spot("TopBack", (0.10, 0.60, 0.70), (0.0, -0.12, top_z), 900, DARK_RED, 30, blend=0.8, radius=0.06, volume=0.35)
-add_spot("RimLeft", (-0.95, 0.55, 0.30), (-half_w, 0.0, 0.0), 320, DARK_RED, 24, blend=0.8, radius=0.06, volume=0.05)
-add_spot("RimRight", (0.95, 0.55, -0.05), (half_w, 0.0, 0.0), 260, DARK_RED, 24, blend=0.8, radius=0.06, volume=0.05)
+rig_mid = (rig_x0 + rig_x1) / 2
+add_spot("TopBack", (rig_mid + 0.1, 0.9, 1.2), (rig_mid, -0.12, top_z - 0.3), 1800, DARK_RED, 40, blend=0.8, radius=0.08, volume=0.35)
+add_spot("RimLeft", (rig_x0 - 0.9, 0.9, 0.35), (rig_x0, 0.3, -0.2), 900, DARK_RED, 28, blend=0.8, radius=0.08, volume=0.05)
+add_spot("RimRight", (rig_x1 + 0.9, 0.9, -0.05), (rig_x1, 0.3, -0.2), 800, DARK_RED, 28, blend=0.8, radius=0.08, volume=0.05)
+# the wall: a wide, soft, warm fill from front-above so the whole rig reads, and a dark-red
+# wash from high behind that catches the tops and the stands. Both far dimmer than the hero's key.
+add_spot("RigFill", (rig_mid, front_y - 4.5, 2.4), (rig_mid, 0.0, -0.6), 2600, (1.0, 0.9, 0.8), 85, blend=0.9, radius=0.35, volume=0.08)
+add_spot("RigWash", (rig_mid, 1.6, 3.2), (rig_mid, 0.2, -0.8), 2200, DARK_RED, 95, blend=0.9, radius=0.4, volume=0.1)
 if hasattr(slate, "visible_shadow"):
     slate.visible_shadow = False  # the sync slate must never shadow the back light
 
@@ -645,8 +836,8 @@ if hasattr(slate, "visible_shadow"):
 # a box, drifting toward camera, streamed and puffed by the woofers' air (see build_dust) and
 # wandering on 4D noise over Time. They carry no emission — they only sparkle where a beam
 # catches them, and out of focus they open into soft bokeh shapes.
-DUST_COUNT = 2500
-DUST_BOX = ((-0.55, -0.50, -0.45), (0.55, 0.15, 0.60))  # stops short of the close-up lens
+DUST_COUNT = 6000
+DUST_BOX = ((rig_x0 - 0.3, -0.50, floor_z), (rig_x1 + 0.3, 0.15, 0.60))  # stops short of the close-up lens
 DUST_SIZE = (0.0002, 0.0006)  # metres
 
 
@@ -819,10 +1010,10 @@ scene.eevee.motion_blur_steps = 3  # real time slices: the cone moves along the 
 def build_smoke(front, wx, wz_mid, wz_half):
     # y -1.0 .. +0.02: stops short of the wide camera, and ends just behind the baffle so
     # nothing lit sits behind the slate (it would silhouette)
-    bpy.ops.mesh.primitive_cube_add(size=1, location=(0, -0.49, 0.10))
+    bpy.ops.mesh.primitive_cube_add(size=1, location=((rig_x0 + rig_x1) / 2, -0.49, (floor_z + 0.8) / 2))
     smoke = bpy.context.object
     smoke.name = "Smoke"
-    smoke.scale = (1.5, 1.02, 1.4)
+    smoke.scale = (rig_x1 - rig_x0 + 1.0, 1.02, 0.8 - floor_z)
     m = bpy.data.materials.new("SmokeMat")
     m.use_nodes = True
     nt = m.node_tree
