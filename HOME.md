@@ -115,6 +115,23 @@ Shipped: **moody** (the default; old drives that say `smoke` mean this), **ember
 held), **neon** (cyan / magenta / blue chase), **clean** (product shot, no smoke). Add a mood
 by copying a file; the grid tool lists whatever is in the folder.
 
+## Hits and the Ableton project (phases 09 and 08, 2026-09-15)
+
+The **hits** checkbox tracks kicks and snares from the mix: band-split spectral flux at a 10 ms
+hop (a kick is a low thump with next to no noise burst; a snare is 150–400 Hz body plus a
+2–8 kHz burst), an adaptive threshold, and the grid prior (kick on the 1, snare on the 3 in
+halftime) that boosts on-grid candidates. Two tick rows on the beat lane: orange kicks, cyan
+snares, height and brightness = confidence, a foot under off-grid ones. Click a tick to delete
+it, `K` / `N` add one at the playhead. Hits at or above 0.5 confidence go out as
+`drive.events.kick/snare`; the shells then ride the kicks instead of the beats. Headless:
+`track-job --hits`.
+
+**project** (advanced row) takes the track's Ableton `.als` (gzipped XML): its tempo becomes
+the grid with the downbeat at 0, locators named drop/chorus become drop markers and
+break/build/intro/outro become break markers, and drum-track MIDI (tracks named kick/snare/
+clap, or GM keys 36 and 38–40) becomes kicks and snares with full confidence. Looped clips are
+unrolled; tempo automation is not followed. Stems and the routing matrix are still open.
+
 ## Pressure-wave shells (phase 04, 2026-09-15)
 
 On each beat where the cone actually hits, a shell leaves the woofers and expands at 0.45 m per
@@ -279,8 +296,9 @@ If the STL is not cached the builder falls back to the phase-2 placeholder primi
 ## Next build steps (with Claude, per the plan artifact)
 
 In: 05 (moods, Render button), 06 (safe zone, batch, LUT), 10 (the lyric lane), 11 (the glb
-export and the Preview-frame button), the shells, the modelled mid waveguide. Open from the
-plan: grid-advected haze (04), Ableton import (08), hit tracking (09), WhisperX on this
-machine, lyrics in the 3D preview, and the other scenes. A `Mid` binding is free to add:
+export and the Preview-frame button), the shells, the modelled mid waveguide. Also in: hit
+tracking (09) and the .als intake (08, first slice). Open from the plan: grid-advected haze
+(04), stems and the routing matrix (08), Demucs (09), WhisperX on this machine, lyrics in the
+3D preview, and the other scenes. A `Mid` binding is free to add:
 `frames[].mid` is already in drive.json and the PMC55 waveguide sits at scene
 (x 0.045, z 0.0) on the Cabinet.

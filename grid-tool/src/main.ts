@@ -11,6 +11,7 @@ import { coneMotion, MID_DOME } from "./engine/cone";
 import { synthTestTrack } from "./engine/synth";
 import { computeCuts } from "./engine/cuts";
 import { detectHits, type Hits } from "./engine/hits";
+import { inflateAls, parseAls } from "./engine/ableton";
 import { envelopeFollow } from "./engine/envelope";
 import { autoGain } from "./engine/autogain";
 import type { FrameFeatures } from "./engine/features";
@@ -61,6 +62,7 @@ const sceneSel = $<HTMLSelectElement>("scene");
 const linkBtn = $<HTMLButtonElement>("linkdir");
 const driveChk = $<HTMLInputElement>("driveOverlay");
 const hitsChk = $<HTMLInputElement>("hitsChk");
+const alsFile = $<HTMLInputElement>("alsFile");
 const previewChk = $<HTMLInputElement>("preview3d");
 const previewCanvas = $<HTMLCanvasElement>("preview");
 const previewWrap = $<HTMLDivElement>("previewWrap");
@@ -733,6 +735,40 @@ async function exportDrive(): Promise<void> {
     exportBtn.disabled = false;
   }
 }
+
+// ---------- Ableton project (phase 08) ----------
+// The project is ground truth: tempo and downbeat, locators, and MIDI note-ons. Stems and the
+// routing matrix are still to come; this fills the same grid, markers and hits the FFT path
+// estimates.
+alsFile.addEventListener("change", async () => {
+  const f = alsFile.files?.[0];
+  if (!f || !track) {
+    if (!track) status("Load the track's audio first, then its project.", true);
+    return;
+  }
+  try {
+    const project = parseAls(await inflateAls(await f.arrayBuffer()));
+    grid = { ...grid, bpm: project.bpm, offsetMs: 0 };
+    markers = project.locators.filter((l) => l.kind !== "section").map((l) => ({ t: l.t, kind: l.kind as "drop" | "break" }));
+    if (project.kicks.length || project.snares.length) {
+      hits = {
+        kick: project.kicks.map((t) => ({ t, conf: 1, onGrid: true })),
+        snare: project.snares.map((t) => ({ t, conf: 1, onGrid: true })),
+      };
+      hitsChk.checked = true;
+    }
+    gridChanged();
+    saveState();
+    status(
+      `Ableton project: ${project.bpm} BPM, downbeat at 0 (nudge if the export was trimmed), ${markers.length} markers, ` +
+        `${project.kicks.length} kicks and ${project.snares.length} snares from MIDI (${project.tracks.join(", ") || "no MIDI tracks"}).`,
+    );
+  } catch (e) {
+    status(`Could not read that project: ${e instanceof Error ? e.message : String(e)}`, true);
+  } finally {
+    alsFile.value = "";
+  }
+});
 
 // ---------- hits (phase 09) ----------
 async function ensureHits(): Promise<void> {
