@@ -637,19 +637,27 @@ tweeter_mat.node_tree.nodes["Principled BSDF"].inputs["Metallic"].default_value 
 stand_mat = make_material("StandMat", base=(0.03, 0.03, 0.032, 1), rough=0.35)
 stand_mat.node_tree.nodes["Principled BSDF"].inputs["Metallic"].default_value = 0.9
 
-# the rig: model, object-name prefix, (x, y) of the cabinet centre, yaw (degrees, + faces
-# right), and how it stands: "stand" (a PMC stand under it), "floor", or a z offset above the
-# floor. Set back (y > 0) means behind the hero's baffle. Toe-in points the outer pair at the
-# listening position.
-RIG_SPACING = 1.8  # hero (left) to its twin (right)
+# the rig: a stage. Model, object-name prefix, (x, y) of the cabinet centre, yaw
+# (degrees, + faces right), and how it stands: "stand" (a PMC stand under it), "floor", "desk"
+# (on the console), or a z offset above the floor. y > 0 is behind the hero's baffle. Layout,
+# left to right: PMC8-2 main on its stand with its PMC8-2 SUB on the floor inboard, the hero
+# PMC6-2 on a stand, a centre fill stack (PMC8 SUB with the two PMC6 on top), the twin PMC6-2,
+# its PMC8-2 SUB, the right PMC8-2 main. Mains and fills are toed in toward the floor.
+RIG_SPACING = 1.4  # hero (left) to its twin (right)
+RISER_H = 0.0
 RIG = [
     ("PMC6-2", "R6-2_", (RIG_SPACING, 0.0), 0.0, "stand"),
-    ("PMC8-2INCSTAND", "L8-2_", (-1.05, 0.35), 12.0, "floor"),
-    ("PMC8-2INCSTAND", "R8-2_", (RIG_SPACING + 1.05, 0.35), -12.0, "floor"),
-    ("PMC8-2SUB", "SUB_", (RIG_SPACING / 2, 0.15), 0.0, "floor"),
-    ("PMC8SUB", "SUB8_", (RIG_SPACING / 2, 0.15), 0.0, 0.534),
-    ("PMC6", "C6_", (RIG_SPACING / 2, 0.15), 0.0, 0.800),
+    ("PMC8-2INCSTAND", "L8-2_", (-1.35, 0.30), 15.0, "floor"),
+    ("PMC8-2INCSTAND", "R8-2_", (RIG_SPACING + 1.35, 0.30), -15.0, "floor"),
+    ("PMC8-2SUB", "LSUB_", (-0.62, 0.15), 15.0, "floor"),
+    ("PMC8-2SUB", "RSUB_", (RIG_SPACING + 0.62, 0.15), -15.0, "floor"),
+    ("PMC8SUB", "MSUB_", (RIG_SPACING / 2, 0.15), 0.0, "floor"),
+    ("PMC6", "LFILL_", (RIG_SPACING / 2 - 0.14, 0.15), 12.0, 0.266),
+    ("PMC6", "RFILL_", (RIG_SPACING / 2 + 0.14, 0.15), -12.0, 0.266),
 ]
+
+
+
 
 if kit_ready("PMC6-2"):
     cabinet, hero = build_speaker("PMC6-2", "", (0, 0, 0), hero=True)
@@ -680,7 +688,8 @@ if kit_ready("PMC6-2"):
             z = floor_z + how + h / 2
         build_speaker(model, prefix, (x, y, z), math.radians(yaw))
         rig_built.append(prefix.rstrip("_"))
-    rig_x0, rig_x1 = -1.05 - 0.28, RIG_SPACING + 1.05 + 0.28
+    rig_x0 = min(x - load_kit(m)["size_mm"][0] / 2000 for m, _, (x, _y), _, how in RIG)
+    rig_x1 = max(x + load_kit(m)["size_mm"][0] / 2000 for m, _, (x, _y), _, how in RIG)
     print(f"rig: hero + {', '.join(rig_built) or 'nothing'}; floor at z={floor_z:.3f}")
 else:
     print(
@@ -704,10 +713,22 @@ assign(slate, slate_mat)
 slate.hide_render = True  # apply_drive shows it only with --slate
 
 # floor: dark satin ground under the speaker — contact shadow, and the red rims reflect in it
-bpy.ops.mesh.primitive_plane_add(size=16, location=(rig_x1 / 2, 0, floor_z - 0.0005))
+bpy.ops.mesh.primitive_plane_add(size=16, location=((rig_x0 + rig_x1) / 2, 0, floor_z - 0.0005))
 floor = bpy.context.object
 floor.name = "Floor"
-assign(floor, make_material("FloorMat", base=(0.012, 0.012, 0.014, 1), rough=0.3))
+floor_mat = make_material("FloorMat", base=(0.012, 0.012, 0.014, 1), rough=0.3)
+_fn = floor_mat.node_tree.nodes
+_fl = floor_mat.node_tree.links
+_noise = _fn.new("ShaderNodeTexNoise")
+_noise.inputs["Scale"].default_value = 2.5
+_noise.inputs["Detail"].default_value = 3
+_fl.new(_fn.new("ShaderNodeTexCoord").outputs["Object"], _noise.inputs["Vector"])
+_rough = _fn.new("ShaderNodeMapRange")
+_rough.inputs["To Min"].default_value = 0.22
+_rough.inputs["To Max"].default_value = 0.42
+_fl.new(_noise.outputs["Fac"], _rough.inputs["Value"])
+_fl.new(_rough.outputs["Result"], _fn["Principled BSDF"].inputs["Roughness"])
+assign(floor, floor_mat)
 
 # cameras: sorted by name, apply_drive cycles drive.json cuts round-robin over them ---------
 # Both hang off CamRig, an empty at the speaker's centre; apply_drive swings its Z rotation
@@ -769,7 +790,7 @@ set_dof(
     2.8,
     rack=((tweeter_xz[0], front_y, tweeter_xz[1]), (badge_xz[0], front_y, badge_xz[1])),
 )
-rig_cam = add_camera("Cam4_Rig", (rig_mid_x := (rig_x0 + rig_x1) / 2, front_y - 4.6, -0.25), (rig_mid_x, 0.1, -0.5), 24)
+rig_cam = add_camera("Cam4_Rig", (rig_mid_x := (rig_x0 + rig_x1) / 2, front_y - 5.2, -0.15), (rig_mid_x, 0.3, -0.55), 22)
 set_dof(rig_cam, add_focus("Focus_Rig", (0.0, front_y, 0.0)), 5.6, rack=((rig_mid_x, front_y, -0.3), (0.0, front_y, 0.0)))
 scene.camera = wide
 
@@ -825,8 +846,320 @@ add_spot("RimLeft", (rig_x0 - 0.9, 0.9, 0.35), (rig_x0, 0.3, -0.2), 900, DARK_RE
 add_spot("RimRight", (rig_x1 + 0.9, 0.9, -0.05), (rig_x1, 0.3, -0.2), 800, DARK_RED, 28, blend=0.8, radius=0.08, volume=0.05)
 # the wall: a wide, soft, warm fill from front-above so the whole rig reads, and a dark-red
 # wash from high behind that catches the tops and the stands. Both far dimmer than the hero's key.
-add_spot("RigFill", (rig_mid, front_y - 4.5, 2.4), (rig_mid, 0.0, -0.6), 2600, (1.0, 0.9, 0.8), 85, blend=0.9, radius=0.35, volume=0.08)
-add_spot("RigWash", (rig_mid, 1.6, 3.2), (rig_mid, 0.2, -0.8), 2200, DARK_RED, 95, blend=0.9, radius=0.4, volume=0.1)
+add_spot("RigFill", (rig_mid, front_y - 4.5, 2.4), (rig_mid, 0.0, -0.6), 1400, (1.0, 0.9, 0.8), 85, blend=0.9, radius=0.35, volume=0.05)
+add_spot("RigWash", (rig_mid, 0.9, 3.0), (rig_mid, 0.2, -0.8), 2200, DARK_RED, 95, blend=0.9, radius=0.4, volume=0.1)
+
+# the set: a room corner behind the rig — dark plaster walls, a riser under the sub stack,
+# red uplights along the wall base, and a neon BIGHECK on the wall that beats with the track
+WALL_Y = 1.35  # back wall plane (behind the set-back PMC8-2s)
+WALL_H = 3.2
+ROOM_MARGIN = 1.5  # side walls this far outside the rig
+
+
+def plaster_material(name, base=0.035, rough=0.85):
+    m = make_material(name, base=(base, base, base * 1.05, 1), rough=rough)
+    nt = m.node_tree
+    N, L = nt.nodes, nt.links
+    bsdf = N["Principled BSDF"]
+    coord = N.new("ShaderNodeTexCoord").outputs["Object"]
+    fine = N.new("ShaderNodeTexNoise")
+    fine.inputs["Scale"].default_value = 180
+    fine.inputs["Detail"].default_value = 4
+    L.new(coord, fine.inputs["Vector"])
+    bump = N.new("ShaderNodeBump")
+    bump.inputs["Strength"].default_value = 0.3
+    bump.inputs["Distance"].default_value = 0.002
+    L.new(fine.outputs["Fac"], bump.inputs["Height"])
+    L.new(bump.outputs["Normal"], bsdf.inputs["Normal"])
+    coarse = N.new("ShaderNodeTexNoise")
+    coarse.inputs["Scale"].default_value = 1.2
+    coarse.inputs["Detail"].default_value = 2
+    L.new(coord, coarse.inputs["Vector"])
+    tint = N.new("ShaderNodeMapRange")
+    tint.inputs["To Min"].default_value = base * 0.6
+    tint.inputs["To Max"].default_value = base * 1.4
+    L.new(coarse.outputs["Fac"], tint.inputs["Value"])
+    L.new(tint.outputs["Result"], bsdf.inputs["Base Color"])
+    return m
+
+
+def wall(name, size, location, rotation):
+    bpy.ops.mesh.primitive_plane_add(size=1, location=location, rotation=rotation)
+    obj = bpy.context.object
+    obj.name = name
+    obj.scale = (size[0], size[1], 1)
+    assign(obj, wall_mat)
+    return obj
+
+
+wall_mat = plaster_material("WallMat")
+room_w = (rig_x1 - rig_x0) + 2 * ROOM_MARGIN
+wall("Wall_Back", (room_w, WALL_H), (rig_mid, WALL_Y, floor_z + WALL_H / 2), (math.pi / 2, 0, 0))
+wall("Wall_Left", (WALL_Y + 6.0, WALL_H), (rig_x0 - ROOM_MARGIN, WALL_Y - 3.0, floor_z + WALL_H / 2), (math.pi / 2, 0, math.pi / 2))
+wall("Wall_Right", (WALL_Y + 6.0, WALL_H), (rig_x1 + ROOM_MARGIN, WALL_Y - 3.0, floor_z + WALL_H / 2), (math.pi / 2, 0, math.pi / 2))
+
+# riser under the centre stack
+if RISER_H > 0:
+    bpy.ops.mesh.primitive_cube_add(size=1, location=(rig_mid, 0.15, floor_z + RISER_H / 2))
+    riser = bpy.context.object
+    riser.name = "Riser"
+    riser.scale = (0.75, 0.62, RISER_H)
+    bevel = riser.modifiers.new("Bevel", "BEVEL")
+    bevel.width = 0.006
+    bevel.segments = 3
+    assign(riser, make_material("RiserMat", base=(0.02, 0.02, 0.022, 1), rough=0.4))
+
+# red uplights along the wall base, one behind each outer speaker and one each side of the stack
+for k, x in enumerate((rig_x0 + 0.1, rig_mid - 0.7, rig_mid + 0.7, rig_x1 - 0.1)):
+    add_spot(f"WallUp_{k}", (x, WALL_Y - 0.25, floor_z + 0.04), (x, WALL_Y, floor_z + 2.6), 260, DARK_RED, 55, blend=0.9, radius=0.05, volume=0.15)
+
+# neon BIGHECK on the back wall above the rig
+neon = text_mesh("Neon", LOGO_TEXT, 0.34, 0.03)
+neon.data.transform(Matrix.Rotation(math.pi / 2, 4, "X"))
+xs = [v.co.x for v in neon.data.vertices]
+neon.location = (rig_mid - (max(xs) + min(xs)) / 2, WALL_Y - 0.03, floor_z + 2.35)
+neon_mat = make_material("NeonMat", base=(0.9, 0.35, 0.12, 1), rough=0.3, emission=(1.0, 0.42, 0.14, 1))
+neon_mat.node_tree.nodes["Principled BSDF"].inputs["Emission Strength"].default_value = 1.0
+assign(neon, neon_mat)
+if hasattr(neon, "visible_shadow"):
+    neon.visible_shadow = False
+
+# the light show: a truss across the room above the rig carrying six moving heads, two laser
+# units and two blinders; projectors throwing the name onto the side walls; an LED wall behind
+# the rig with a live oscilloscope trace. apply_drive keys all of it from the track.
+TRUSS_Z = 3.0  # above the floor
+TRUSS_Y = -0.9
+SHOW_HEADS = 6
+LASER_BEAMS = 6
+HEAD_POWER = 1400
+LASER_POWER = 7000
+PROJECTOR_POWER = 260
+
+truss_mat = make_material("TrussMat", base=(0.05, 0.05, 0.052, 1), rough=0.4)
+truss_mat.node_tree.nodes["Principled BSDF"].inputs["Metallic"].default_value = 0.85
+fixture_mat = make_material("FixtureMat", base=(0.02, 0.02, 0.022, 1), rough=0.5)
+
+
+def tube(name, a, b, r=0.024):
+    a, b = Vector(a), Vector(b)
+    d = b - a
+    bpy.ops.mesh.primitive_cylinder_add(vertices=12, radius=r, depth=d.length, location=(a + b) / 2)
+    obj = bpy.context.object
+    obj.name = name
+    obj.rotation_euler = d.to_track_quat("Z", "Y").to_euler()
+    assign(obj, truss_mat)
+    return obj
+
+
+def build_truss(x0, x1, y, z, section=0.29):
+    s = section / 2
+    corners = ((-s, -s), (s, -s), (-s, s), (s, s))
+    for k, (dy, dz) in enumerate(corners):
+        tube(f"Truss_Chord_{k}", (x0, y + dy, z + dz), (x1, y + dy, z + dz))
+    n = max(1, int((x1 - x0) / 0.5))
+    for i in range(n + 1):
+        x = x0 + (x1 - x0) * i / n
+        for k, ((dy0, dz0), (dy1, dz1)) in enumerate((((-s, -s), (-s, s)), ((s, -s), (s, s)), ((-s, -s), (s, -s)), ((-s, s), (s, s)))):
+            tube(f"Truss_Bar_{i}_{k}", (x, y + dy0, z + dz0), (x, y + dy1, z + dz1), r=0.011)
+        if i < n:
+            xn = x0 + (x1 - x0) * (i + 1) / n
+            tube(f"Truss_Diag_{i}", (x, y - s, z - s), (xn, y - s, z + s), r=0.011)
+            tube(f"Truss_DiagB_{i}", (x, y - s, z - s), (xn, y + s, z - s), r=0.011)
+
+
+def track_to(obj, target):
+    c = obj.constraints.new("TRACK_TO")
+    c.target = target
+    c.track_axis = "TRACK_NEGATIVE_Z"
+    c.up_axis = "UP_Y"
+
+
+def target_empty(name, location):
+    e = bpy.data.objects.new(name, None)
+    e.empty_display_size = 0.05
+    e.location = location
+    scene.collection.objects.link(e)
+    return e
+
+
+def moving_head(k, x, y, z, aim):
+    target = target_empty(f"HeadTarget_{k}", aim)
+    bpy.ops.mesh.primitive_cylinder_add(vertices=24, radius=0.075, depth=0.26, location=(x, y, z - 0.33))
+    body = bpy.context.object
+    body.name = f"Head_{k}_Body"
+    assign(body, fixture_mat)
+    track_to(body, target)
+    bpy.ops.mesh.primitive_circle_add(vertices=24, radius=0.058, fill_type="NGON", location=(0, 0, -0.131))
+    lens = bpy.context.object
+    lens.name = f"Head_{k}_Lens"
+    lens_mat = make_material(f"HeadLens_{k}", base=(0, 0, 0, 1), emission=(1, 1, 1, 1))
+    lens_mat.node_tree.nodes["Principled BSDF"].inputs["Emission Strength"].default_value = 4.0
+    assign(lens, lens_mat)
+    lens.parent = body
+    tube(f"Head_{k}_Yoke", (x, y, z - 0.145), (x, y, z - 0.2), r=0.02)
+    data = bpy.data.lights.new(f"Head_{k}", "SPOT")
+    data.energy = HEAD_POWER
+    data.color = (1.0, 0.3, 0.9)
+    data.spot_size = math.radians(14)
+    data.spot_blend = 0.15
+    data.shadow_soft_size = 0.03
+    data.volume_factor = 1.0
+    light = new_object(f"Head_{k}", data)
+    # the light rides on the body's front face (a light inside the body would be shadowed by it)
+    light.parent = body
+    light.location = (0, 0, -0.145)
+    return light
+
+
+def laser_unit(k, x, y, z, fan_centre):
+    bpy.ops.mesh.primitive_cube_add(size=1, location=(x, y, z - 0.23))
+    box = bpy.context.object
+    box.name = f"Laser_{k}_Unit"
+    box.scale = (0.22, 0.16, 0.12)
+    assign(box, fixture_mat)
+    tube(f"Laser_{k}_Mount", (x, y, z - 0.145), (x, y, z - 0.17), r=0.015)
+    for j in range(LASER_BEAMS):
+        target = target_empty(f"LaserTarget_{k}_{j}", (fan_centre[0] + (j - (LASER_BEAMS - 1) / 2) * 0.5, fan_centre[1], fan_centre[2]))
+        data = bpy.data.lights.new(f"Laser_{k}_{j}", "SPOT")
+        data.energy = LASER_POWER
+        data.color = (0.15, 1.0, 0.25)
+        data.spot_size = math.radians(0.9)
+        data.spot_blend = 0.0
+        data.shadow_soft_size = 0.002
+        data.volume_factor = 6.0
+        light = new_object(f"Laser_{k}_{j}", data)
+        light.location = (x, y, z - 0.315)  # just below the unit, clear of its box
+        track_to(light, target)
+
+
+def projector(side, wall_x, facing, decal_y, floor_z):
+    text = text_mesh(f"Proj_{side}", LOGO_TEXT, 0.5, 0.01)
+    text.data.transform(Matrix.Rotation(math.radians(90 * facing), 4, "Z") @ Matrix.Rotation(math.pi / 2, 4, "X"))
+    text.location = (wall_x + 0.006 * facing, decal_y, floor_z + 1.9)
+    mat = make_material(f"ProjMat_{side}", base=(0, 0, 0, 1), emission=(0.7, 0.85, 1.0, 1))
+    mat.node_tree.nodes["Principled BSDF"].inputs["Emission Strength"].default_value = 2.5
+    assign(text, mat)
+    if hasattr(text, "visible_shadow"):
+        text.visible_shadow = False
+    data = bpy.data.lights.new(f"Proj_{side}_Beam", "SPOT")
+    data.energy = PROJECTOR_POWER
+    data.color = (0.7, 0.85, 1.0)
+    data.spot_size = math.radians(16)
+    data.spot_blend = 0.05
+    data.shadow_soft_size = 0.01
+    data.volume_factor = 0.8
+    light = new_object(f"Proj_{side}_Beam", data)
+    light.location = (wall_x + 1.6 * facing, TRUSS_Y, floor_z + TRUSS_Z - 0.25)
+    track_to(light, target_empty(f"ProjTarget_{side}", (wall_x, decal_y, floor_z + 1.9)))
+
+
+def blinder(k, x, y, z, aim):
+    data = bpy.data.lights.new(f"Blinder_{k}", "SPOT")
+    data.energy = 0.0
+    data.color = (1.0, 0.85, 0.7)
+    data.spot_size = math.radians(30)
+    data.spot_blend = 0.5
+    data.shadow_soft_size = 0.08
+    data.volume_factor = 0.4
+    light = new_object(f"Blinder_{k}", data)
+    light.location = (x, y, z - 0.3)
+    track_to(light, target_empty(f"BlinderTarget_{k}", aim))
+
+
+def build_scope(x, y, z, w, h):
+    """The LED wall: an oscilloscope trace drawn in the shader from Bass/Mid/High/Time values."""
+    bpy.ops.mesh.primitive_plane_add(size=1, location=(x, y, z), rotation=(math.pi / 2, 0, 0))
+    screen = bpy.context.object
+    screen.name = "Scope"
+    screen.scale = (w, h, 1)
+    m = bpy.data.materials.new("ScopeMat")
+    m.use_nodes = True
+    nt = m.node_tree
+    N, L = nt.nodes, nt.links
+    bsdf = N["Principled BSDF"]
+    bsdf.inputs["Base Color"].default_value = (0.005, 0.01, 0.006, 1)
+    bsdf.inputs["Roughness"].default_value = 0.6
+
+    def math_node(op, a, b=None):
+        n = N.new("ShaderNodeMath")
+        n.operation = op
+        for i, v in enumerate((a, b)):
+            if v is None:
+                continue
+            if isinstance(v, (int, float)):
+                n.inputs[i].default_value = v
+            else:
+                L.new(v, n.inputs[i])
+        return n.outputs[0]
+
+    def value(name):
+        n = N.new("ShaderNodeValue")
+        n.name = n.label = name
+        n.outputs[0].default_value = 0.0
+        return n.outputs[0]
+
+    def gauss(d, width):
+        return math_node("EXPONENT", math_node("MULTIPLY", -1.0, math_node("POWER", math_node("DIVIDE", d, width), 2.0)))
+
+    B, M, H, T = value("Bass"), value("Mid"), value("High"), value("Time")
+    gen = N.new("ShaderNodeTexCoord").outputs["Generated"]
+    sep = N.new("ShaderNodeSeparateXYZ")
+    L.new(gen, sep.inputs[0])
+    u, v = sep.outputs[0], sep.outputs[1]
+    two_pi = 2 * math.pi
+    wave = math_node(
+        "ADD",
+        math_node("MULTIPLY", B, math_node("SINE", math_node("ADD", math_node("MULTIPLY", u, two_pi * 3), math_node("MULTIPLY", T, 6.0)))),
+        math_node(
+            "ADD",
+            math_node("MULTIPLY", math_node("MULTIPLY", M, 0.6), math_node("SINE", math_node("SUBTRACT", math_node("MULTIPLY", u, two_pi * 11), math_node("MULTIPLY", T, 15.0)))),
+            math_node("MULTIPLY", math_node("MULTIPLY", H, 0.3), math_node("SINE", math_node("ADD", math_node("MULTIPLY", u, two_pi * 29), math_node("MULTIPLY", T, 40.0)))),
+        ),
+    )
+    f = math_node("ADD", 0.5, math_node("MULTIPLY", wave, 0.30))
+    d = math_node("ABSOLUTE", math_node("SUBTRACT", v, f))
+    trace = math_node("ADD", gauss(d, 0.012), math_node("MULTIPLY", 0.12, gauss(d, 0.08)))
+
+    def grid_lines(coord, n):
+        fr = math_node("FRACT", math_node("MULTIPLY", coord, n))
+        near = math_node("MINIMUM", fr, math_node("SUBTRACT", 1.0, fr))
+        g = N.new("ShaderNodeMapRange")
+        g.interpolation_type = "SMOOTHSTEP"
+        L.new(near, g.inputs["Value"])
+        g.inputs["From Min"].default_value = 0.004
+        g.inputs["From Max"].default_value = 0.012
+        g.inputs["To Min"].default_value = 1.0
+        g.inputs["To Max"].default_value = 0.0
+        return g.outputs["Result"]
+
+    grid = math_node("MAXIMUM", grid_lines(u, 16), grid_lines(v, 6))
+    glow = math_node("ADD", math_node("MULTIPLY", trace, 5.0), math_node("ADD", math_node("MULTIPLY", grid, 0.18), 0.03))
+    bsdf.inputs["Emission Color"].default_value = (0.25, 1.0, 0.4, 1)
+    L.new(glow, bsdf.inputs["Emission Strength"])
+    screen.data.materials.append(m)
+    # a dark bezel
+    bpy.ops.mesh.primitive_cube_add(size=1, location=(x, y + 0.03, z))
+    bezel = bpy.context.object
+    bezel.name = "Scope_Bezel"
+    bezel.scale = (w + 0.12, 0.05, h + 0.12)
+    assign(bezel, fixture_mat)
+    return screen
+
+
+truss_x0, truss_x1 = rig_x0 - 0.6, rig_x1 + 0.6
+truss_z = floor_z + TRUSS_Z
+build_truss(truss_x0, truss_x1, TRUSS_Y, truss_z)
+for k in range(SHOW_HEADS):
+    hx = truss_x0 + 0.5 + (truss_x1 - truss_x0 - 1.0) * k / (SHOW_HEADS - 1)
+    moving_head(k, hx, TRUSS_Y, truss_z, (rig_mid, -0.6, floor_z + 0.4))
+laser_unit(0, truss_x0 + 0.25, TRUSS_Y, truss_z, (rig_mid - 0.5, -2.4, floor_z + 0.15))
+laser_unit(1, truss_x1 - 0.25, TRUSS_Y, truss_z, (rig_mid + 0.5, -2.4, floor_z + 0.15))
+blinder(0, truss_x0 + 1.0, TRUSS_Y - 0.2, truss_z, (rig_mid, -5.0, floor_z + 0.6))
+blinder(1, truss_x1 - 1.0, TRUSS_Y - 0.2, truss_z, (rig_mid, -5.0, floor_z + 0.6))
+projector("L", rig_x0 - ROOM_MARGIN, +1, -1.2, floor_z)
+projector("R", rig_x1 + ROOM_MARGIN, -1, -1.2, floor_z)
+build_scope(rig_mid, WALL_Y - 0.035, floor_z + 1.55, 3.2, 1.15)
+
 if hasattr(slate, "visible_shadow"):
     slate.visible_shadow = False  # the sync slate must never shadow the back light
 
@@ -1010,10 +1343,10 @@ scene.eevee.motion_blur_steps = 3  # real time slices: the cone moves along the 
 def build_smoke(front, wx, wz_mid, wz_half):
     # y -1.0 .. +0.02: stops short of the wide camera, and ends just behind the baffle so
     # nothing lit sits behind the slate (it would silhouette)
-    bpy.ops.mesh.primitive_cube_add(size=1, location=((rig_x0 + rig_x1) / 2, -0.49, (floor_z + 0.8) / 2))
+    bpy.ops.mesh.primitive_cube_add(size=1, location=((rig_x0 + rig_x1) / 2, -1.59, (floor_z + 3.3) / 2))
     smoke = bpy.context.object
     smoke.name = "Smoke"
-    smoke.scale = (rig_x1 - rig_x0 + 1.0, 1.02, 0.8 - floor_z)
+    smoke.scale = (rig_x1 - rig_x0 + 3.0, 3.22, 3.3 - floor_z)
     m = bpy.data.materials.new("SmokeMat")
     m.use_nodes = True
     nt = m.node_tree
@@ -1111,7 +1444,9 @@ def build_smoke(front, wx, wz_mid, wz_half):
     base = value("Density")
     base.node.outputs[0].default_value = SMOKE_DENSITY
     thickness = math_node("MULTIPLY", base, math_node("ADD", 1.0, math_node("MULTIPLY", kick, 2.0)))
-    density = math_node("MULTIPLY", math_node("MULTIPLY", wisps, fade), thickness)
+    haze = value("Haze")
+    haze.node.outputs[0].default_value = SMOKE_HAZE
+    density = math_node("ADD", math_node("MULTIPLY", math_node("MULTIPLY", wisps, fade), thickness), math_node("MULTIPLY", fade, haze))
 
     vol = N.new("ShaderNodeVolumePrincipled")
     vol.inputs["Color"].default_value = (0.8, 0.8, 0.82, 1)
@@ -1122,7 +1457,8 @@ def build_smoke(front, wx, wz_mid, wz_half):
     return smoke
 
 
-SMOKE_DENSITY = 0.6
+SMOKE_DENSITY = 0.35  # a big room now; beams need haze, not fog
+SMOKE_HAZE = 0.05  # even haze under the clumps: what beams and lasers are drawn in
 build_smoke(front_y, woofer_x, woofer_z_mid, woofer_z_half)
 ee = scene.eevee
 ee.use_volumetric_shadows = True
@@ -1130,7 +1466,7 @@ ee.volumetric_tile_size = "4"
 ee.volumetric_samples = 96
 ee.use_volume_custom_range = True
 ee.volumetric_start = 0.1
-ee.volumetric_end = 3.0
+ee.volumetric_end = 12.0  # out to the rig camera
 
 # compositor: the lens finish — bloom on the logo and glints, a touch of chromatic aberration
 # and barrel distortion, a vignette, film grain (apply_drive re-seeds it every frame) and a

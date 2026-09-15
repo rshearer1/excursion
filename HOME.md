@@ -113,6 +113,21 @@ by name. Models that are not cached are skipped. `Cam4_Rig` (28 mm, 6 m back) jo
 rotation to show the whole wall. The hero's mid/tweeter plate carries a machined honeycomb
 relief (`PlateMat`, generated tile in `assets/generated/`).
 
+## The show (phase 6 — stage, 2026-09-15)
+
+The rig now stands on a stage: a room corner of dark plaster (`WALL_Y`, `ROOM_MARGIN`), the
+floor at the stand feet, red uplights along the wall base, a neon `BIGHECK` on the wall and an
+LED wall behind the rig whose oscilloscope trace is drawn in the shader from the track's
+bass/mid/high (`ScopeMat` Value nodes). A truss across the room carries six moving heads
+(`Head_k`, sweeping on slow figure-eights, colour stepping through `PALETTE` in
+`apply_drive.py` every bar, pulsing on the beat), two laser units of six beams (`Laser_k_j`,
+fanning and scanning, only while there is bass), two blinders (downbeats) and two projectors
+that throw the name onto the side walls (`Proj_L`/`Proj_R` decal + beam). Breaks dim
+everything, a drop flares it. Beams live in the smoke's haze floor (`SMOKE_HAZE`); EEVEE's
+volumetric range is pushed out to the rig camera (`VOLUME_RANGE`). Layout is the `RIG` table:
+mains on stands with their subs on the floor inboard, both PMC6-2s on stands, a centre fill
+stack (PMC8 SUB with the two PMC6 on top).
+
 ## The scene (phase 3 — real speaker, done 2026-09-14)
 
 `build_scene.py` imports the PMC6-2 STL (one closed solid, mm, cones modelled into the

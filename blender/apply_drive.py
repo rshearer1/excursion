@@ -238,6 +238,14 @@ if logo_mat is not None and logo_mat.node_tree is not None:
         [max(v, 30.0 * drop_pulse(i, 0.5)) for i, v in enumerate(beat_flash(6.0, 14.0, 0.62, floor=0.35))],
     )
 
+neon_mat = bpy.data.materials.get("NeonMat")
+if neon_mat is not None and neon_mat.node_tree is not None:
+    fcurve_fill(
+        neon_mat.node_tree,
+        'nodes["Principled BSDF"].inputs["Emission Strength"].default_value',
+        [max(v, 9.0 * drop_pulse(i, 0.5)) for i, v in enumerate(beat_flash(2.6, 4.5, 0.6, floor=0.9))],
+    )
+
 # lights follow the track: the key breathes with the bass level (dim in breaks, back at the
 # drop), the red rims and back light pulse on downbeats and flare at a drop -----------------
 slow, env = [], 0.0
@@ -293,6 +301,112 @@ if key_target is not None and "path" in key_target:
         key_target.keyframe_insert("location", frame=scene.frame_start + span * n / max(1, len(stops) - 1))
     print(f"key light: glides through {len(stops)} stops over frames {scene.frame_start}..{scene.frame_end}")
 
+# the light show ------------------------------------------------------------
+LASER_BEAMS_N = 6
+BLINDER_POWER = 9000.0
+# Moving heads sweep the rig on slow figure-eights (each with its own phase), change colour on
+# every bar and pulse on the beat; lasers fan across the floor and scan, only while there is
+# bass; blinders hit on downbeats; projectors breathe; the LED wall's scope draws the track.
+floor_obj = bpy.data.objects.get("Floor")
+floor_z = floor_obj.location.z if floor_obj is not None else -1.29
+rig_mid = floor_obj.location.x if floor_obj is not None else 0.0
+# moving-head colours, one step per bar: deep reds and purples
+PALETTE = [(0.75, 0.04, 0.08), (0.42, 0.04, 0.62), (0.9, 0.12, 0.18), (0.3, 0.02, 0.45)]
+beat_pulse = beat_flash(1.0, 1.0, 0.7)
+downbeat_frames = sorted(round(t * fps) for t in data.get("downbeats", []))
+bar_of = []
+n_bar = 0
+for i in range(len(frames)):
+    while n_bar < len(downbeat_frames) and downbeat_frames[n_bar] <= i:
+        n_bar += 1
+    bar_of.append(n_bar)
+frame_span = range(scene.frame_start - 1, scene.frame_end)
+
+
+def key_light(light, energies=None, colors=None):
+    if energies is not None:
+        fcurve_fill(light.data, "energy", points=[(i + 1, e) for i, e in zip(frame_span, energies)])
+    if colors is not None:
+        for axis in range(3):
+            fcurve_fill(light.data, "color", index=axis, points=[(i + 1, c[axis]) for i, c in zip(frame_span, colors)])
+
+
+def key_target(empty, positions):
+    for axis in range(3):
+        fcurve_fill(empty, "location", index=axis, points=[(i + 1, p[axis]) for i, p in zip(frame_span, positions)])
+
+
+heads = sorted((o for o in scene.objects if o.type == "LIGHT" and o.name.startswith("Head_") and o.name.count("_") == 1), key=lambda o: o.name)
+for k, head in enumerate(heads):
+    target = bpy.data.objects.get(f"HeadTarget_{k}")
+    phase = k * 2 * math.pi / max(1, len(heads))
+    base = head.data.energy
+    positions, energies, colors = [], [], []
+    for i in frame_span:
+        t = i / fps
+        slow = 0.5 if in_break[i] else 1.0
+        positions.append(
+            (
+                rig_mid + 2.0 * math.sin(2 * math.pi * t / 6.9 * slow + phase),
+                -0.7 + 1.1 * math.sin(2 * math.pi * t / 4.3 * slow + 2 * phase),
+                floor_z + 0.4 + 0.9 * (0.5 + 0.5 * math.sin(2 * math.pi * t / 5.1 * slow + phase)),
+            )
+        )
+        energies.append(base * (0.3 + 0.7 * beat_pulse[i]) * (0.45 if in_break[i] else 1.0) * (1.0 + 1.5 * drop_pulse(i, 1.0)))
+        colors.append(PALETTE[(bar_of[i] + k) % len(PALETTE)])
+    if target is not None:
+        key_target(target, positions)
+    key_light(head, energies, colors)
+
+lasers = [o for o in scene.objects if o.type == "LIGHT" and o.name.startswith("Laser_")]
+for laser in lasers:
+    _, k, j = laser.name.split("_")
+    k, j = int(k), int(j)
+    target = bpy.data.objects.get(f"LaserTarget_{k}_{j}")
+    if target is None:
+        continue
+    base = laser.data.energy
+    positions, energies = [], []
+    for i in frame_span:
+        t = i / fps
+        fan = (j - (LASER_BEAMS_N - 1) / 2) * 0.5
+        positions.append(
+            (
+                rig_mid + (-0.5 if k == 0 else 0.5) + fan + 1.3 * math.sin(2 * math.pi * t / 2.3 + k * math.pi + j * 0.15),
+                -2.4 + 0.9 * math.sin(2 * math.pi * t / 3.7 + j * 0.4),
+                floor_z + 0.15,
+            )
+        )
+        on = 0.0 if in_break[i] else 1.0
+        energies.append(base * on * (0.45 + 0.55 * beat_pulse[i]) * (1.0 + 2.0 * drop_pulse(i, 0.8)))
+    key_target(target, positions)
+    key_light(laser, energies)
+
+for k in range(2):
+    blinder = bpy.data.objects.get(f"Blinder_{k}")
+    if blinder is None:
+        continue
+    hits = set()
+    for fr in downbeat_frames:
+        hits.update((fr, fr + 1))
+    key_light(blinder, [(BLINDER_POWER if i in hits and not in_break[i] else 0.0) for i in frame_span])
+
+for side in ("L", "R"):
+    beam = bpy.data.objects.get(f"Proj_{side}_Beam")
+    if beam is not None:
+        base = beam.data.energy
+        key_light(beam, [base * (0.75 + 0.25 * beat_pulse[i]) for i in frame_span])
+
+scope_mat = bpy.data.materials.get("ScopeMat")
+if scope_mat is not None:
+    nt = scope_mat.node_tree
+    for name, values in (("Bass", bass), ("Mid", [f["mid"] for f in frames]), ("High", [f["high"] for f in frames]), ("Time", [i / fps for i in range(len(frames))])):
+        if nt.nodes.get(name) is not None:
+            fcurve_fill(nt, f'nodes["{name}"].outputs[0].default_value', values)
+if heads or lasers:
+    print(f"show: {len(heads)} moving heads, {len(lasers)} laser beams, blinders on downbeats, scope live")
+
+
 # camera cuts: timeline markers bound round-robin over all cameras -------
 cuts = data.get("cuts", [])
 cameras = sorted((o for o in scene.objects if o.type == "CAMERA"), key=lambda o: o.name)
@@ -313,6 +427,7 @@ elif cuts:
 # Each focus empty carries a "rack" (start xyz, end xyz) from build_scene; over every shot its
 # camera gets, the focus point glides start -> end. Every camera also pushes in toward its
 # subject on cone hits (a thump you feel) and drifts a little like a handheld rig.
+VOLUME_RANGE = 12.0  # metres of volumetrics in front of each camera
 CAM_THUMP = 0.012  # metres of push-in at full cone travel
 CAM_SHAKE = 0.0015  # handheld drift, metres
 CAM_SHAKE_ROT = 0.0035  # handheld drift, radians (~0.2 degrees)
@@ -417,6 +532,9 @@ else:
         scene.render.engine = "BLENDER_EEVEE"
     if hasattr(scene, "eevee"):
         scene.eevee.taa_render_samples = 16 if args.draft else 64
+        # the volume (smoke, beams, lasers) must be computed out to the rig camera, 6 m away
+        scene.eevee.volumetric_end = max(scene.eevee.volumetric_end, VOLUME_RANGE)
+        scene.eevee.volumetric_samples = 96 if args.draft else 160
 scene.render.resolution_percentage = 50 if args.draft else 100
 scene.render.image_settings.file_format = "PNG"
 
