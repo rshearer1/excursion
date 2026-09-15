@@ -10,6 +10,8 @@
 //   GET  /api/render                 the current job state (poll it)
 //   POST /api/render/stop            kill the running job
 //   GET  /api/reels/<slug>.mp4       the finished reel, with Range support for <video>
+//   POST /api/transcribe             { file } -> WhisperX word-level lines for an audio file
+//                                    already in blender/jobs/ (501 with a hint when it is not installed)
 //
 // One job at a time. Blender comes from $BLENDER, then the newest "Blender Foundation"
 // install, then PATH. The state shape lives in src/engine/renderJob.ts with the parser.
@@ -144,6 +146,61 @@ function startRender(req: RenderRequest): void {
   });
 }
 
+function whichWhisperx(): string | null {
+  const exts = process.platform === "win32" ? [".exe", ".cmd", ".bat", ""] : [""];
+  for (const dir of (process.env["PATH"] ?? "").split(path.delimiter)) {
+    for (const ext of exts) {
+      const p = path.join(dir, `whisperx${ext}`);
+      if (dir && existsSync(p)) return p;
+    }
+  }
+  return null;
+}
+
+interface WhisperSegment {
+  start: number;
+  end: number;
+  text: string;
+  words?: { word: string; start?: number; end?: number; score?: number }[];
+}
+
+/** Run WhisperX on blender/jobs/<file>; lines with word times, or an error with an install hint. */
+function transcribe(file: string): Promise<{ lines: { t: number; tEnd: number; text: string; words?: { t: number; w: string }[] }[] }> {
+  return new Promise((resolve, reject) => {
+    const exe = whichWhisperx();
+    if (!exe) {
+      const err = new Error("whisperx is not installed") as Error & { hint?: string; code?: number };
+      err.hint = "pip install whisperx (needs Python 3.10-3.12 and a CUDA torch), then restart npm run dev";
+      err.code = 501;
+      return reject(err);
+    }
+    const audio = path.join(jobsDir, file);
+    const outDir = path.join(root, "assets", "generated", "whisperx");
+    mkdirSync(outDir, { recursive: true });
+    const proc = spawn(exe, [audio, "--output_dir", outDir, "--output_format", "json", "--model", "small", "--compute_type", "float16"], { cwd: root });
+    let log = "";
+    proc.stdout?.on("data", (c: Buffer) => (log += c.toString()));
+    proc.stderr?.on("data", (c: Buffer) => (log += c.toString()));
+    proc.on("error", reject);
+    proc.on("exit", (code) => {
+      if (code !== 0) return reject(new Error(`whisperx exited ${code}: ${log.slice(-400)}`));
+      const jsonPath = path.join(outDir, `${path.basename(file, path.extname(file))}.json`);
+      if (!existsSync(jsonPath)) return reject(new Error("whisperx wrote no json"));
+      const result = JSON.parse(readFileSync(jsonPath, "utf8")) as { segments: WhisperSegment[] };
+      resolve({
+        lines: result.segments.map((s) => ({
+          t: s.start,
+          tEnd: s.end,
+          text: s.text.trim(),
+          ...(s.words?.length
+            ? { words: s.words.filter((w) => w.start !== undefined).map((w) => ({ t: w.start!, w: w.word.trim() })) }
+            : {}),
+        })),
+      });
+    });
+  });
+}
+
 function serveReel(req: IncomingMessage, res: ServerResponse, file: string): void {
   const name = safeName(file);
   if (!name || !name.endsWith(".mp4")) return json(res, 404, { error: "no such reel" });
@@ -210,6 +267,17 @@ export function renderHelper(): Plugin {
             if (!audio || !existsSync(path.join(jobsDir, audio))) return json(res, 400, { error: `audio not stored: ${audio}` });
             startRender(body);
             return json(res, 200, state);
+          }
+          if (req.method === "POST" && url.pathname === "/api/transcribe") {
+            const body = JSON.parse((await readBody(req)).toString("utf8")) as { file?: string };
+            const name = safeName(body.file ?? "");
+            if (!name || !existsSync(path.join(jobsDir, name))) return json(res, 400, { error: "audio not stored" });
+            try {
+              return json(res, 200, await transcribe(name));
+            } catch (e) {
+              const err = e as Error & { hint?: string; code?: number };
+              return json(res, err.code ?? 500, { error: err.message, hint: err.hint });
+            }
           }
           if (req.method === "GET" && url.pathname.startsWith("/api/reels/")) {
             return serveReel(req, res, decodeURIComponent(url.pathname.slice("/api/reels/".length)));

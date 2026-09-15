@@ -109,6 +109,25 @@ Shipped: **moody** (the default; old drives that say `smoke` mean this), **ember
 held), **neon** (cyan / magenta / blue chase), **clean** (product shot, no smoke). Add a mood
 by copying a file; the grid tool lists whatever is in the folder.
 
+## Lyrics (phase 10, 2026-09-15)
+
+The **lyrics** box under the console is the lyric lane. Paste the words one line per row and
+press **Use lines**, then play the track and hit **Enter** as each line is sung; shift-click a
+time in the list to re-time a line at the playhead, click it to seek there. Import an `.lrc`
+instead (enhanced word tags `<mm:ss.xx>` become word times) or a WhisperX json. **Transcribe**
+runs WhisperX through the dev server when it is installed on this machine (it is not, yet:
+`pip install whisperx` on a Python 3.10–3.12 with a CUDA torch); the button says so otherwise.
+**Quantise** snaps starts and word onsets to 16ths. Per line: style, anchor; defaults for style,
+anchor, colour, size and whether the line lights the room. Lines show as blocks on the beat lane.
+
+In the render (`drive.lyrics`) each line is real emissive text parented to the scene's
+`Lyric_<anchor>` empty (void: `behind`, `front-low`, `wall`), auto-scaled to fit the wide frame,
+hidden outside its window, with a paired area light per anchor so the words light the haze and
+the cabinet cleanly. Styles: `fade` (attack/release), `karaoke` (word objects light in turn),
+`pop` (each word flashes on its onset), `pulse` (breathes with the bass), `typewriter` (letters
+on the 16th grid). A `sections` map gives markers their own defaults (the drop pops in white,
+large, out of the box).
+
 ## What runs where
 
 | Piece | Runs | Needs GPU |
@@ -238,9 +257,9 @@ If the STL is not cached the builder falls back to the phase-2 placeholder primi
 
 ## Next build steps (with Claude, per the plan artifact)
 
-Phase 05 is in (moods as JSON, the Render button). Open from the plan: pressure-wave shells
-and grid-advected haze (04), the safe-zone overlay and batch rendering (06), Ableton import
-(08), hit tracking (09), the lyric lane (10), the glTF export and Preview-frame button (11),
-the other scenes, and a modelled mid waveguide to replace the CAD's cog. A `Mid` binding is free to add:
+Phases 05 (moods, Render button) and 10 (the lyric lane) are in, and the mid waveguide is
+modelled. Open from the plan: pressure-wave shells and grid-advected haze (04), the safe-zone
+overlay and batch rendering (06), Ableton import (08), hit tracking (09), WhisperX on this
+machine, lyrics in the 3D preview and the Preview-frame button (11), and the other scenes. A `Mid` binding is free to add:
 `frames[].mid` is already in drive.json and the PMC55 waveguide sits at scene
 (x 0.045, z 0.0) on the Cabinet.

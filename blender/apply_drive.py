@@ -13,6 +13,8 @@
 #   --sweep DEG     -> CamRig Z rotation eased from -DEG/2 to +DEG/2 over the render range
 #   cuts[]          -> focus racks per shot; frames[].cone -> camera push-in on hits; handheld drift
 #   --shutter F     -> motion blur shutter fraction (0.5 = 180 degrees)
+#   lyrics{}        -> emissive text on the Lyric_<anchor> empties, keyed per style, with a
+#                      paired area light per anchor (phase 10)
 #   frames[].cone   -> DustField Gust (air moved so far) and Push (current hit): woofer wind
 #   bass + mood     -> SmokeMat Push (kick transient), Drift (bass running sum) and Time;
 #                      the Smoke volume only renders when drive.mood is "smoke"
@@ -428,6 +430,196 @@ if True:  # one cue is still a cue: the rims take its colour and gain
             fcurve_fill(scope.node_tree, 'nodes["Principled BSDF"].inputs["Emission Color"].default_value', [c[axis] for c in trace], index=axis)
     print(f"cues: {len(LOOK_CUES)} looks, one every {CUE_BARS} bars, {CUE_FADE}-frame crossfade")
 print("lights: key follows the bass level, rims pulse on downbeats")
+
+# lyrics (phase 10): emissive text on the scene's anchors, keyed per style ----------------
+# drive.lyrics = { defaults, sections?, lines[] }; each line has t, tEnd, text, optional
+# words [{t, w}], anchor, style, color, size. The text is real geometry: in Cycles the words
+# light the haze and the cabinet and show in reflections. A paired area light per anchor
+# carries the room illumination so it stays clean at low samples. Styles:
+#   fade        glows in over attackMs before t, out over releaseMs after tEnd
+#   karaoke     words (own objects) sit dim, each lights fully at its word time
+#   pop         each word flashes at its onset and settles to a hold (the line if no words)
+#   pulse       the line breathes with the bass
+#   typewriter  letters (own objects) appear one per 16th from t
+LYRIC_PALETTE = {"accent": (1.0, 0.62, 0.3), "cyan": (0.35, 0.9, 1.0), "white": (1.0, 1.0, 1.0), "red": (1.0, 0.25, 0.18)}
+LYRIC_SIZES = {"S": 0.055, "M": 0.08, "L": 0.12}  # metres, cap height-ish
+LYRIC_MAX_WIDTH = {"behind": 0.55, "front-low": 0.3, "wall": 0.9}  # a line wider than this is scaled to fit the frame
+LYRIC_EMISSION = 14.0  # emission strength at full glow (bloom is on)
+LYRIC_LIGHT = 12.0  # W of the paired area light at full glow: a glow on the haze and the cabinet, not a wash
+LYRIC_FONTS = [r"C:\Windows\Fonts\ariblk.ttf", r"C:\Windows\Fonts\impact.ttf", r"C:\Windows\Fonts\arialbd.ttf"]
+lyrics = data.get("lyrics") or {}
+lyric_lines = [l for l in lyrics.get("lines", []) if l.get("text", "").strip() and l.get("t", -1) >= 0]
+
+
+def lyric_color(name):
+    if isinstance(name, str) and name.startswith("#") and len(name) == 7:
+        return tuple(int(name[k : k + 2], 16) / 255.0 for k in (1, 3, 5))
+    return LYRIC_PALETTE.get(name, LYRIC_PALETTE["accent"])
+
+
+def lyric_text_object(name, text, size):
+    bpy.ops.object.text_add(location=(0, 0, 0))
+    obj = bpy.context.object
+    obj.name = name
+    obj.data.body = text
+    obj.data.size = size
+    obj.data.extrude = 0.004
+    obj.data.bevel_depth = 0.0012  # a soft edge that catches light
+    obj.data.bevel_resolution = 2
+    obj.data.align_x = "CENTER"
+    obj.data.align_y = "CENTER"
+    for font in LYRIC_FONTS:
+        if os.path.exists(font):
+            obj.data.font = bpy.data.fonts.load(font, check_existing=True)
+            break
+    bpy.ops.object.convert(target="MESH")
+    obj = bpy.context.object
+    obj.data.name = name
+    main_col = bpy.data.collections.get("MainCol")
+    if main_col is not None and obj.name not in main_col.objects:
+        for col in list(obj.users_collection):
+            col.objects.unlink(obj)
+        main_col.objects.link(obj)
+    return obj
+
+
+def lyric_material(name, color):
+    m = bpy.data.materials.new(name)
+    m.use_nodes = True
+    bsdf = m.node_tree.nodes["Principled BSDF"]
+    bsdf.inputs["Base Color"].default_value = (0.02, 0.02, 0.02, 1)
+    bsdf.inputs["Roughness"].default_value = 0.35
+    bsdf.inputs["Emission Color"].default_value = (*color, 1)
+    bsdf.inputs["Emission Strength"].default_value = 0.0
+    return m
+
+
+def key_hidden(obj, first_frame, last_frame):
+    """Hidden outside its window, so a dark line never sits in front of the LED wall."""
+    for frame, hidden in ((1, True), (first_frame, False), (last_frame, True)):
+        obj.hide_render = hidden
+        obj.hide_viewport = hidden
+        obj.keyframe_insert("hide_render", frame=frame)
+        obj.keyframe_insert("hide_viewport", frame=frame)
+
+
+def lyric_pieces(line, style):
+    """(text, onset) per object: words for karaoke/pop-with-words, letters for typewriter."""
+    text = line["text"].strip()
+    words = line.get("words") or []
+    if style == "typewriter":
+        step = 60.0 / data["grid"]["bpm"] / 4.0  # a 16th
+        k = 0
+        out = []
+        for ch in text:
+            out.append((ch, line["t"] + k * step))
+            if not ch.isspace():
+                k += 1
+        return out
+    if style in ("karaoke", "pop") and words:
+        return [(w["w"], w["t"]) for w in words]
+    return [(text, line["t"])]
+
+
+def lyric_env(style, t0, t1, onset, attack, release):
+    """Per-frame glow 0..1+ for one piece of a line."""
+    n = len(frames)
+    out = [0.0] * n
+    for i in range(n):
+        t = i / fps
+        if t < t0 - attack or t > t1 + release:
+            continue
+        edge = 1.0
+        if t < t0:
+            edge = (t - (t0 - attack)) / attack if attack > 0 else 1.0
+        elif t > t1:
+            edge = 1.0 - (t - t1) / release if release > 0 else 0.0
+        if style == "fade":
+            v = 1.0
+        elif style == "karaoke":
+            v = 1.0 if t >= onset else 0.12
+        elif style == "pop":
+            v = 0.35 + 1.4 * math.exp(-(t - onset) / 0.28) if t >= onset else 0.0
+        elif style == "pulse":
+            v = 0.3 + 0.7 * bass[i]
+        elif style == "typewriter":
+            v = 1.0 if t >= onset else 0.0
+        else:
+            v = 1.0
+        out[i] = max(0.0, v * edge)
+    return out
+
+
+if lyric_lines:
+    defaults = {"anchor": "behind", "style": "fade", "color": "accent", "size": "M", "attackMs": 80, "releaseMs": 400, "lightRoom": True}
+    defaults.update(lyrics.get("defaults", {}))
+    section_styles = lyrics.get("sections", {}) or {}
+    section_marks = sorted((s["t"], s.get("kind", "")) for s in data.get("sections", []))
+    anchor_glow = {}  # anchor name -> list of (env, color) for the paired light
+    n_objects = 0
+    for k, line in enumerate(lyric_lines):
+        kind = next((kd for t, kd in reversed(section_marks) if t <= line["t"]), None)
+        sec = section_styles.get(kind, {}) if kind else {}
+        style = line.get("style") or sec.get("style") or defaults["style"]
+        color = lyric_color(line.get("color") or sec.get("color") or defaults["color"])
+        size = LYRIC_SIZES.get(line.get("size") or sec.get("size") or defaults["size"], LYRIC_SIZES["M"])
+        anchor_name = line.get("anchor") or sec.get("anchor") or defaults["anchor"]
+        anchor = bpy.data.objects.get(f"Lyric_{anchor_name}")
+        if anchor is None:
+            print(f"lyrics: no anchor {anchor_name!r} in this scene — line {k} skipped")
+            continue
+        t0, t1 = float(line["t"]), float(line.get("tEnd", line["t"] + 3.0))
+        attack, release = defaults["attackMs"] / 1000.0, defaults["releaseMs"] / 1000.0
+        pieces = lyric_pieces(line, style)
+        # lay the pieces out left to right, centred on the anchor
+        objs = []
+        for j, (text, onset) in enumerate(pieces):
+            if text.isspace():
+                objs.append((None, 0.3 * size, onset))
+                continue
+            obj = lyric_text_object(f"Lyric{k:03d}_{j:02d}", text, size)
+            xs = [v.co.x for v in obj.data.vertices]
+            objs.append((obj, (max(xs) - min(xs)) if xs else 0.0, onset))
+        gap = 0.28 * size if style != "typewriter" else 0.0
+        total = sum(w for _, w, _ in objs) + gap * max(0, len(objs) - 1)
+        fit = min(1.0, LYRIC_MAX_WIDTH.get(anchor_name, 0.7) / total) if total > 0 else 1.0
+        x = -total / 2
+        first_frame, last_frame = max(1, round((t0 - attack) * fps)), min(len(frames), round((t1 + release) * fps) + 2)
+        for obj, width, onset in objs:
+            if obj is not None:
+                # centre-aligned text: shift by half its own width
+                obj.parent = anchor
+                obj.location = ((x + width / 2) * fit, 0, 0)
+                obj.scale = (fit, fit, fit)
+                mat = lyric_material(f"{obj.name}Mat", color)
+                obj.data.materials.append(mat)
+                env = lyric_env(style, t0, t1, onset, attack, release)
+                fcurve_fill(mat.node_tree, 'nodes["Principled BSDF"].inputs["Emission Strength"].default_value', [LYRIC_EMISSION * v for v in env])
+                key_hidden(obj, first_frame, last_frame)
+                anchor_glow.setdefault(anchor_name, []).append((env, color))
+                n_objects += 1
+            x += width + gap
+    if defaults.get("lightRoom", True):
+        for anchor_name, glows in anchor_glow.items():
+            anchor = bpy.data.objects[f"Lyric_{anchor_name}"]
+            light_data = bpy.data.lights.new(f"LyricLight_{anchor_name}", "AREA")
+            light_data.shape = "RECTANGLE"
+            light_data.size, light_data.size_y = 0.9, 0.35
+            light = bpy.data.objects.new(f"LyricLight_{anchor_name}", light_data)
+            (bpy.data.collections.get("MainCol") or scene.collection).objects.link(light)
+            light.parent = anchor
+            light.location = (0, 0, 0.3)  # a forearm in front of the text, along the anchor's facing
+            light.rotation_euler = (math.pi, 0, 0)  # area lights emit along -Z: turn it to face out
+            energy, colors = [], []
+            for i in range(len(frames)):
+                best = max(glows, key=lambda g: g[0][i])
+                energy.append(LYRIC_LIGHT * min(1.0, best[0][i]))
+                colors.append(best[1])
+            fcurve_fill(light_data, "energy", energy)
+            for axis in range(3):
+                fcurve_fill(light_data, "color", [c[axis] for c in colors], index=axis)
+    print(f"lyrics: {len(lyric_lines)} lines, {n_objects} text objects on {len(anchor_glow)} anchors")
+
 
 # render range: drive.range (seconds) -> frame window --------------------
 rng = data.get("range")

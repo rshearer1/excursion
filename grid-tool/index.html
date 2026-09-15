@@ -123,6 +123,17 @@
     #reel[hidden] { display: none; }
     .renderlog { font: 10px var(--mono); color: var(--muted); white-space: pre-wrap; margin-top: 8px; max-height: 60px; overflow: hidden; }
 
+    /* lyric lane */
+    .lyricbar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; padding: 8px 0 6px; }
+    .lyricbar textarea { background: var(--panel2); color: var(--text); border: 1px solid var(--line); border-radius: 4px; font: 12px var(--mono); padding: 8px; width: 100%; min-height: 64px; resize: vertical; }
+    .lyriclist { display: grid; grid-template-columns: 82px 1fr 110px 110px 28px; gap: 6px 8px; align-items: center; margin-top: 6px; max-height: 260px; overflow-y: auto; }
+    .lyriclist .t { font: 12px var(--mono); color: var(--orange); font-variant-numeric: tabular-nums; cursor: pointer; }
+    .lyriclist .t.untimed { color: var(--muted); }
+    .lyriclist input[type="text"] { background: var(--panel2); color: var(--text); border: 1px solid var(--line); border-radius: 4px; font: 12px var(--mono); padding: 5px 8px; width: 100%; }
+    .lyriclist select { padding: 5px 8px; font-size: 11.5px; }
+    .lyriclist button { padding: 4px 7px; font-size: 11px; }
+    .lyriclist .live { outline: 1px solid var(--orange); }
+
     #status { font: 11px var(--mono); color: var(--muted); min-height: 18px; margin-top: 10px; }
     #status.err { color: #e06c60; }
     .hints { color: var(--muted); font-size: 11.5px; margin-top: 10px; line-height: 1.8; }
@@ -242,6 +253,24 @@
       </div>
     </details>
 
+    <details class="adv" id="lyricsBox">
+      <summary>lyrics</summary>
+      <div class="lyricbar">
+        <input type="file" id="lrcFile" accept=".lrc,.txt,.json" title="import an .lrc (word tags kept) or a WhisperX json" />
+        <button id="lyricTranscribe" title="run WhisperX on this machine through the dev server">Transcribe</button>
+        <button id="lyricQuantise" title="snap line starts and word onsets to the 16th grid">Quantise</button>
+        <button id="lyricClear">Clear</button>
+        <label>style <select id="lyricStyle"></select></label>
+        <label>anchor <select id="lyricAnchor"></select></label>
+        <label>colour <select id="lyricColor"></select></label>
+        <label>size <select id="lyricSize"><option>S</option><option selected>M</option><option>L</option></select></label>
+        <label title="pair every line with a hidden area light of its colour"><input type="checkbox" id="lyricLight" checked /> light the room</label>
+      </div>
+      <textarea id="lyricText" placeholder="Type or paste the lyrics, one line per row, then press Use lines. Play the track and hit Enter on each line as it is sung to time it."></textarea>
+      <div class="lyricbar"><button id="lyricUse" class="export">Use lines</button><span class="drophint" id="lyricHint">no lines</span></div>
+      <div class="lyriclist" id="lyricList"></div>
+    </details>
+
     <div id="status"></div>
     <div class="hints">
       <kbd>space</kbd> play/pause &nbsp;&middot;&nbsp; <kbd>&larr;</kbd><kbd>&rarr;</kbd> nudge &plusmn;10 ms &nbsp;&middot;&nbsp; <kbd>shift</kbd>+<kbd>&larr;</kbd><kbd>&rarr;</kbd> &plusmn;1 ms &nbsp;&middot;&nbsp;
@@ -249,7 +278,8 @@
       <kbd>I</kbd>/<kbd>O</kbd> render range in/out at playhead (<kbd>shift</kbd> clears) &nbsp;&middot;&nbsp; <kbd>M</kbd> drop marker &nbsp;&middot;&nbsp; <kbd>B</kbd> break marker &nbsp;&middot;&nbsp; click a marker line in the beat lane to delete it.<br />
       Orange lines are downbeats, cyan are beats. The grid is right when the clicks disappear into the drums.<br />
       <b>3D</b> shows the scene live from the same drive data: cones pump on bass, the slate flashes on beats, cuts alternate cameras, dust drifts and gets shoved on each stroke.<br />
-      <b>Render</b> sends the track and the drive to Blender on this machine and plays the reel here when it lands; <b>test</b> is the 10-second look check, <b>final</b> is the post.
+      <b>Render</b> sends the track and the drive to Blender on this machine and plays the reel here when it lands; <b>test</b> is the 10-second look check, <b>final</b> is the post.<br />
+      <b>Lyrics</b>: paste lines, then <kbd>enter</kbd> on each as it is sung (or import an .lrc). Lines show on the beat lane; in the render they are glowing text on the scene's anchors and light the room.
     </div>
   </div>
   <script type="module" src="/src/main.ts"></script>

@@ -1101,6 +1101,30 @@ def set_dof(cam, focus, fstop, rack=None):
         focus["rack"] = [c for point in rack for c in point]
 
 
+
+# lyric anchors (phase 10): empties the lyric text objects parent to. apply_drive builds the
+# text at render time from drive.lyrics; moving an anchor here moves every line that uses it.
+# Standing anchors are rotated so text built in the XY plane faces the camera (-Y); the floor
+# anchor lies flat. Positions sit inside the wide camera's frame.
+def add_lyric_anchor(name, location, standing=True):
+    empty = bpy.data.objects.new(f"Lyric_{name}", None)
+    empty.empty_display_type = "ARROWS"
+    empty.empty_display_size = 0.08
+    empty.location = location
+    empty.rotation_euler = (math.pi / 2, 0, 0) if standing else (0, 0, 0)
+    scene.collection.objects.link(empty)
+    return empty
+
+
+LYRIC_ANCHORS = {
+    "behind": ((0.0, 0.4, top_z + 0.30), True),  # above and just behind the cabinet, clear of its top edge from the wide camera
+    "front-low": ((0.0, front_y - 0.28, -0.18), True),  # low in the frame, in front of the stand
+    "wall": ((0.0, 1.05, 0.58), True),  # high, just in front of the LED wall
+}
+for _name, (_loc, _standing) in LYRIC_ANCHORS.items():
+    add_lyric_anchor(_name, _loc, _standing)
+
+
 upper, lower = woofer_z_mid + woofer_z_half, woofer_z_mid - woofer_z_half
 wide = add_camera("Cam1_Wide", (0, front_y - 1.30, 0.02), (0, front_y, 0.0), 50)
 set_dof(

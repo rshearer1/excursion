@@ -2,6 +2,7 @@ import { type Grid, beatTimes, beatPhaseAt } from "./grid";
 import type { FrameFeatures } from "./features";
 import { envelopeFollow } from "./envelope";
 import { autoGain } from "./autogain";
+import type { Lyrics } from "./lyrics";
 
 export interface DriveFrame {
   bass: number;
@@ -29,6 +30,8 @@ export interface DriveJson {
   sections: { t: number; kind: string }[];
   /** Render/audio trim window in seconds; absent = whole track. */
   range?: { start: number; end: number };
+  /** Timed lyric lines for the scene's anchors (phase 10); absent when the lane is empty. */
+  lyrics?: Lyrics;
   frames: DriveFrame[];
 }
 
@@ -64,6 +67,7 @@ export interface BuildDriveInput {
   /** Shift grid events (beats, cuts, sections) this many ms EARLY, for visual anticipation. */
   leadMs?: number;
   tuning?: DriveTuning;
+  lyrics?: Lyrics;
 }
 
 const round6 = (x: number): number => Math.round(x * 1e6) / 1e6;
@@ -87,6 +91,7 @@ export function buildDrive(input: BuildDriveInput): DriveJson {
     cuts = [],
     leadMs = 0,
     tuning = {},
+    lyrics,
   } = input;
   const {
     attack = 0.6,
@@ -136,6 +141,19 @@ export function buildDrive(input: BuildDriveInput): DriveJson {
     cuts: cuts.map(shift),
     sections: sections.map((s) => ({ t: shift(s.t), kind: s.kind })),
     ...(range ? { range } : {}),
+    ...(lyrics && lyrics.lines.length
+      ? {
+          lyrics: {
+            ...lyrics,
+            lines: lyrics.lines.map((l) => ({
+              ...l,
+              t: shift(l.t),
+              tEnd: shift(l.tEnd),
+              ...(l.words ? { words: l.words.map((w) => ({ ...w, t: shift(w.t) })) } : {}),
+            })),
+          },
+        }
+      : {}),
     frames,
   };
 }

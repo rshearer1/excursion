@@ -15,6 +15,23 @@ import { autoGain } from "./engine/autogain";
 import type { FrameFeatures } from "./engine/features";
 import { rigStateAt, type DriveLike } from "./preview/rig";
 import { etaSeconds, formatDuration, slugify, type RenderEngine, type RenderProfile, type RenderState } from "./engine/renderJob";
+import {
+  DEFAULT_LYRICS,
+  LYRIC_ANCHORS,
+  LYRIC_COLORS,
+  LYRIC_STYLES,
+  exportLyrics,
+  fillEnds,
+  lineAt,
+  linesFromText,
+  parseLrc,
+  quantiseLyrics,
+  tapLine,
+  type LyricLine,
+  type LyricSize,
+  type LyricStyle,
+  type Lyrics,
+} from "./engine/lyrics";
 import type { PreviewViewport } from "./preview/viewport";
 
 declare global {
@@ -67,6 +84,20 @@ const renderEta = $<HTMLSpanElement>("renderEta");
 const renderBar = $<HTMLProgressElement>("renderBar");
 const reelVideo = $<HTMLVideoElement>("reel");
 const renderLog = $<HTMLDivElement>("renderLog");
+const lrcFile = $<HTMLInputElement>("lrcFile");
+const lyricTranscribeBtn = $<HTMLButtonElement>("lyricTranscribe");
+const lyricQuantiseBtn = $<HTMLButtonElement>("lyricQuantise");
+const lyricClearBtn = $<HTMLButtonElement>("lyricClear");
+const lyricStyleSel = $<HTMLSelectElement>("lyricStyle");
+const lyricAnchorSel = $<HTMLSelectElement>("lyricAnchor");
+const lyricColorSel = $<HTMLSelectElement>("lyricColor");
+const lyricSizeSel = $<HTMLSelectElement>("lyricSize");
+const lyricLightChk = $<HTMLInputElement>("lyricLight");
+const lyricText = $<HTMLTextAreaElement>("lyricText");
+const lyricUseBtn = $<HTMLButtonElement>("lyricUse");
+const lyricHint = $<HTMLSpanElement>("lyricHint");
+const lyricList = $<HTMLDivElement>("lyricList");
+const lyricsBox = $<HTMLDetailsElement>("lyricsBox");
 const loadRow = $<HTMLDivElement>("drop");
 
 const ZOOM_BEATS = 8; // width of the beat lane window
@@ -94,6 +125,7 @@ let projectDir: FileSystemDirectoryHandle | null = null;
 let rangeIn: number | null = null;
 let rangeOut: number | null = null;
 let markers: { t: number; kind: "drop" | "break" }[] = [];
+let lyrics: Lyrics = structuredClone(DEFAULT_LYRICS);
 let driveCache: FrameFeatures | null = null; // 30fps features for the overlay
 let overlayBass: Float32Array | null = null;
 let overlayOnsets: number[] = [];
@@ -130,6 +162,7 @@ interface Saved {
   cutMarkers: boolean;
   fps: number;
   leadMs: number;
+  lyrics?: Lyrics;
 }
 const storeKey = (sha1: string): string => `excursion:grid:${sha1}`;
 function saveState(): void {
@@ -150,6 +183,7 @@ function saveState(): void {
     cutMarkers: cutMarkersChk.checked,
     fps: Number(fpsSel.value) || 30,
     leadMs: Number(leadInput.value) || 0,
+    lyrics,
   };
   try {
     localStorage.setItem(storeKey(track.sha1), JSON.stringify(saved));
@@ -171,6 +205,8 @@ function loadState(sha1: string): boolean {
     markers = s.markers ?? [];
     if (s.cutsEveryBars !== undefined) cutsSel.value = String(s.cutsEveryBars);
     if (s.cutMarkers !== undefined) cutMarkersChk.checked = s.cutMarkers;
+    lyrics = s.lyrics ?? structuredClone(DEFAULT_LYRICS);
+    syncLyricControls();
     if (s.fps) fpsSel.value = String(s.fps);
     if (s.leadMs !== undefined) leadInput.value = String(s.leadMs);
     syncControls();
@@ -232,6 +268,8 @@ function adoptTrack(name: string, sha1: string, buffer: AudioBuffer, file: File 
   overlayOnsets = [];
   previewDrive = null;
   previewDirty = true;
+  lyrics = structuredClone(DEFAULT_LYRICS);
+  syncLyricControls();
   trackNameEl.textContent = `${name} — ${buffer.duration.toFixed(2)}s @ ${buffer.sampleRate}Hz`;
   playBtn.disabled = false;
   exportBtn.disabled = false;
@@ -495,6 +533,23 @@ function drawZoom(): void {
     zmCtx.fillText(m.kind === "drop" ? "D" : "B", x + 6, H - 20);
   }
 
+  // lyric lane: each timed line is a block along the bottom, the live one lit
+  const timed = lyrics.lines.filter((l) => l.t >= 0);
+  if (timed.length) {
+    const now = songTime();
+    zmCtx.font = "22px monospace";
+    for (const l of timed) {
+      const x0 = xOf(l.t);
+      const x1 = xOf(l.tEnd > l.t ? l.tEnd : l.t + 2);
+      if (x1 < 0 || x0 > W) continue;
+      const live = now >= l.t && now < (l.tEnd > l.t ? l.tEnd : l.t + 2);
+      zmCtx.fillStyle = live ? "rgba(240,138,46,0.55)" : "rgba(240,138,46,0.22)";
+      zmCtx.fillRect(Math.max(0, x0), H - 44, Math.min(W, x1) - Math.max(0, x0), 30);
+      zmCtx.fillStyle = live ? "#fff2e0" : "#ffd9a8";
+      zmCtx.fillText(l.text, Math.max(4, x0 + 6), H - 22);
+    }
+  }
+
   // centre playhead
   zmCtx.fillStyle = "#e8ebe6";
   zmCtx.fillRect(W / 2 - 1, 0, 3, H);
@@ -602,6 +657,7 @@ function buildCurrentDrive(
     }),
     leadMs: Number(leadInput.value) || 0,
     tuning: { trim: Number(trimInput.value) || 1 },
+    lyrics: exportLyrics(lyrics),
   });
 }
 async function exportDrive(): Promise<void> {
@@ -642,6 +698,203 @@ async function exportDrive(): Promise<void> {
     exportBtn.disabled = false;
   }
 }
+
+// ---------- lyrics (phase 10) ----------
+function fillSelect(sel: HTMLSelectElement, values: { value: string; label: string; title?: string }[], keep?: string): void {
+  sel.replaceChildren(
+    ...values.map((v) => {
+      const o = document.createElement("option");
+      o.value = v.value;
+      o.textContent = v.label;
+      if (v.title) o.title = v.title;
+      return o;
+    }),
+  );
+  if (keep && values.some((v) => v.value === keep)) sel.value = keep;
+}
+fillSelect(lyricStyleSel, LYRIC_STYLES.map((s) => ({ value: s.value, label: s.label, title: s.hint })));
+fillSelect(lyricColorSel, LYRIC_COLORS.map((c) => ({ value: c, label: c })));
+
+/** Push the lyric defaults into the controls and redraw the list. */
+function syncLyricControls(): void {
+  const anchors = LYRIC_ANCHORS[sceneSel.value] ?? [];
+  fillSelect(lyricAnchorSel, anchors.map((a) => ({ value: a, label: a })), lyrics.defaults.anchor);
+  if (!anchors.includes(lyrics.defaults.anchor) && anchors[0]) lyrics.defaults.anchor = anchors[0];
+  lyricStyleSel.value = lyrics.defaults.style;
+  lyricColorSel.value = lyrics.defaults.color;
+  lyricSizeSel.value = lyrics.defaults.size;
+  lyricLightChk.checked = lyrics.defaults.lightRoom;
+  renderLyricList();
+}
+
+function lyricsChanged(): void {
+  saveState();
+  renderLyricList();
+  draw();
+}
+
+function renderLyricList(): void {
+  const untimed = lyrics.lines.filter((l) => l.t < 0).length;
+  lyricHint.textContent = lyrics.lines.length
+    ? `${lyrics.lines.length} lines${untimed ? ` · ${untimed} to tap in: play and press Enter on each` : " · all timed"}`
+    : "no lines";
+  if (lyrics.lines.length) lyricsBox.open = true;
+  const now = songTime();
+  const live = lineAt(lyrics.lines, now);
+  lyricList.replaceChildren(
+    ...lyrics.lines.flatMap((line, i) => {
+      const t = document.createElement("span");
+      t.className = `t${line.t < 0 ? " untimed" : ""}${line === live ? " live" : ""}`;
+      t.textContent = line.t < 0 ? "— tap —" : fmtTime(line.t);
+      t.title = "click to seek here · shift-click to re-time at the playhead";
+      t.addEventListener("click", (e) => {
+        if (e.shiftKey) {
+          const shift = songTime() - (line.t < 0 ? songTime() : line.t);
+          line.t = songTime();
+          line.tEnd = line.tEnd > 0 ? Math.max(line.t + 0.3, line.tEnd + shift) : line.t;
+          lyricsChanged();
+        } else if (line.t >= 0) seek(line.t);
+      });
+      const text = document.createElement("input");
+      text.type = "text";
+      text.value = line.text;
+      text.addEventListener("change", () => {
+        line.text = text.value;
+        delete line.words; // typed edits invalidate word times
+        lyricsChanged();
+      });
+      const style = document.createElement("select");
+      fillSelect(style, [{ value: "", label: "inherit" }, ...LYRIC_STYLES.map((s) => ({ value: s.value, label: s.label }))], line.style ?? "");
+      style.addEventListener("change", () => {
+        if (style.value) line.style = style.value as LyricStyle;
+        else delete line.style;
+        lyricsChanged();
+      });
+      const anchor = document.createElement("select");
+      fillSelect(anchor, [{ value: "", label: "inherit" }, ...(LYRIC_ANCHORS[sceneSel.value] ?? []).map((a) => ({ value: a, label: a }))], line.anchor ?? "");
+      anchor.addEventListener("change", () => {
+        if (anchor.value) line.anchor = anchor.value;
+        else delete line.anchor;
+        lyricsChanged();
+      });
+      const del = document.createElement("button");
+      del.textContent = "×";
+      del.title = "delete this line";
+      del.addEventListener("click", () => {
+        lyrics.lines.splice(i, 1);
+        lyricsChanged();
+      });
+      return [t, text, style, anchor, del];
+    }),
+  );
+}
+
+function tapLyric(): void {
+  if (!track) return;
+  const before = lyrics.lines.filter((l) => l.t < 0).length;
+  lyrics.lines = tapLine(lyrics.lines, songTime());
+  const after = lyrics.lines.filter((l) => l.t < 0).length;
+  if (after === before) {
+    status("Every line is timed — shift-click a time in the list to re-time it.");
+    return;
+  }
+  lyricsChanged();
+  status(after ? `Tapped — ${after} line${after === 1 ? "" : "s"} to go.` : "All lines timed.");
+}
+
+lyricUseBtn.addEventListener("click", () => {
+  const fresh = linesFromText(lyricText.value);
+  if (!fresh.length) return;
+  // keep times for lines whose text already exists, in order
+  const old = [...lyrics.lines];
+  lyrics.lines = fresh.map((l) => {
+    const idx = old.findIndex((o) => o.text === l.text && o.t >= 0);
+    return idx >= 0 ? old.splice(idx, 1)[0]! : l;
+  });
+  lyricText.value = "";
+  lyricsChanged();
+  status(`${lyrics.lines.length} lines — play the track and press Enter as each one is sung.`);
+});
+lrcFile.addEventListener("change", async () => {
+  const f = lrcFile.files?.[0];
+  if (!f) return;
+  const text = await f.text();
+  let lines: LyricLine[] = [];
+  if (f.name.endsWith(".json")) {
+    try {
+      const j = JSON.parse(text) as { segments?: { start: number; end: number; text: string; words?: { word: string; start?: number }[] }[] };
+      lines = fillEnds(
+        (j.segments ?? []).map((s) => ({
+          t: s.start,
+          tEnd: s.end,
+          text: s.text.trim(),
+          ...(s.words?.length ? { words: s.words.filter((w) => w.start !== undefined).map((w) => ({ t: w.start!, w: w.word.trim() })) } : {}),
+        })),
+      );
+    } catch {
+      status("That json is not a WhisperX result.", true);
+      return;
+    }
+  } else {
+    lines = parseLrc(text);
+    if (!lines.length) lines = linesFromText(text);
+  }
+  lyrics.lines = lines;
+  lrcFile.value = "";
+  lyricsChanged();
+  status(`${lines.length} lyric lines from ${f.name}.`);
+});
+lyricTranscribeBtn.addEventListener("click", async () => {
+  if (!track?.file) {
+    status("Load an audio file first (the demo has no vocal).", true);
+    return;
+  }
+  lyricTranscribeBtn.disabled = true;
+  status("Storing the audio and running WhisperX… (a minute or two)");
+  try {
+    const put = await fetch(`/api/jobs/${encodeURIComponent(track.name)}`, { method: "PUT", body: track.file });
+    if (!put.ok) throw new Error(`could not store the audio (${put.status})`);
+    const res = await fetch("/api/transcribe", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ file: track.name }) });
+    const body = (await res.json()) as { lines?: LyricLine[]; error?: string; hint?: string };
+    if (!res.ok || !body.lines) throw new Error(`${body.error ?? res.status}${body.hint ? ` — ${body.hint}` : ""}`);
+    lyrics.lines = fillEnds(body.lines);
+    lyricsChanged();
+    status(`WhisperX: ${lyrics.lines.length} lines with word times. Check the low-confidence ones by ear.`);
+  } catch (e) {
+    status(`Transcribe: ${e instanceof Error ? e.message : String(e)}`, true);
+  } finally {
+    lyricTranscribeBtn.disabled = false;
+  }
+});
+lyricQuantiseBtn.addEventListener("click", () => {
+  lyrics.lines = quantiseLyrics(lyrics.lines, grid);
+  lyricsChanged();
+  status("Lyric starts and word onsets snapped to 16ths.");
+});
+lyricClearBtn.addEventListener("click", () => {
+  lyrics.lines = [];
+  lyricsChanged();
+});
+lyricStyleSel.addEventListener("change", () => {
+  lyrics.defaults.style = lyricStyleSel.value as LyricStyle;
+  lyricsChanged();
+});
+lyricAnchorSel.addEventListener("change", () => {
+  lyrics.defaults.anchor = lyricAnchorSel.value;
+  lyricsChanged();
+});
+lyricColorSel.addEventListener("change", () => {
+  lyrics.defaults.color = lyricColorSel.value;
+  lyricsChanged();
+});
+lyricSizeSel.addEventListener("change", () => {
+  lyrics.defaults.size = lyricSizeSel.value as LyricSize;
+  lyricsChanged();
+});
+lyricLightChk.addEventListener("change", () => {
+  lyrics.defaults.lightRoom = lyricLightChk.checked;
+  lyricsChanged();
+});
 
 // ---------- render (phase 05) ----------
 // The dev server carries a local helper (server/render.ts): the page stores the audio in
@@ -818,6 +1071,7 @@ zoomCanvas.addEventListener("click", (e) => {
 exportBtn.addEventListener("click", () => void exportDrive());
 moodSel.addEventListener("change", saveState);
 sceneSel.addEventListener("change", () => {
+  syncLyricControls();
   saveState();
   void loadPreviewRig();
 });
@@ -944,6 +1198,9 @@ document.addEventListener("keydown", (e) => {
     rangeOut = e.shiftKey ? null : songTime();
     saveState();
     status(rangeOut === null ? "Range out cleared." : `Range out: ${fmtTime(rangeOut)}`);
+  } else if (e.code === "Enter" && track && target.tagName !== "TEXTAREA" && target.tagName !== "BUTTON") {
+    e.preventDefault();
+    tapLyric();
   } else if ((e.code === "KeyM" || e.code === "KeyB") && track) {
     const kind = e.code === "KeyM" ? ("drop" as const) : ("break" as const);
     markers.push({ t: songTime(), kind });
