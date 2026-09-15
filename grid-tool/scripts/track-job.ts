@@ -2,7 +2,7 @@
 //
 //   npm run track-job -- <track.wav> [--start s --end s] [--bpm n] [--offset ms]
 //                        [--cuts bars] [--mood smoke|neon|clean] [--name slug]
-//                        [--drop s[,s]] [--break s[,s]] [--auto seconds]
+//                        [--drop s[,s]] [--break s[,s]] [--auto seconds] [--hits]
 //
 // --auto 20 picks the reel window for you: it finds the first drop (where the bass level
 // first climbs to 70 % of the track's peak), starts a bar before it on a downbeat, runs for
@@ -24,6 +24,7 @@ import { extractFeatures } from "../src/engine/features";
 import { buildDrive } from "../src/engine/exporter";
 import { coneMotion, MID_DOME } from "../src/engine/cone";
 import { computeCuts } from "../src/engine/cuts";
+import { detectHits } from "../src/engine/hits";
 import type { Grid } from "../src/engine/grid";
 
 const argv = process.argv.slice(2);
@@ -265,6 +266,8 @@ const drive = buildDrive({
   sections,
   range,
   cuts: computeCuts(grid, durationSec, { everyBars: num("--cuts") ?? 2 }),
+  // --hits: track kicks and snares (phase 09); shells and the logo then ride the kicks
+  ...(process.argv.includes("--hits") ? { hits: detectHits(mono, sampleRate, { grid }) } : {}),
 });
 
 const jobsDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "blender", "jobs");
@@ -274,6 +277,7 @@ writeFileSync(path.join(jobsDir, `${slug}.drive.json`), JSON.stringify(drive));
 const inRange = (t: number): boolean => !range || (t >= range.start && t < range.end);
 console.log(
   `wrote blender/jobs/${slug}.{wav,drive.json} — ${drive.frames.length} frames, ` +
+    (drive.events ? `${drive.events.kick.filter(inRange).length} kicks and ${drive.events.snare.filter(inRange).length} snares in range, ` : "") +
     `${drive.beats.filter(inRange).length} beats and ${drive.cuts.filter(inRange).length} cuts in range` +
     (range ? ` ${range.start}-${range.end} s` : ""),
 );
