@@ -6,3 +6,4 @@ out/
 blender/scenes/*.blend
 node_modules/
 assets/generated/
+__pycache__/
