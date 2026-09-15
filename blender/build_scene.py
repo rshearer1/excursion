@@ -54,7 +54,7 @@ MOODY = LOOK == "moody"
 # INTIMATE: one speaker, close cameras, nothing that reads as a stage — the film is about the
 # sound. False brings back the whole PMC rig, the truss, lasers, projectors and the LED wall.
 INTIMATE = True
-BACK_LASERS = 4  # thin beams behind the speaker in the intimate look (0 = none)
+BACK_LASERS = 0  # thin beams behind the speaker in the intimate look (0 = none); look B has none
 BACK_LASER_COLOR = (1.0, 0.22, 0.08)  # deep red-orange; (0.15, 1.0, 0.25) for classic green
 BACK_LASER_POWER = 700  # Cycles scatters beams physically; this reads as faint rays, not a wash
 BOKEH_BLADES = 11  # GM lenses are 11-blade: near-round bokeh
@@ -906,24 +906,24 @@ set_dof(
     rack=((woofer_x, front_y, upper), (badge_xz[0], front_y, badge_xz[1])),
 )
 # close-up: a long lens further back flattens the perspective and avoids the edge-on framing
-close = add_camera("Cam2_Woofers", (woofer_x + 0.04, front_y - 0.74, 0.10), (woofer_x, front_y, woofer_z_mid), 90)
+close = add_camera("Cam2_Woofers", (woofer_x + 0.05, front_y - 0.40, 0.06), (woofer_x, front_y, woofer_z_mid), 35)
 set_dof(
     close,
     add_focus("Focus_Woofers", (woofer_x, front_y, upper)),
-    2.8,  # FE 90 Macro G
+    1.4,  # FE 35 mm f/1.4 GM, up close: wide and intimate
     rack=((woofer_x - 0.16, front_y - 0.03, upper + 0.02), (woofer_x, front_y, lower)),
 )
 # macro: tweeter and badge from the right; focus racks down the plate from the dome to the logo
 macro = add_camera(
     "Cam3_Macro",
-    (tweeter_xz[0] + 0.25, front_y - 0.65, 0.0),
+    (tweeter_xz[0] + 0.12, front_y - 0.34, 0.0),
     (tweeter_xz[0], front_y, (tweeter_xz[1] + badge_xz[1]) / 2),
-    85,
+    50,
 )
 set_dof(
     macro,
     add_focus("Focus_Macro", (tweeter_xz[0], front_y, tweeter_xz[1])),
-    2.8,
+    1.4,  # FE 50 mm f/1.4 GM at a third of a metre
     rack=((tweeter_xz[0], front_y, tweeter_xz[1]), (badge_xz[0], front_y, badge_xz[1])),
 )
 rig_mid_x = (rig_x0 + rig_x1) / 2
@@ -939,8 +939,8 @@ def aim(cam, target):
 # each camera carries a "move": how far it travels (in the rig's space, metres) over every
 # shot it gets, eased in and out by apply_drive. Tracked cameras keep aiming at their target.
 wide["move"] = [0.0, 0.28, 0.0]  # slow push-in
-close["move"] = [0.22, 0.05, -0.04]  # slide across the woofers
-macro["move"] = [0.0, 0.03, -0.06]  # drift down the plate with the rack
+close["move"] = [0.14, 0.04, -0.03]  # slide across the woofers
+macro["move"] = [0.0, 0.02, -0.05]  # drift down the plate with the rack
 if not INTIMATE:
     rig_cam = add_camera("Cam4_Rig", (rig_mid_x, front_y - 5.6, 1.3), (rig_mid_x, 0.3, -0.55), 22)
     set_dof(rig_cam, add_focus("Focus_Rig", (0.0, front_y, 0.0)), 5.6, rack=((rig_mid_x, front_y, -0.3), (0.0, front_y, 0.0)))
@@ -953,14 +953,14 @@ if not INTIMATE:
 if INTIMATE:
     # close, slow, all on the hero: a track along the baffle at woofer height, and a slow fall
     # from above the cabinet down onto the drivers
-    side = add_camera("Cam6_Side", (-half_w - 0.55, front_y - 0.55, 0.02), (woofer_x, front_y, 0.0), 65)
-    set_dof(side, add_focus("Focus_Side", (woofer_x, front_y, 0.0)), 2.0)
+    side = add_camera("Cam6_Side", (-half_w - 0.32, front_y - 0.36, 0.02), (woofer_x, front_y, 0.0), 35)
+    set_dof(side, add_focus("Focus_Side", (woofer_x, front_y, 0.0)), 1.4)  # 35 mm f/1.4 GM, low across the baffle
     aim(side, add_focus("Aim_Side", (woofer_x, front_y, 0.0)))
-    side["move"] = [0.45, -0.05, 0.0]  # track across the woofers from the left edge
-    top = add_camera("Cam7_Top", (0.35, front_y - 0.75, 0.85), (0.0, front_y, 0.0), 50)
-    set_dof(top, add_focus("Focus_Top", (0.0, front_y, top_z)), 2.8, rack=((0.0, front_y, top_z), (woofer_x, front_y, 0.0)))
+    side["move"] = [0.3, -0.03, 0.0]  # track across the woofers from the left edge
+    top = add_camera("Cam7_Top", (0.28, front_y - 0.5, 0.62), (0.0, front_y, 0.0), 24)
+    set_dof(top, add_focus("Focus_Top", (0.0, front_y, top_z)), 1.4, rack=((0.0, front_y, top_z), (woofer_x, front_y, 0.0)))  # 24 mm f/1.4 GM from above
     aim(top, add_focus("Aim_Top", (0.0, front_y, 0.02)))
-    top["move"] = [-0.45, 0.1, -0.5]  # fall from above the cabinet onto the drivers
+    top["move"] = [-0.3, 0.06, -0.35]  # fall from above the cabinet onto the drivers
 else:
     side = add_camera("Cam6_Side", (rig_x0 - 1.0, front_y - 0.9, 0.05), (rig_mid_x, 0.0, -0.1), 40)
     set_dof(side, add_focus("Focus_Side", (0.0, front_y, 0.0)), 2.8)
@@ -997,6 +997,8 @@ def add_spot(name, location, target, watts, color, cone_deg, blend=0.3, radius=0
 
 
 WARM, DARK_RED = (1.0, 0.84, 0.66), (0.55, 0.035, 0.02)
+COOL = (0.4, 0.6, 1.0)
+RIM_COLOR = COOL  # look B: cool rims and back light against the warm key (DARK_RED for the red look)
 upper = woofer_z_mid + woofer_z_half
 lower = woofer_z_mid - woofer_z_half
 
@@ -1019,9 +1021,9 @@ track.up_axis = "UP_Y"
 
 add_spot("Graze", (-0.80, front_y - 0.12, -0.02), (0.10, front_y - 0.02, 0.0), 150 if MOODY else 220, (1.0, 0.95, 0.9), 22, radius=0.01)
 rig_mid = (rig_x0 + rig_x1) / 2
-add_spot("TopBack", (rig_mid + 0.1, 0.9, 1.2), (rig_mid, -0.12, top_z - 0.3), 1800, DARK_RED, 40, blend=0.8, radius=0.08, volume=0.35)
-add_spot("RimLeft", (rig_x0 - 0.9, 0.9, 0.35), (rig_x0, 0.3, -0.2), 900, DARK_RED, 28, blend=0.8, radius=0.08, volume=0.05)
-add_spot("RimRight", (rig_x1 + 0.9, 0.9, -0.05), (rig_x1, 0.3, -0.2), 800, DARK_RED, 28, blend=0.8, radius=0.08, volume=0.05)
+add_spot("TopBack", (rig_mid + 0.1, 0.9, 1.2), (rig_mid, -0.12, top_z - 0.3), 1800, RIM_COLOR, 40, blend=0.8, radius=0.08, volume=0.35)
+add_spot("RimLeft", (rig_x0 - 0.9, 0.9, 0.35), (rig_x0, 0.3, -0.2), 900, RIM_COLOR, 28, blend=0.8, radius=0.08, volume=0.05)
+add_spot("RimRight", (rig_x1 + 0.9, 0.9, -0.05), (rig_x1, 0.3, -0.2), 800, RIM_COLOR, 28, blend=0.8, radius=0.08, volume=0.05)
 # the wall: a wide, soft, warm fill from front-above so the whole rig reads, and a dark-red
 # wash from high behind that catches the tops and the stands. Both far dimmer than the hero's key.
 if not INTIMATE:
@@ -1034,6 +1036,90 @@ SET_WALLS = False  # True: plaster room corner; False: black void
 WALL_Y = 1.35  # back wall plane (behind the set-back PMC8-2s)
 WALL_H = 3.2
 ROOM_MARGIN = 1.5  # side walls this far outside the rig
+
+
+
+# the LED wall (intimate look): a big screen behind the speaker showing the oscilloscope trace.
+# In Cycles it is a real light — its cool glow is what edges the cabinet, lights the dust and
+# reflects in the floor, so the blue in the frame has a source you can see.
+LED_WALL = (2.4, 1.35)  # metres, 16:9
+LED_WALL_POS = (0.0, 1.2, 0.12)  # behind the hero
+LED_TRACE = (0.55, 0.75, 1.0)  # cool white-blue
+LED_PANEL_GLOW = 0.06  # the panel's own faint glow between the traces
+
+
+def build_led_wall(x, y, z, w, h):
+    bpy.ops.mesh.primitive_plane_add(size=1, location=(x, y, z), rotation=(math.pi / 2, 0, 0))
+    screen = bpy.context.object
+    screen.name = "Scope"
+    screen.scale = (w, h, 1)
+    m = bpy.data.materials.new("ScopeMat")
+    m.use_nodes = True
+    nt = m.node_tree
+    N, L = nt.nodes, nt.links
+    bsdf = N["Principled BSDF"]
+    bsdf.inputs["Base Color"].default_value = (0.004, 0.005, 0.008, 1)
+    bsdf.inputs["Roughness"].default_value = 0.35  # a glass front: the key reflects in it
+    bsdf.inputs["Specular IOR Level"].default_value = 0.6
+
+    def math_node(op, a, b=None):
+        n = N.new("ShaderNodeMath")
+        n.operation = op
+        for i, v in enumerate((a, b)):
+            if v is None:
+                continue
+            if isinstance(v, (int, float)):
+                n.inputs[i].default_value = v
+            else:
+                L.new(v, n.inputs[i])
+        return n.outputs[0]
+
+    def value(name):
+        n = N.new("ShaderNodeValue")
+        n.name = n.label = name
+        n.outputs[0].default_value = 0.0
+        return n.outputs[0]
+
+    def gauss(d, width):
+        return math_node("EXPONENT", math_node("MULTIPLY", -1.0, math_node("POWER", math_node("DIVIDE", d, width), 2.0)))
+
+    B, M, H, T = value("Bass"), value("Mid"), value("High"), value("Time")
+    gen = N.new("ShaderNodeTexCoord").outputs["Generated"]
+    sep = N.new("ShaderNodeSeparateXYZ")
+    L.new(gen, sep.inputs[0])
+    u, v = sep.outputs[0], sep.outputs[1]
+    two_pi = 2 * math.pi
+    wave = math_node(
+        "ADD",
+        math_node("MULTIPLY", B, math_node("SINE", math_node("ADD", math_node("MULTIPLY", u, two_pi * 3), math_node("MULTIPLY", T, 6.0)))),
+        math_node(
+            "ADD",
+            math_node("MULTIPLY", math_node("MULTIPLY", M, 0.6), math_node("SINE", math_node("SUBTRACT", math_node("MULTIPLY", u, two_pi * 11), math_node("MULTIPLY", T, 15.0)))),
+            math_node("MULTIPLY", math_node("MULTIPLY", H, 0.3), math_node("SINE", math_node("ADD", math_node("MULTIPLY", u, two_pi * 29), math_node("MULTIPLY", T, 40.0)))),
+        ),
+    )
+    f = math_node("ADD", 0.5, math_node("MULTIPLY", wave, 0.30))
+    d = math_node("ABSOLUTE", math_node("SUBTRACT", v, f))
+    trace = math_node("ADD", gauss(d, 0.010), math_node("MULTIPLY", 0.15, gauss(d, 0.06)))
+    # an LED wall is a grid of pixels: a faint pixel-pitch pattern over everything
+    pitch = math_node("MULTIPLY", math_node("SINE", math_node("MULTIPLY", u, two_pi * 240)), math_node("SINE", math_node("MULTIPLY", v, two_pi * 135)))
+    pixels = math_node("ADD", 0.7, math_node("MULTIPLY", 0.3, pitch))
+    glow = math_node("MULTIPLY", math_node("ADD", math_node("MULTIPLY", trace, LED_TRACE_STRENGTH), LED_PANEL_GLOW), pixels)
+    bsdf.inputs["Emission Color"].default_value = (*LED_TRACE, 1)
+    L.new(glow, bsdf.inputs["Emission Strength"])
+    screen.data.materials.append(m)
+    # a thin dark bezel and a slab behind, so it reads as a panel, not a floating rectangle
+    bpy.ops.mesh.primitive_cube_add(size=1, location=(x, y + 0.04, z))
+    bezel = bpy.context.object
+    bezel.name = "Scope_Bezel"
+    bezel.scale = (w + 0.06, 0.07, h + 0.06)
+    assign(bezel, make_material("BezelMat", base=(0.02, 0.02, 0.022, 1), rough=0.5))
+    return screen
+
+
+LED_TRACE_STRENGTH = 8.0
+if INTIMATE:
+    build_led_wall(LED_WALL_POS[0], LED_WALL_POS[1], LED_WALL_POS[2], LED_WALL[0], LED_WALL[1])
 
 
 def plaster_material(name, base=0.035, rough=0.85):
@@ -1095,7 +1181,7 @@ if not INTIMATE:
 
     # red uplights along the wall base (with the walls) or behind the rig, firing up into the haze
     for k, x in enumerate((rig_x0 + 0.1, rig_mid - 0.7, rig_mid + 0.7, rig_x1 - 0.1)):
-        add_spot(f"WallUp_{k}", (x, WALL_Y - 0.25, floor_z + 0.04), (x, WALL_Y, floor_z + 2.6), 260 if SET_WALLS else 60, DARK_RED, 55, blend=0.9, radius=0.05, volume=0.3)
+        add_spot(f"WallUp_{k}", (x, WALL_Y - 0.25, floor_z + 0.04), (x, WALL_Y, floor_z + 2.6), 260 if SET_WALLS else 60, RIM_COLOR, 55, blend=0.9, radius=0.05, volume=0.3)
 
     # neon BIGHECK on the back wall above the rig
     neon = text_mesh("Neon", LOGO_TEXT, 0.34, 0.03)
