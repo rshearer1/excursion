@@ -644,7 +644,9 @@ if shells:
         scale = [[0.001] * n for _ in shells]
         alpha = [[0.0] * n for _ in shells]
         emitted, k = 0, 0
-        for t in data.get("beats", []):
+        events = data.get("events") or {}
+        wave_times = events.get("kick") if events.get("kick") else data.get("beats", [])
+        for t in wave_times:
             i0 = round(t * fps)
             if not (0 <= i0 < n):
                 continue
@@ -672,7 +674,7 @@ if shells:
             fcurve_fill(nt, 'nodes["Alpha"].outputs[0].default_value', al)
             emit_node = next(nd for nd in nt.nodes if nd.type == "EMISSION")
             emit_node.inputs["Color"].default_value = (*tint, 1.0)
-        print(f"shells: {emitted} waves from {len(shells)} shells, {SHELL_SPEED_PER_BEAT} m per beat")
+        print(f"shells: {emitted} waves from {len(shells)} shells on {'tracked kicks' if events.get('kick') else 'beats'}, {SHELL_SPEED_PER_BEAT} m per beat")
 
 
 # render range: drive.range (seconds) -> frame window --------------------

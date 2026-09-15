@@ -3,6 +3,7 @@ import type { FrameFeatures } from "./features";
 import { envelopeFollow } from "./envelope";
 import { autoGain } from "./autogain";
 import type { Lyrics } from "./lyrics";
+import type { Hits } from "./hits";
 
 export interface DriveFrame {
   bass: number;
@@ -32,6 +33,8 @@ export interface DriveJson {
   range?: { start: number; end: number };
   /** Timed lyric lines for the scene's anchors (phase 10); absent when the lane is empty. */
   lyrics?: Lyrics;
+  /** Kick and snare hit times in seconds (phase 09), lead-shifted; absent when not tracked. */
+  events?: { kick: number[]; snare: number[] };
   frames: DriveFrame[];
 }
 
@@ -68,6 +71,9 @@ export interface BuildDriveInput {
   leadMs?: number;
   tuning?: DriveTuning;
   lyrics?: Lyrics;
+  /** Tracked hits; only those at or above minConf are exported. */
+  hits?: Hits;
+  minConf?: number;
 }
 
 const round6 = (x: number): number => Math.round(x * 1e6) / 1e6;
@@ -92,6 +98,8 @@ export function buildDrive(input: BuildDriveInput): DriveJson {
     leadMs = 0,
     tuning = {},
     lyrics,
+    hits,
+    minConf = 0.5,
   } = input;
   const {
     attack = 0.6,
@@ -141,6 +149,14 @@ export function buildDrive(input: BuildDriveInput): DriveJson {
     cuts: cuts.map(shift),
     sections: sections.map((s) => ({ t: shift(s.t), kind: s.kind })),
     ...(range ? { range } : {}),
+    ...(hits
+      ? {
+          events: {
+            kick: hits.kick.filter((h) => h.conf >= minConf).map((h) => shift(h.t)),
+            snare: hits.snare.filter((h) => h.conf >= minConf).map((h) => shift(h.t)),
+          },
+        }
+      : {}),
     ...(lyrics && lyrics.lines.length
       ? {
           lyrics: {

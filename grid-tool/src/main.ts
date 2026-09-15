@@ -10,6 +10,7 @@ import { buildDrive, type DriveJson } from "./engine/exporter";
 import { coneMotion, MID_DOME } from "./engine/cone";
 import { synthTestTrack } from "./engine/synth";
 import { computeCuts } from "./engine/cuts";
+import { detectHits, type Hits } from "./engine/hits";
 import { envelopeFollow } from "./engine/envelope";
 import { autoGain } from "./engine/autogain";
 import type { FrameFeatures } from "./engine/features";
@@ -59,6 +60,7 @@ const moodSel = $<HTMLSelectElement>("mood");
 const sceneSel = $<HTMLSelectElement>("scene");
 const linkBtn = $<HTMLButtonElement>("linkdir");
 const driveChk = $<HTMLInputElement>("driveOverlay");
+const hitsChk = $<HTMLInputElement>("hitsChk");
 const previewChk = $<HTMLInputElement>("preview3d");
 const previewCanvas = $<HTMLCanvasElement>("preview");
 const previewWrap = $<HTMLDivElement>("previewWrap");
@@ -131,6 +133,7 @@ let rangeIn: number | null = null;
 let rangeOut: number | null = null;
 let markers: { t: number; kind: "drop" | "break" }[] = [];
 let lyrics: Lyrics = structuredClone(DEFAULT_LYRICS);
+let hits: Hits | null = null; // tracked kicks and snares, edited in the audit lane
 let driveCache: FrameFeatures | null = null; // 30fps features for the overlay
 let overlayBass: Float32Array | null = null;
 let overlayOnsets: number[] = [];
@@ -168,6 +171,7 @@ interface Saved {
   fps: number;
   leadMs: number;
   lyrics?: Lyrics;
+  hits?: Hits | null;
 }
 const storeKey = (sha1: string): string => `excursion:grid:${sha1}`;
 function saveState(): void {
@@ -189,6 +193,7 @@ function saveState(): void {
     fps: Number(fpsSel.value) || 30,
     leadMs: Number(leadInput.value) || 0,
     lyrics,
+    hits,
   };
   try {
     localStorage.setItem(storeKey(track.sha1), JSON.stringify(saved));
@@ -212,6 +217,8 @@ function loadState(sha1: string): boolean {
     if (s.cutMarkers !== undefined) cutMarkersChk.checked = s.cutMarkers;
     lyrics = s.lyrics ?? structuredClone(DEFAULT_LYRICS);
     syncLyricControls();
+    hits = s.hits ?? null;
+    hitsChk.checked = hits !== null;
     if (s.fps) fpsSel.value = String(s.fps);
     if (s.leadMs !== undefined) leadInput.value = String(s.leadMs);
     syncControls();
@@ -275,6 +282,8 @@ function adoptTrack(name: string, sha1: string, buffer: AudioBuffer, file: File 
   previewDirty = true;
   lyrics = structuredClone(DEFAULT_LYRICS);
   syncLyricControls();
+  hits = null;
+  hitsChk.checked = false;
   trackNameEl.textContent = `${name} — ${buffer.duration.toFixed(2)}s @ ${buffer.sampleRate}Hz`;
   playBtn.disabled = false;
   exportBtn.disabled = false;
@@ -540,6 +549,24 @@ function drawZoom(): void {
     zmCtx.fillText(m.kind === "drop" ? "D" : "B", x + 6, H - 20);
   }
 
+  // hit audit lane: kicks (orange) and snares (cyan), tick height = confidence
+  if (hits) {
+    const row = (list: Hits["kick"], color: string, y: number): void => {
+      for (const h of list) {
+        const x = xOf(h.t);
+        if (x < 0 || x > W) continue;
+        const hgt = 8 + 16 * h.conf;
+        zmCtx.globalAlpha = 0.35 + 0.65 * h.conf;
+        zmCtx.fillStyle = color;
+        zmCtx.fillRect(x - 1, y - hgt, 3, hgt);
+        if (!h.onGrid) zmCtx.fillRect(x - 3, y + 2, 7, 2); // off-grid: a foot under the tick
+      }
+      zmCtx.globalAlpha = 1;
+    };
+    row(hits.kick, "#f08a2e", H - 70);
+    row(hits.snare, "#4ec9d4", H - 46);
+  }
+
   // lyric lane: each timed line is a block along the bottom, the live one lit
   const timed = lyrics.lines.filter((l) => l.t >= 0);
   if (timed.length) {
@@ -665,6 +692,7 @@ function buildCurrentDrive(
     leadMs: Number(leadInput.value) || 0,
     tuning: { trim: Number(trimInput.value) || 1 },
     lyrics: exportLyrics(lyrics),
+    ...(hits ? { hits } : {}),
   });
 }
 async function exportDrive(): Promise<void> {
@@ -705,6 +733,25 @@ async function exportDrive(): Promise<void> {
     exportBtn.disabled = false;
   }
 }
+
+// ---------- hits (phase 09) ----------
+async function ensureHits(): Promise<void> {
+  if (!track || hits) return;
+  status("Tracking kicks and snares…");
+  await new Promise((r) => setTimeout(r, 30));
+  hits = detectHits(track.mono, track.buffer.sampleRate, { grid });
+  saveState();
+  const sure = (l: Hits["kick"]): number => l.filter((h) => h.conf >= 0.5).length;
+  status(`Hits: ${sure(hits.kick)} kicks and ${sure(hits.snare)} snares sure, ${hits.kick.length + hits.snare.length - sure(hits.kick) - sure(hits.snare)} doubtful. Click a tick to delete, K / N to add.`);
+}
+hitsChk.addEventListener("change", () => {
+  if (hitsChk.checked) void ensureHits().then(draw);
+  else {
+    hits = null;
+    saveState();
+    draw();
+  }
+});
 
 // ---------- lyrics (phase 10) ----------
 function fillSelect(sel: HTMLSelectElement, values: { value: string; label: string; title?: string }[], keep?: string): void {
@@ -1098,6 +1145,20 @@ zoomCanvas.addEventListener("click", (e) => {
   const { start, dur } = zoomWindow();
   const t = start + ((e.clientX - rect.left) / rect.width) * dur;
   const tolerance = (6 / rect.width) * dur; // ~6 css px
+  if (hits) {
+    const y = e.clientY - rect.top;
+    const rowY = (y / rect.height) * zoomCanvas.height;
+    const list = rowY > zoomCanvas.height - 58 ? hits.snare : rowY > zoomCanvas.height - 96 ? hits.kick : null;
+    if (list) {
+      const idx = list.findIndex((h) => Math.abs(h.t - t) < tolerance);
+      if (idx >= 0) {
+        list.splice(idx, 1);
+        saveState();
+        status(`Deleted ${list === hits.kick ? "kick" : "snare"} hit.`);
+        return;
+      }
+    }
+  }
   const hit = markers.findIndex((m) => Math.abs(m.t - t) < tolerance);
   if (hit >= 0) {
     const gone = markers.splice(hit, 1)[0]!;
@@ -1245,6 +1306,12 @@ document.addEventListener("keydown", (e) => {
   } else if (e.code === "Enter" && track && target.tagName !== "TEXTAREA" && target.tagName !== "BUTTON") {
     e.preventDefault();
     tapLyric();
+  } else if ((e.code === "KeyK" || e.code === "KeyN") && track && hits) {
+    const list = e.code === "KeyK" ? hits.kick : hits.snare;
+    list.push({ t: songTime(), conf: 1, onGrid: false });
+    list.sort((a, b) => a.t - b.t);
+    saveState();
+    status(`${e.code === "KeyK" ? "Kick" : "Snare"} added at ${fmtTime(songTime())}.`);
   } else if ((e.code === "KeyM" || e.code === "KeyB") && track) {
     const kind = e.code === "KeyM" ? ("drop" as const) : ("break" as const);
     markers.push({ t: songTime(), kind });

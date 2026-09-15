@@ -187,6 +187,7 @@
         <span class="time" id="time">0:00.000 / 0:00.000</span>
         <label><input type="checkbox" id="metro" checked /> click</label>
         <label title="overlay the exported woofer envelope + onsets on the beat lane"><input type="checkbox" id="driveOverlay" /> drive</label>
+        <label title="track kicks and snares: two marker rows on the beat lane, click one to delete it, K / N add one at the playhead"><input type="checkbox" id="hitsChk" /> hits</label>
         <label title="live 3D preview of the scene driven by the same drive.json"><input type="checkbox" id="preview3d" /> 3D</label>
         <label title="shade where the Instagram reels UI covers the frame"><input type="checkbox" id="safeChk" /> safe</label>
       </fieldset>
@@ -294,6 +295,7 @@
       <kbd>space</kbd> play/pause &nbsp;&middot;&nbsp; <kbd>&larr;</kbd><kbd>&rarr;</kbd> nudge &plusmn;10 ms &nbsp;&middot;&nbsp; <kbd>shift</kbd>+<kbd>&larr;</kbd><kbd>&rarr;</kbd> &plusmn;1 ms &nbsp;&middot;&nbsp;
       click the <b>beat lane on a kick</b> to set the downbeat there &nbsp;&middot;&nbsp; click the <b>overview</b> to seek.<br />
       <kbd>I</kbd>/<kbd>O</kbd> render range in/out at playhead (<kbd>shift</kbd> clears) &nbsp;&middot;&nbsp; <kbd>M</kbd> drop marker &nbsp;&middot;&nbsp; <kbd>B</kbd> break marker &nbsp;&middot;&nbsp; click a marker line in the beat lane to delete it.<br />
+      <b>hits</b> tracks kicks (orange row) and snares (cyan row) with a grid prior; bright ticks are sure, dim ones are doubtful. Click a tick to delete it, <kbd>K</kbd> / <kbd>N</kbd> add a kick / snare at the playhead. Shells and the logo ride the kicks in the render.<br />
       Orange lines are downbeats, cyan are beats. The grid is right when the clicks disappear into the drums.<br />
       <b>3D</b> shows the scene live from the same drive data: cones pump on bass, the slate flashes on beats, cuts alternate cameras, dust drifts and gets shoved on each stroke.<br />
       <b>Render</b> sends the track and the drive to Blender on this machine and plays the reel here when it lands; <b>test</b> is the 10-second look check, <b>final</b> is the post.<br />
