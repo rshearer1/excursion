@@ -80,6 +80,8 @@ const statusEl = $<HTMLDivElement>("status");
 const profileSel = $<HTMLSelectElement>("profile");
 const engineSel = $<HTMLSelectElement>("engine");
 const renderBtn = $<HTMLButtonElement>("render");
+const previewBtn = $<HTMLButtonElement>("previewBtn");
+const previewFrameImg = $<HTMLImageElement>("previewFrame");
 const stopRenderBtn = $<HTMLButtonElement>("stopRender");
 const renderPanel = $<HTMLDivElement>("renderPanel");
 const renderText = $<HTMLSpanElement>("renderText");
@@ -277,6 +279,8 @@ function adoptTrack(name: string, sha1: string, buffer: AudioBuffer, file: File 
   playBtn.disabled = false;
   exportBtn.disabled = false;
   renderBtn.disabled = !(file && helperOnline);
+  previewBtn.disabled = !helperOnline;
+  previewFrameImg.hidden = true;
   const restored = loadState(sha1);
   syncControls();
   status(
@@ -925,6 +929,7 @@ async function detectHelper(): Promise<void> {
       moodSel.value = moods.some((m) => m.name === current) ? current : moods[0]!.name;
     }
     renderBtn.disabled = !(track?.file && helperOnline);
+    previewBtn.disabled = !(track && helperOnline);
     const st = (await (await fetch("/api/render")).json()) as RenderState;
     if (st.status === "running") {
       showRender(st);
@@ -1023,6 +1028,39 @@ async function renderReel(): Promise<void> {
 }
 
 renderBtn.addEventListener("click", () => void renderReel());
+
+/** Phase 11's true-look tier: one EEVEE draft frame of the current drive at the playhead. */
+async function previewFrameNow(): Promise<void> {
+  if (!track) return;
+  previewBtn.disabled = true;
+  try {
+    const t = songTime();
+    status(`Preview frame at ${fmtTime(t)} — EEVEE draft, about 20 seconds…`);
+    await new Promise((r) => setTimeout(r, 30));
+    const fps = Number(fpsSel.value) || 30;
+    const features = extractFeatures(track.mono, track.buffer.sampleRate, { fps });
+    const drive = buildCurrentDrive(fps, features, {
+      cone: coneMotion(track.mono, track.buffer.sampleRate, { fps }),
+      dome: coneMotion(track.mono, track.buffer.sampleRate, { fps, ...MID_DOME }),
+    });
+    const res = await fetch("/api/preview", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ slug: slugify(track.name), time: t, drive }),
+    });
+    const body = (await res.json()) as { url?: string; error?: string };
+    if (!res.ok || !body.url) throw new Error(body.error ?? `preview refused (${res.status})`);
+    previewFrameImg.src = body.url;
+    previewFrameImg.hidden = false;
+    previewWrap.hidden = false;
+    status(`Preview frame at ${fmtTime(t)}: the true look, EEVEE draft. Render for the Cycles version.`);
+  } catch (e) {
+    status(`Preview frame: ${e instanceof Error ? e.message : String(e)}`, true);
+  } finally {
+    previewBtn.disabled = !(track && helperOnline);
+  }
+}
+previewBtn.addEventListener("click", () => void previewFrameNow());
 stopRenderBtn.addEventListener("click", async () => {
   await fetch("/api/render/stop", { method: "POST" }).catch(() => undefined);
 });

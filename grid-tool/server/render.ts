@@ -10,6 +10,8 @@
 //   GET  /api/render                 the current job state (poll it)
 //   POST /api/render/stop            kill the running job
 //   GET  /api/reels/<slug>.mp4       the finished reel, with Range support for <video>
+//   POST /api/preview                { slug, drive, time } -> one EEVEE draft frame at that time,
+//                                    the true look; answers { url } (served under /api/previews/)
 //   POST /api/transcribe             { file } -> WhisperX word-level lines for an audio file
 //                                    already in blender/jobs/ (501 with a hint when it is not installed)
 //
@@ -201,6 +203,51 @@ function transcribe(file: string): Promise<{ lines: { t: number; tEnd: number; t
   });
 }
 
+const previewDir = path.join(outDir, "preview");
+let previewBusy = false;
+
+/** One draft frame of the drive at `time` seconds, through apply_drive --frame; resolves to the PNG path. */
+function previewFrame(slug: string, drive: RenderRequest["drive"], time: number): Promise<string> {
+  return new Promise((resolve, reject) => {
+    if (previewBusy) return reject(new Error("a preview frame is already rendering"));
+    previewBusy = true;
+    mkdirSync(jobsDir, { recursive: true });
+    mkdirSync(previewDir, { recursive: true });
+    const drivePath = path.join(jobsDir, `${slug}.preview.drive.json`);
+    writeFileSync(drivePath, JSON.stringify(drive));
+    const frame = Math.max(1, Math.round(time * drive.fps) + 1);
+    const png = path.join(previewDir, `${slug}.png`);
+    const args = [
+      "-b", path.join(root, "blender", "scenes", "void.blend"),
+      "-P", path.join(root, "blender", "apply_drive.py"),
+      "--", drivePath, "--engine", "eevee", "--draft", "--frame", String(frame), "--out", png,
+    ];
+    const proc = spawn(findBlender(), args, { cwd: root });
+    let log = "";
+    proc.stdout?.on("data", (c: Buffer) => (log += c.toString()));
+    proc.stderr?.on("data", (c: Buffer) => (log += c.toString()));
+    proc.on("error", (e) => {
+      previewBusy = false;
+      reject(e);
+    });
+    proc.on("exit", (code) => {
+      previewBusy = false;
+      if (code !== 0 || !existsSync(png)) return reject(new Error(`preview frame failed (${code}): ${log.replace(/.*HIPEW.*\n?/g, "").slice(-300)}`));
+      resolve(png);
+    });
+  });
+}
+
+function servePreview(res: ServerResponse, file: string): void {
+  const name = safeName(file);
+  if (!name || !name.endsWith(".png")) return json(res, 404, { error: "no such preview" });
+  const full = path.join(previewDir, name);
+  if (!existsSync(full)) return json(res, 404, { error: "no such preview" });
+  res.setHeader("Content-Type", "image/png");
+  res.setHeader("Cache-Control", "no-store");
+  createReadStream(full).pipe(res);
+}
+
 function serveReel(req: IncomingMessage, res: ServerResponse, file: string): void {
   const name = safeName(file);
   if (!name || !name.endsWith(".mp4")) return json(res, 404, { error: "no such reel" });
@@ -267,6 +314,19 @@ export function renderHelper(): Plugin {
             if (!audio || !existsSync(path.join(jobsDir, audio))) return json(res, 400, { error: `audio not stored: ${audio}` });
             startRender(body);
             return json(res, 200, state);
+          }
+          if (req.method === "POST" && url.pathname === "/api/preview") {
+            const body = JSON.parse((await readBody(req)).toString("utf8")) as { slug: string; time: number; drive: RenderRequest["drive"] };
+            if (!safeName(body.slug) || !body.drive?.frames?.length) return json(res, 400, { error: "bad request" });
+            try {
+              await previewFrame(body.slug, body.drive, Number(body.time) || 0);
+              return json(res, 200, { url: `/api/previews/${body.slug}.png?t=${Date.now()}` });
+            } catch (e) {
+              return json(res, 500, { error: e instanceof Error ? e.message : String(e) });
+            }
+          }
+          if (req.method === "GET" && url.pathname.startsWith("/api/previews/")) {
+            return servePreview(res, decodeURIComponent(url.pathname.slice("/api/previews/".length)));
           }
           if (req.method === "POST" && url.pathname === "/api/transcribe") {
             const body = JSON.parse((await readBody(req)).toString("utf8")) as { file?: string };

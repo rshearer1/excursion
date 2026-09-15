@@ -57,6 +57,8 @@
     /* Instagram safe zone over the preview: the reels UI covers the top, the bottom and the right edge */
     .previewwrap { position: relative; flex: none; }
     .previewwrap[hidden] { display: none; }
+    #previewFrame { display: block; width: 216px; height: 384px; object-fit: cover; background: #04060a; border: 1px solid var(--line); border-radius: 4px; }
+    #previewFrame[hidden] { display: none; }
     .safezone { position: absolute; inset: 0; pointer-events: none; display: none; }
     .safezone.on { display: block; }
     .safezone .z { position: absolute; background: rgba(224,108,96,0.22); border: 1px dashed rgba(224,108,96,0.7); }
@@ -173,6 +175,7 @@
       </div>
       <div class="previewwrap" id="previewWrap" hidden>
         <canvas id="preview" width="216" height="384" title="3D preview — placeholder monitor, or blender/scenes/<scene>.glb from the linked folder"></canvas>
+        <img id="previewFrame" alt="preview frame" hidden />
         <div class="safezone" id="safezone"><div class="z top"></div><div class="z bottom"></div><div class="z side"></div><span class="lbl">IG safe zone</span></div>
       </div>
     </div>
@@ -241,6 +244,7 @@
         <label>engine
           <select id="engine"><option value="cycles" selected>cycles</option><option value="eevee">eevee</option></select>
         </label>
+        <button id="previewBtn" disabled title="one EEVEE draft frame at the playhead: exact materials, lights and grade, in seconds">Preview frame</button>
         <button id="render" class="primary" disabled title="needs the dev server (npm run dev) on this machine, with Blender installed">Render</button>
         <button id="stopRender" hidden>Stop</button>
       </fieldset>

@@ -42,6 +42,7 @@ ap.add_argument("--slate", action="store_true", help="show the orange sync slate
 ap.add_argument("--shutter", type=float, default=0.5, help="motion blur shutter as a fraction of the frame (0.5 = 180 degrees)")
 ap.add_argument("--samples", type=int, default=48, help="cycles samples per pixel (denoised; 48 is clean for this scene)")
 ap.add_argument("--mood", default=None, help="override drive.mood: a name in blender/moods/")
+ap.add_argument("--frame", type=int, default=None, help="render this one frame to --out (a file path) and stop: the Preview-frame button")
 args = ap.parse_args(argv)
 
 with open(args.drive, encoding="utf-8") as fh:
@@ -1010,7 +1011,12 @@ else:
 scene.render.resolution_percentage = 50 if (args.draft or args.test) else 100
 scene.render.image_settings.file_format = "PNG"
 
-if args.render:
+if args.frame is not None:
+    scene.frame_set(max(scene.frame_start, min(scene.frame_end, args.frame)))
+    scene.render.filepath = args.out
+    bpy.ops.render.render(write_still=True)
+    print(f"preview frame {scene.frame_current} -> {args.out}")
+elif args.render:
     scene.render.filepath = args.out.rstrip("/\\") + "/"
     print(f"rendering {len(frames)} frames to {scene.render.filepath} ({args.engine}{' draft' if args.draft else ''})")
     bpy.ops.render.render(animation=True)
