@@ -54,7 +54,7 @@ MOODY = LOOK == "moody"
 INTIMATE = True
 BACK_LASERS = 4  # thin beams behind the speaker in the intimate look (0 = none)
 BACK_LASER_COLOR = (1.0, 0.22, 0.08)  # deep red-orange; (0.15, 1.0, 0.25) for classic green
-BACK_LASER_POWER = 4000
+BACK_LASER_POWER = 12000
 BOKEH_BLADES = 7  # aperture blades: highlights become heptagons instead of discs
 BOKEH_ROTATION = 12  # degrees
 BOKEH_RATIO = 1.4  # anamorphic squeeze: >1 stretches bokeh into ovals
@@ -1251,18 +1251,18 @@ if INTIMATE and BACK_LASERS:
     for j in range(BACK_LASERS):
         target = bpy.data.objects.new(f"LaserTarget_0_{j}", None)
         target.empty_display_size = 0.05
-        # a curtain of beams behind the cabinet, sweeping across the frame at different heights
-        target.location = (2.6, 1.1, -0.35 + 0.95 * j / max(1, BACK_LASERS - 1))
+        # a curtain of beams just behind the cabinet, crossing above and beside it
+        target.location = (2.6, 0.42, 0.26 + 0.42 * j / max(1, BACK_LASERS - 1))
         scene.collection.objects.link(target)
         data = bpy.data.lights.new(f"Laser_0_{j}", "SPOT")
         data.energy = BACK_LASER_POWER
         data.color = BACK_LASER_COLOR
-        data.spot_size = math.radians(0.8)
+        data.spot_size = math.radians(1.3)
         data.spot_blend = 0.0
         data.shadow_soft_size = 0.002
-        data.volume_factor = 6.0
+        data.volume_factor = 8.0
         light = new_object(f"Laser_0_{j}", data)
-        light.location = (-2.6, 1.2, 0.05 + 0.02 * j)
+        light.location = (-2.6, 0.5, -0.1 + 0.05 * j)
         light["fan"] = list(target.location)  # apply_drive scans the beam around this point
         c = light.constraints.new("TRACK_TO")
         c.target = target
@@ -1278,12 +1278,12 @@ if hasattr(slate, "visible_shadow"):
 # a box, drifting toward camera, streamed and puffed by the woofers' air (see build_dust) and
 # wandering on 4D noise over Time. They carry no emission — they only sparkle where a beam
 # catches them, and out of focus they open into soft bokeh shapes.
-DUST_COUNT = 6000
-DUST_BOX = ((rig_x0 - 0.3, -0.50, floor_z), (rig_x1 + 0.3, 0.15, 0.60))  # stops short of the close-up lens
+DUST_COUNT = 12000  # the field now reaches behind the speaker, so twice the motes for the same density
+DUST_BOX = ((rig_x0 - 0.7, -0.50, floor_z), (rig_x1 + 0.7, 1.2, 0.80))  # from well behind the speaker to just short of the close-up lens
 DUST_SIZE = (0.0004, 0.0014) if MOODY else (0.0002, 0.0006)  # metres
 
 
-def build_dust(front, wx, wz_mid, wz_half):
+def build_dust(front, wx, wz_mid, wz_half, half_w, half_h, back):
     """Dust field with wind from the woofers. Inputs keyed by apply_drive:
     Drift  slow room drift toward camera (shared with the smoke)
     Gust   running total of air the cones have moved: motes in the column in front of the
@@ -1347,6 +1347,16 @@ def build_dust(front, wx, wz_mid, wz_half):
     stream = math_node("MULTIPLY", math_node("MULTIPLY", gin.outputs["Gust"], DUST_STREAM), column)
     y = math_node("WRAP", math_node("SUBTRACT", math_node("SUBTRACT", py, math_node("MULTIPLY", gin.outputs["Drift"], 0.5)), stream), y1, y0)
 
+    # the room's air goes around the cabinet, not through it: motes in the cabinet's footprint
+    # are eased sideways as they approach from behind, and none exist inside it
+    px_abs = math_node("ABSOLUTE", px)
+    in_x = map_range(px_abs, half_w + 0.08, half_w + 0.02, 0.0, 1.0)
+    in_z = map_range(math_node("ABSOLUTE", pz), half_h + 0.08, half_h + 0.02, 0.0, 1.0)
+    near_y = math_node("MULTIPLY", map_range(y, back + 0.6, back + 0.1, 0.0, 1.0), map_range(y, front - 0.02, front + 0.02, 0.0, 1.0))
+    around = math_node("MULTIPLY", math_node("MULTIPLY", in_x, in_z), near_y)
+    push_out = math_node("MULTIPLY", around, math_node("ADD", math_node("SUBTRACT", half_w + 0.1, px_abs), 0.0))
+    px = math_node("ADD", px, math_node("MULTIPLY", math_node("SIGN", math_node("ADD", px, 0.001)), push_out))
+
     # the puff: motes just ahead of a cone jump forward and spread outward on a hit
     ahead = math_node("SUBTRACT", front, y)
     axial = math_node("MULTIPLY", map_range(ahead, -0.01, 0.03, 0.0, 1.0), map_range(ahead, 0.12, 0.45, 1.0, 0.0))
@@ -1407,10 +1417,10 @@ def build_dust(front, wx, wz_mid, wz_half):
     return obj
 
 
-DUST_STREAM = 1.0  # multiplier on Gust (metres of air the cones have moved) for the column stream
+DUST_STREAM = 0.0  # the conveyor stream out of the woofers read as the speaker emitting dust; off
 DUST_PUFF = 0.05  # metres a mote right in front of a cone jumps on a full hit
 DUST_SPREAD = 0.025  # metres it spreads outward at the same time
-build_dust(front_y, woofer_x, woofer_z_mid, woofer_z_half)
+build_dust(front_y, woofer_x, woofer_z_mid, woofer_z_half, half_w, top_z, -front_y)
 
 # world: black to camera and to lighting. Raise WORLD_STRENGTH to bring back the studio HDRI
 # as soft fill / reflections. --------------------------------------------------------------
