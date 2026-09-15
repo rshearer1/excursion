@@ -199,9 +199,19 @@ if dust is not None:
             gust.append(total)
         fcurve_fill(dust, dust_path("Drift"), drift)
         fcurve_fill(dust, dust_path("Time"), [i / fps for i in range(len(frames))])
+        # the plan's rule: the push is the cone's velocity, signed — the outward stroke shoves,
+        # the return stroke sucks. frames[].cone gives the exposure's [first, second] extremes,
+        # so their difference is the stroke during the shutter. Old drives fall back to the
+        # smoke's kick transient.
+        if frames and "cone" in frames[0]:
+            vel = [f["cone"][1] - f["cone"][0] for f in frames]
+            peak = max(0.05, max(abs(v) for v in vel))
+            dust_push = [max(-1.0, min(1.0, 1.2 * v / peak)) for v in vel]
+        else:
+            dust_push = push
         if "Gust" in ids:
             fcurve_fill(dust, dust_path("Gust"), gust)
-            fcurve_fill(dust, dust_path("Push"), push)
+            fcurve_fill(dust, dust_path("Push"), dust_push)
             print(f"dust: woofer wind streams {total:.1f} m over the track")
 
 # beat flashes: the sync slate (drafts only) and the logo -----------------
@@ -569,8 +579,10 @@ if args.engine == "cycles":
     cy.use_adaptive_sampling = True
     cy.adaptive_threshold = 0.05
     cy.use_denoising = True
+    cy.use_animated_seed = True  # noise moves like grain instead of sitting still on the frame
     try:
         cy.denoiser = "OPTIX"
+        cy.denoising_prefilter = "ACCURATE"
     except TypeError:
         pass
     cy.max_bounces = 6

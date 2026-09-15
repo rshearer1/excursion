@@ -54,10 +54,10 @@ MOODY = LOOK == "moody"
 INTIMATE = True
 BACK_LASERS = 4  # thin beams behind the speaker in the intimate look (0 = none)
 BACK_LASER_COLOR = (1.0, 0.22, 0.08)  # deep red-orange; (0.15, 1.0, 0.25) for classic green
-BACK_LASER_POWER = 12000
-BOKEH_BLADES = 7  # aperture blades: highlights become heptagons instead of discs
+BACK_LASER_POWER = 700  # Cycles scatters beams physically; this reads as faint rays, not a wash
+BOKEH_BLADES = 11  # GM lenses are 11-blade: near-round bokeh
 BOKEH_ROTATION = 12  # degrees
-BOKEH_RATIO = 1.4  # anamorphic squeeze: >1 stretches bokeh into ovals
+BOKEH_RATIO = 1.0  # round; 1.5 for anamorphic ovals
 
 bpy.ops.wm.read_factory_settings(use_empty=True)
 scene = bpy.context.scene
@@ -458,6 +458,8 @@ def build_placeholder():
 def add_camera(name, location, target, lens):
     cam_data = bpy.data.cameras.new(name)
     cam_data.lens = lens
+    cam_data.sensor_fit = "VERTICAL"  # a full-frame body turned portrait, cropped to 9:16
+    cam_data.sensor_height = 36.0
     cam = new_object(name, cam_data)
     cam.location = location
     cam.rotation_euler = (Vector(target) - Vector(location)).to_track_quat("-Z", "Y").to_euler()
@@ -793,7 +795,7 @@ def set_dof(cam, focus, fstop, rack=None):
     dof.focus_object = focus
     dof.aperture_fstop = fstop
     dof.aperture_blades = BOKEH_BLADES
-    dof.aperture_rotation = math.radians(BOKEH_ROTATION)
+    dof.aperture_rotation = math.radians((sum(map(ord, cam.name)) % 9) - 4)  # a small, fixed, per-lens twist
     dof.aperture_ratio = BOKEH_RATIO
     cam.parent = rig
     if rack:
@@ -805,7 +807,7 @@ wide = add_camera("Cam1_Wide", (0, front_y - 1.30, 0.02), (0, front_y, 0.0), 50)
 set_dof(
     wide,
     add_focus("Focus_Wide", (woofer_x, front_y, upper)),
-    2.8,
+    1.4,  # the 50 GM feel: subject isolation, motes into discs
     rack=((woofer_x, front_y, upper), (badge_xz[0], front_y, badge_xz[1])),
 )
 # close-up: a long lens further back flattens the perspective and avoids the edge-on framing
@@ -813,7 +815,7 @@ close = add_camera("Cam2_Woofers", (woofer_x + 0.04, front_y - 0.74, 0.10), (woo
 set_dof(
     close,
     add_focus("Focus_Woofers", (woofer_x, front_y, upper)),
-    4.0,
+    2.8,  # FE 90 Macro G
     rack=((woofer_x - 0.16, front_y - 0.03, upper + 0.02), (woofer_x, front_y, lower)),
 )
 # macro: tweeter and badge from the right; focus racks down the plate from the dome to the logo
@@ -857,7 +859,7 @@ if INTIMATE:
     # close, slow, all on the hero: a track along the baffle at woofer height, and a slow fall
     # from above the cabinet down onto the drivers
     side = add_camera("Cam6_Side", (-half_w - 0.55, front_y - 0.55, 0.02), (woofer_x, front_y, 0.0), 65)
-    set_dof(side, add_focus("Focus_Side", (woofer_x, front_y, 0.0)), 2.5)
+    set_dof(side, add_focus("Focus_Side", (woofer_x, front_y, 0.0)), 2.0)
     aim(side, add_focus("Aim_Side", (woofer_x, front_y, 0.0)))
     side["move"] = [0.45, -0.05, 0.0]  # track across the woofers from the left edge
     top = add_camera("Cam7_Top", (0.35, front_y - 0.75, 0.85), (0.0, front_y, 0.0), 50)
@@ -998,7 +1000,7 @@ if not INTIMATE:
 
     # red uplights along the wall base (with the walls) or behind the rig, firing up into the haze
     for k, x in enumerate((rig_x0 + 0.1, rig_mid - 0.7, rig_mid + 0.7, rig_x1 - 0.1)):
-        add_spot(f"WallUp_{k}", (x, WALL_Y - 0.25, floor_z + 0.04), (x, WALL_Y, floor_z + 2.6), 260 if SET_WALLS else 140, DARK_RED, 55, blend=0.9, radius=0.05, volume=0.3)
+        add_spot(f"WallUp_{k}", (x, WALL_Y - 0.25, floor_z + 0.04), (x, WALL_Y, floor_z + 2.6), 260 if SET_WALLS else 60, DARK_RED, 55, blend=0.9, radius=0.05, volume=0.3)
 
     # neon BIGHECK on the back wall above the rig
     neon = text_mesh("Neon", LOGO_TEXT, 0.34, 0.03)
@@ -1260,7 +1262,7 @@ if INTIMATE and BACK_LASERS:
         data.spot_size = math.radians(1.3)
         data.spot_blend = 0.0
         data.shadow_soft_size = 0.002
-        data.volume_factor = 8.0
+        data.volume_factor = 3.0
         light = new_object(f"Laser_0_{j}", data)
         light.location = (-2.6, 0.5, -0.1 + 0.05 * j)
         light["fan"] = list(target.location)  # apply_drive scans the beam around this point
@@ -1278,9 +1280,32 @@ if hasattr(slate, "visible_shadow"):
 # a box, drifting toward camera, streamed and puffed by the woofers' air (see build_dust) and
 # wandering on 4D noise over Time. They carry no emission — they only sparkle where a beam
 # catches them, and out of focus they open into soft bokeh shapes.
-DUST_COUNT = 12000  # the field now reaches behind the speaker, so twice the motes for the same density
+DUST_COUNT = 25000  # the plan's void row is 50-100k; 25k reads right at this distance
 DUST_BOX = ((rig_x0 - 0.7, -0.50, floor_z), (rig_x1 + 0.7, 1.2, 0.80))  # from well behind the speaker to just short of the close-up lens
-DUST_SIZE = (0.0004, 0.0014) if MOODY else (0.0002, 0.0006)  # metres
+DUST_RADIUS = (0.00025, 0.0007)  # metres, log-normal: in focus they are sub-pixel, out of focus they bloom
+DUST_LINT = 0.07  # fraction of motes that are lint: flattened, elongated, randomly turned
+DUST_BACKLIGHT = 110  # W, the dedicated dust backlight
+
+
+def dust_material(name):
+    """Matte, warm mid-grey, half translucent: no specular at all (glints read as glitter), so a
+    mote only shows where a backlight shines through it or the lens blurs it into a disc."""
+    m = make_material(name, base=(0.55, 0.5, 0.44, 1), rough=1.0)
+    nt = m.node_tree
+    N, L = nt.nodes, nt.links
+    bsdf = N["Principled BSDF"]
+    bsdf.inputs["Specular IOR Level"].default_value = 0.0
+    out = N["Material Output"]
+    trans = N.new("ShaderNodeBsdfTranslucent")
+    trans.inputs["Color"].default_value = (1.0, 0.9, 0.78, 1)
+    mix = N.new("ShaderNodeMixShader")
+    mix.inputs["Fac"].default_value = 0.5
+    L.new(bsdf.outputs["BSDF"], mix.inputs[1])
+    L.new(trans.outputs["BSDF"], mix.inputs[2])
+    for link in list(out.inputs["Surface"].links):
+        L.remove(link)
+    L.new(mix.outputs["Shader"], out.inputs["Surface"])
+    return m
 
 
 def build_dust(front, wx, wz_mid, wz_half, half_w, half_h, back):
@@ -1359,7 +1384,7 @@ def build_dust(front, wx, wz_mid, wz_half, half_w, half_h, back):
 
     # the puff: motes just ahead of a cone jump forward and spread outward on a hit
     ahead = math_node("SUBTRACT", front, y)
-    axial = math_node("MULTIPLY", map_range(ahead, -0.01, 0.03, 0.0, 1.0), map_range(ahead, 0.12, 0.45, 1.0, 0.0))
+    axial = math_node("MULTIPLY", map_range(ahead, -0.01, 0.02, 0.0, 1.0), map_range(ahead, 0.06, 0.22, 1.0, 0.0))
     puff = math_node("MULTIPLY", math_node("MULTIPLY", column, axial), gin.outputs["Push"])
     spread = math_node("MULTIPLY", puff, DUST_SPREAD)
     comb = N.new("ShaderNodeCombineXYZ")
@@ -1390,25 +1415,60 @@ def build_dust(front, wx, wz_mid, wz_half, half_w, half_h, back):
     L.new(points.outputs[0], set_pos.inputs["Geometry"])
     L.new(moved.outputs[0], set_pos.inputs["Position"])
 
+    # the motes: tiny spheres with a log-normal size spread, plus a few percent of lint —
+    # flattened, elongated, randomly turned. Warm light grey, part translucent, so the
+    # backlight glows through them (DustBack, light-linked to this collection in Cycles).
+    dust_mat = dust_material("DustMat")
     mote = N.new("GeometryNodeMeshIcoSphere")
     mote.inputs["Radius"].default_value = 1.0
     mote.inputs["Subdivisions"].default_value = 1
     mat_node = N.new("GeometryNodeSetMaterial")
     L.new(mote.outputs["Mesh"], mat_node.inputs["Geometry"])
-    dust_mat = make_material("DustMat", base=(0.6, 0.6, 0.6, 1) if MOODY else (0.04, 0.04, 0.04, 1), rough=0.22)
     mat_node.inputs["Material"].default_value = dust_mat
+    lint_shape = N.new("GeometryNodeTransform")
+    L.new(mat_node.outputs["Geometry"], lint_shape.inputs["Geometry"])
+    lint_shape.inputs["Scale"].default_value = (3.2, 0.35, 1.0)
 
-    rand_size = N.new("FunctionNodeRandomValue")
-    rand_size.data_type = "FLOAT"
-    rand_size.inputs["Min"].default_value = DUST_SIZE[0]
-    rand_size.inputs["Max"].default_value = DUST_SIZE[1]
-    rand_size.inputs["Seed"].default_value = 3
+    log_r = N.new("FunctionNodeRandomValue")
+    log_r.data_type = "FLOAT"
+    log_r.inputs["Min"].default_value = math.log(DUST_RADIUS[0])
+    log_r.inputs["Max"].default_value = math.log(DUST_RADIUS[1])
+    log_r.inputs["Seed"].default_value = 3
+    radius = math_node("EXPONENT", log_r.outputs["Value"])
+
+    pick = N.new("FunctionNodeRandomValue")
+    pick.data_type = "FLOAT"
+    pick.inputs["Seed"].default_value = 11
+    is_lint = N.new("FunctionNodeCompare")
+    is_lint.data_type = "FLOAT"
+    is_lint.operation = "LESS_THAN"
+    L.new(pick.outputs["Value"], is_lint.inputs[0])
+    is_lint.inputs[1].default_value = DUST_LINT
+    not_lint = N.new("FunctionNodeBooleanMath")
+    not_lint.operation = "NOT"
+    L.new(is_lint.outputs[0], not_lint.inputs[0])
 
     inst = N.new("GeometryNodeInstanceOnPoints")
     L.new(set_pos.outputs["Geometry"], inst.inputs["Points"])
+    L.new(not_lint.outputs[0], inst.inputs["Selection"])
     L.new(mat_node.outputs["Geometry"], inst.inputs["Instance"])
-    L.new(rand_size.outputs["Value"], inst.inputs["Scale"])
-    L.new(inst.outputs["Instances"], gout.inputs["Geometry"])
+    L.new(radius, inst.inputs["Scale"])
+
+    spin = N.new("FunctionNodeRandomValue")
+    spin.data_type = "FLOAT_VECTOR"
+    spin.inputs["Max"].default_value = (6.283, 6.283, 6.283)
+    spin.inputs["Seed"].default_value = 17
+    lint = N.new("GeometryNodeInstanceOnPoints")
+    L.new(set_pos.outputs["Geometry"], lint.inputs["Points"])
+    L.new(is_lint.outputs[0], lint.inputs["Selection"])
+    L.new(lint_shape.outputs["Geometry"], lint.inputs["Instance"])
+    L.new(spin.outputs["Value"], lint.inputs["Rotation"])
+    L.new(math_node("MULTIPLY", radius, 1.6), lint.inputs["Scale"])
+
+    join = N.new("GeometryNodeJoinGeometry")
+    L.new(lint.outputs["Instances"], join.inputs[0])
+    L.new(inst.outputs["Instances"], join.inputs[0])
+    L.new(join.outputs[0], gout.inputs["Geometry"])
 
     obj = new_object("Dust", bpy.data.meshes.new("Dust"))
     mod = obj.modifiers.new("Dust", "NODES")
@@ -1450,7 +1510,8 @@ scene.eevee.use_raytracing = False
 scene.eevee.use_fast_gi = False
 
 # motion blur: the per-frame cone vibration from apply_drive smears like a real driver
-scene.view_settings.exposure = -0.65 if MOODY else 0.0
+scene.view_settings.view_transform = "ACES 2.0"  # pinned by the plan; grade through it, never change it mid-project
+scene.view_settings.exposure = -0.55 if MOODY else 0.0
 scene.render.use_motion_blur = True
 scene.render.motion_blur_shutter = 0.5
 scene.eevee.motion_blur_steps = 3  # real time slices: the cone moves along the view axis, which vector blur cannot show
@@ -1582,8 +1643,8 @@ def build_smoke(front, wx, wz_mid, wz_half):
 
 
 SMOKE_DENSITY = 0.35  # a big room now; beams need haze, not fog
-SMOKE_HAZE = 0.05 if MOODY else 0.16  # even haze under the clumps: what beams and lasers are drawn in
-SMOKE_FLOOR_FOG = 2.5  # extra haze pooling on the floor (times haze at the floor, fading up)
+SMOKE_HAZE = 0.03 if MOODY else 0.16  # even haze under the clumps: what beams and lasers are drawn in
+SMOKE_FLOOR_FOG = 1.5  # extra haze pooling on the floor (times haze at the floor, fading up)
 build_smoke(front_y, woofer_x, woofer_z_mid, woofer_z_half)
 ee = scene.eevee
 ee.use_volumetric_shadows = True
@@ -1593,13 +1654,73 @@ ee.use_volume_custom_range = True
 ee.volumetric_start = 0.1
 ee.volumetric_end = 12.0  # out to the rig camera
 
+# view layers: the dust renders on its own layer so the denoiser cannot eat it (the plan's
+# "denoiser eats motes" rule), composited over the main layer. Everything else goes into
+# MainCol (held out on the dust layer so the cabinet still occludes motes), the smoke into
+# SmokeCol (excluded from the dust layer), the dust into DustCol (excluded from the main
+# layer). The dedicated dust backlight is light-linked to DustCol in Cycles.
+main_col = bpy.data.collections.new("MainCol")
+smoke_col = bpy.data.collections.new("SmokeCol")
+dust_col = bpy.data.collections.new("DustCol")
+for col in (main_col, smoke_col, dust_col):
+    scene.collection.children.link(col)
+for obj in list(scene.collection.objects):
+    scene.collection.objects.unlink(obj)
+    if obj.name == "Dust":
+        dust_col.objects.link(obj)
+    elif obj.name == "Smoke":
+        smoke_col.objects.link(obj)
+    else:
+        main_col.objects.link(obj)
+
+
+def layer_col(view_layer, collection):
+    return next(c for c in view_layer.layer_collection.children if c.collection == collection)
+
+
+main_layer = scene.view_layers[0]
+main_layer.name = "Main"
+layer_col(main_layer, dust_col).exclude = True
+dust_layer = scene.view_layers.new("Dust")
+layer_col(dust_layer, main_col).holdout = True
+layer_col(dust_layer, smoke_col).exclude = True
+if hasattr(dust_layer, "cycles"):
+    dust_layer.cycles.use_denoising = False  # motes are signal, not noise
+scene.render.film_transparent = True  # both layers carry alpha; the compositor lays them over black
+
+# the dust backlight: small, behind and to the side of the speaker, pointing back toward the
+# cameras, and (in Cycles) lighting nothing but the dust. Forward-scatter through translucent
+# motes is where the sparkle comes from; a front key makes dust invisible.
+back = bpy.data.lights.new("DustBack", "SPOT")
+back.energy = DUST_BACKLIGHT
+back.color = (1.0, 0.9, 0.78)
+back.spot_size = math.radians(70)
+back.spot_blend = 0.6
+back.shadow_soft_size = 0.04
+back.volume_factor = 0.0
+backlight = bpy.data.objects.new("DustBack", back)
+main_col.objects.link(backlight)
+backlight.location = (half_w + 0.45, front_y + 0.55, top_z + 0.25)
+backlight.rotation_euler = (Vector((0.0, front_y - 1.2, -0.1)) - backlight.location).to_track_quat("-Z", "Y").to_euler()
+if hasattr(backlight, "light_linking"):
+    backlight.light_linking.receiver_collection = dust_col
+    # the front lights never touch the dust (a front-lit mote is a speck; a backlit one is a glow):
+    # they light everything except DustCol via a linking collection holding the other two
+    lit_col = bpy.data.collections.new("LitCol")
+    lit_col.children.link(main_col)
+    lit_col.children.link(smoke_col)
+    for name in ("KeyLight", "Graze"):
+        light = bpy.data.objects.get(name)
+        if light is not None:
+            light.light_linking.receiver_collection = lit_col
+
 # compositor: the lens finish — bloom on the logo and glints, a touch of chromatic aberration
 # and barrel distortion, a vignette, film grain (apply_drive re-seeds it every frame) and a
 # gentle S-curve. Cheap enough to stay on for drafts. ----------------------------------------
-COMP_BLOOM = 0.12
-COMP_CHROMATIC = 0.02
-COMP_VIGNETTE = 0.6 if MOODY else 0.45  # how dark the corners go (0 = off)
-COMP_GRAIN = 0.03
+COMP_BLOOM = 0.08
+COMP_CHROMATIC = 0.012
+COMP_VIGNETTE = 0.15  # corners to ~0.85: a soft lens vignette, not a spotlight (0 = off)
+COMP_GRAIN = 0.012  # fine sensor noise, enough to break banding in the blacks
 
 
 def build_compositor():
@@ -1608,7 +1729,35 @@ def build_compositor():
     scene.render.use_compositing = True
     ng.interface.new_socket("Image", in_out="OUTPUT", socket_type="NodeSocketColor")
     N, L = ng.nodes, ng.links
-    img = N.new("CompositorNodeRLayers").outputs["Image"]
+    main_rl = N.new("CompositorNodeRLayers")
+    main_rl.layer = "Main"
+    dust_rl = N.new("CompositorNodeRLayers")
+    dust_rl.layer = "Dust"
+
+    def over(top_img, top_alpha, under_img):
+        # premultiplied alpha-over built from mix nodes: under * (1 - a) + top
+        keep = N.new("ShaderNodeMix")
+        keep.data_type = "RGBA"
+        keep.blend_type = "MULTIPLY"
+        keep.inputs["Factor"].default_value = 1.0
+        inv = N.new("ShaderNodeMath")
+        inv.operation = "SUBTRACT"
+        inv.inputs[0].default_value = 1.0
+        L.new(top_alpha, inv.inputs[1])
+        L.new(under_img, next(s for s in keep.inputs if s.identifier == "A_Color"))
+        L.new(inv.outputs[0], next(s for s in keep.inputs if s.identifier == "B_Color"))
+        add = N.new("ShaderNodeMix")
+        add.data_type = "RGBA"
+        add.blend_type = "ADD"
+        add.inputs["Factor"].default_value = 1.0
+        L.new(next(s for s in keep.outputs if s.identifier == "Result_Color"), next(s for s in add.inputs if s.identifier == "A_Color"))
+        L.new(top_img, next(s for s in add.inputs if s.identifier == "B_Color"))
+        return next(s for s in add.outputs if s.identifier == "Result_Color")
+
+    black = N.new("ShaderNodeValue")
+    black.outputs[0].default_value = 0.0
+    img = over(main_rl.outputs["Image"], main_rl.outputs["Alpha"], black.outputs[0])
+    img = over(dust_rl.outputs["Image"], dust_rl.outputs["Alpha"], img)
 
     glare = N.new("CompositorNodeGlare")
     glare.inputs["Type"].default_value = "Bloom"
@@ -1618,15 +1767,16 @@ def build_compositor():
     img = glare.outputs["Image"]
 
     lens = N.new("CompositorNodeLensdist")
-    lens.inputs["Distortion"].default_value = 0.012
+    lens.inputs["Distortion"].default_value = 0.005
     lens.inputs["Dispersion"].default_value = COMP_CHROMATIC
     L.new(img, lens.inputs["Image"])
     img = lens.outputs["Image"]
 
     curve = N.new("CompositorNodeCurveRGB")
     c = curve.mapping.curves[3]  # combined
-    c.points.new(0.25, 0.11 if MOODY else 0.22)
-    c.points.new(0.75, 0.76 if MOODY else 0.78)
+    c.points[0].location = (0.0, 0.045)  # blacks a touch above full crush: Instagram butchers crushed gradients
+    c.points.new(0.25, 0.22)
+    c.points.new(0.75, 0.78)
     curve.mapping.update()
     L.new(img, curve.inputs["Image"])
     img = curve.outputs["Image"]
@@ -1658,7 +1808,7 @@ def build_compositor():
         noise = N.new("ShaderNodeTexNoise")
         noise.name = noise.label = "Grain"
         noise.noise_dimensions = "4D"
-        noise.inputs["Scale"].default_value = 1200
+        noise.inputs["Scale"].default_value = 3200
         noise.inputs["Detail"].default_value = 0.0
         grain = N.new("ShaderNodeMapRange")
         grain.inputs["To Min"].default_value = -COMP_GRAIN
