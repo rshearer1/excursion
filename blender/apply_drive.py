@@ -33,7 +33,7 @@ ap.add_argument("--engine", default="eevee", choices=["eevee", "cycles"])
 ap.add_argument("--render", action="store_true")
 ap.add_argument("--out", default="frames/job")
 ap.add_argument("--draft", action="store_true", help="half resolution, low samples")
-ap.add_argument("--sweep", type=float, default=30.0, help="camera orbit arc in degrees (0 = static)")
+ap.add_argument("--sweep", type=float, default=12.0, help="camera orbit arc in degrees (0 = static)")
 ap.add_argument("--slate", action="store_true", help="show the orange sync slate above the speaker (flashes on beats)")
 ap.add_argument("--shutter", type=float, default=0.5, help="motion blur shutter as a fraction of the frame (0.5 = 180 degrees)")
 args = ap.parse_args(argv)
@@ -302,7 +302,7 @@ if key_target is not None and "path" in key_target:
     print(f"key light: glides through {len(stops)} stops over frames {scene.frame_start}..{scene.frame_end}")
 
 # the light show ------------------------------------------------------------
-LASER_BEAMS_N = 6
+LASER_BEAMS_N = 4
 BLINDER_POWER = 9000.0
 # Moving heads sweep the rig on slow figure-eights (each with its own phase), change colour on
 # every bar and pulse on the beat; lasers fan across the floor and scan, only while there is
@@ -366,17 +366,27 @@ for laser in lasers:
     if target is None:
         continue
     base = laser.data.energy
+    fan_centre = tuple(laser["fan"]) if "fan" in laser else None
     positions, energies = [], []
     for i in frame_span:
         t = i / fps
-        fan = (j - (LASER_BEAMS_N - 1) / 2) * 0.5
-        positions.append(
-            (
-                rig_mid + (-0.5 if k == 0 else 0.5) + fan + 1.3 * math.sin(2 * math.pi * t / 2.3 + k * math.pi + j * 0.15),
-                -2.4 + 0.9 * math.sin(2 * math.pi * t / 3.7 + j * 0.4),
-                floor_z + 0.15,
+        if fan_centre is not None:  # background beams: a slow, narrow sway around their own point
+            positions.append(
+                (
+                    fan_centre[0],
+                    fan_centre[1] + 0.3 * math.sin(2 * math.pi * t / 9.5 + j * 1.7),
+                    fan_centre[2] + 0.28 * math.sin(2 * math.pi * t / 6.5 + j * 0.9),
+                )
             )
-        )
+        else:
+            fan = (j - (LASER_BEAMS_N - 1) / 2) * 0.5
+            positions.append(
+                (
+                    rig_mid + (-0.5 if k == 0 else 0.5) + fan + 1.3 * math.sin(2 * math.pi * t / 2.3 + k * math.pi + j * 0.15),
+                    -2.4 + 0.9 * math.sin(2 * math.pi * t / 3.7 + j * 0.4),
+                    floor_z + 0.15,
+                )
+            )
         on = 0.0 if in_break[i] else 1.0
         energies.append(base * on * (0.45 + 0.55 * beat_pulse[i]) * (1.0 + 2.0 * drop_pulse(i, 0.8)))
     key_target(target, positions)
@@ -410,14 +420,20 @@ if heads or lasers:
 # camera cuts: timeline markers bound round-robin over all cameras -------
 cuts = data.get("cuts", [])
 cameras = sorted((o for o in scene.objects if o.type == "CAMERA"), key=lambda o: o.name)
+# the shot order: open on the rig reveal, then alternate the hero's close-ups with the moving
+# wide views, so no two similar shots sit next to each other
+SHOT_ORDER = ["Cam1_Wide", "Cam2_Woofers", "Cam7_Top", "Cam3_Macro", "Cam6_Side", "Cam4_Rig", "Cam5_Low"]
+shot_cams = [bpy.data.objects[n] for n in SHOT_ORDER if n in bpy.data.objects] or cameras
 if cuts and len(cameras) > 1:
-    cut_frames = sorted({scene.frame_start} | {round(t * fps) + 1 for t in cuts})
+    cut_frames = sorted(fr for fr in ({scene.frame_start} | {round(t * fps) + 1 for t in cuts}) if scene.frame_start <= fr <= scene.frame_end)
+    if len(cut_frames) > 1 and cut_frames[1] - cut_frames[0] < fps:
+        cut_frames.pop(1)  # a cut within a second of the start would make the opening shot a flash
     n = 0
     for fr in cut_frames:
         if fr < scene.frame_start or fr > scene.frame_end:
             continue
         marker = scene.timeline_markers.new(f"cut{n}", frame=fr)
-        marker.camera = cameras[n % len(cameras)]
+        marker.camera = shot_cams[n % len(shot_cams)]
         n += 1
     print(f"cuts: {n} camera switches over {len(cameras)} cameras")
 elif cuts:
@@ -469,8 +485,28 @@ def wobble(t, seed):
     return (math.sin(t * 1.7 + seed) + 0.5 * math.sin(t * 3.9 + 2 * seed) + 0.25 * math.sin(t * 8.3 + 3 * seed)) / 1.75
 
 
+shots_by_cam = {}
+for cam, f0, f1 in segments:
+    shots_by_cam.setdefault(cam.name, []).append((f0, f1))
+
+
+def smoothstep(u):
+    u = max(0.0, min(1.0, u))
+    return u * u * (3 - 2 * u)
+
+
 for cam in cameras:
     base_loc, base_rot = cam.location.copy(), cam.rotation_euler.copy()
+    move = Vector(tuple(cam["move"])) if "move" in cam else Vector((0, 0, 0))
+    tracked = any(c.type == "TRACK_TO" for c in cam.constraints)
+    cam_shots = shots_by_cam.get(cam.name, [])
+
+    def shot_offset(i):
+        for f0, f1 in cam_shots:
+            if f0 - 1 <= i <= f1 - 1:
+                return move * smoothstep((i - (f0 - 1)) / max(1, f1 - f0))
+        return Vector((0, 0, 0))
+
     axes = cam.matrix_basis.to_3x3()
     fwd, right, up = axes @ Vector((0, 0, -1)), axes @ Vector((1, 0, 0)), axes @ Vector((0, 1, 0))
     seed = sum(map(ord, cam.name)) % 7  # deterministic per camera
@@ -478,11 +514,12 @@ for cam in cameras:
     for i in range(scene.frame_start - 1, scene.frame_end):
         t = i / fps
         push_in = CAM_THUMP * thump[i] * (1.0 + 2.0 * drop_pulse(i, 0.6))  # a drop hits harder
-        p = base_loc + fwd * push_in + right * (CAM_SHAKE * wobble(t, seed + 1.0)) + up * (CAM_SHAKE * wobble(t, seed + 2.3))
+        p = base_loc + shot_offset(i) + fwd * push_in + right * (CAM_SHAKE * wobble(t, seed + 1.0)) + up * (CAM_SHAKE * wobble(t, seed + 2.3))
+        jitter = 0.0 if tracked else 1.0  # a tracked camera's aim is the constraint's
         r = (
-            base_rot.x + CAM_SHAKE_ROT * wobble(t, seed + 4.1),
-            base_rot.y + CAM_SHAKE_ROT * 0.3 * wobble(t, seed + 5.7),
-            base_rot.z + CAM_SHAKE_ROT * wobble(t, seed + 7.9),
+            base_rot.x + jitter * CAM_SHAKE_ROT * wobble(t, seed + 4.1),
+            base_rot.y + jitter * CAM_SHAKE_ROT * 0.3 * wobble(t, seed + 5.7),
+            base_rot.z + jitter * CAM_SHAKE_ROT * wobble(t, seed + 7.9),
         )
         for a in range(3):
             loc_pts[a].append((i + 1, p[a]))
@@ -490,7 +527,7 @@ for cam in cameras:
     for a in range(3):
         fcurve_fill(cam, "location", index=a, points=loc_pts[a])
         fcurve_fill(cam, "rotation_euler", index=a, points=rot_pts[a])
-print(f"cameras: thump up to {CAM_THUMP * 1000:.0f} mm + handheld drift on {len(cameras)} cameras")
+print(f"cameras: {len(cameras)} cameras, per-shot moves, thump up to {CAM_THUMP * 1000:.0f} mm + handheld drift")
 
 # film grain: re-seed the compositor noise every frame -------------------
 comp = bpy.data.node_groups.get("VoidComp")

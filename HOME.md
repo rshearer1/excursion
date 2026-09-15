@@ -113,6 +113,23 @@ by name. Models that are not cached are skipped. `Cam4_Rig` (28 mm, 6 m back) jo
 rotation to show the whole wall. The hero's mid/tweeter plate carries a machined honeycomb
 relief (`PlateMat`, generated tile in `assets/generated/`).
 
+## The look (phase 7 — intimate, 2026-09-15)
+
+Two switches at the top of `build_scene.py` decide what the film is:
+
+- `INTIMATE = True` (default): one speaker on its stand in a black void. No rig, truss, heads,
+  projectors, LED wall or neon. Five close cameras with per-shot moves (`Cam1_Wide` push-in,
+  `Cam2_Woofers` slide, `Cam7_Top` falling from above the cabinet, `Cam3_Macro` drifting down
+  the plate, `Cam6_Side` tracking across the woofers), cut every 3 bars in `SHOT_ORDER`.
+  `BACK_LASERS` thin red beams sweep behind the cabinet as a curtain in the haze
+  (`BACK_LASER_COLOR`, `BACK_LASER_POWER`). `False` brings back the whole stage below.
+- `LOOK = "moody"`: the grade — warm key + dark red only, fill almost off, big soft dust bokeh,
+  low haze with fog pooling on the floor, crushed blacks, warm colour balance, heavy vignette,
+  exposure -0.65. `"show"` is the brighter club grade.
+
+The vent grilles are opened: the honeycomb cell floors listed in the kit's `vents` are deleted
+and a black cavity sits behind, so you see through the hex holes.
+
 ## The show (phase 6 — stage, 2026-09-15)
 
 The rig now stands on a stage: a room corner of dark plaster (`WALL_Y`, `ROOM_MARGIN`), the

@@ -2,8 +2,8 @@
   "model": "PMC6-2",
   "stl": "assets/cache/pmc/PMC6-2.stl",
   "size_mm": [
-    430.0,
-    400.0,
+    430,
+    400,
     367.9
   ],
   "front_z_mm": 367.9,
@@ -11,12 +11,12 @@
   "drivers": [
     {
       "kind": "tweeter",
-      "x_mm": 260.0,
-      "y_mm": 314.0,
-      "r_cone_mm": 7.0,
-      "r_surround_mm": 11.0,
-      "r_cut_mm": 12.0,
-      "depth_mm": 4.0,
+      "x_mm": 260,
+      "y_mm": 314,
+      "r_cone_mm": 7,
+      "r_surround_mm": 11,
+      "r_cut_mm": 12,
+      "depth_mm": 4,
       "plate_depth_mm": 11.1,
       "back_mm": 10.1
     },
@@ -24,20 +24,20 @@
       "kind": "woofer",
       "x_mm": 107.6,
       "y_mm": 292.5,
-      "r_cone_mm": 49.0,
-      "r_surround_mm": 70.0,
-      "r_cut_mm": 78.0,
+      "r_cone_mm": 49,
+      "r_surround_mm": 70,
+      "r_cut_mm": 78,
       "depth_mm": 15.9,
-      "plate_depth_mm": 4.0,
+      "plate_depth_mm": 4,
       "back_mm": 19.9
     },
     {
       "kind": "mid",
-      "x_mm": 260.0,
-      "y_mm": 200.0,
-      "r_cone_mm": 16.0,
-      "r_surround_mm": 26.0,
-      "r_cut_mm": 27.0,
+      "x_mm": 260,
+      "y_mm": 200,
+      "r_cone_mm": 16,
+      "r_surround_mm": 26,
+      "r_cut_mm": 27,
       "depth_mm": 9.6,
       "plate_depth_mm": 21.5,
       "back_mm": 21.5
@@ -46,12 +46,25 @@
       "kind": "woofer",
       "x_mm": 107.6,
       "y_mm": 107.6,
-      "r_cone_mm": 49.0,
-      "r_surround_mm": 70.0,
-      "r_cut_mm": 78.0,
+      "r_cone_mm": 49,
+      "r_surround_mm": 70,
+      "r_cut_mm": 78,
       "depth_mm": 15.9,
-      "plate_depth_mm": 4.0,
+      "plate_depth_mm": 4,
       "back_mm": 19.9
+    }
+  ],
+  "vents": [
+    {
+      "x0_mm": 331,
+      "x1_mm": 417,
+      "y0_mm": 20,
+      "y1_mm": 380,
+      "floor_mm": [
+        11,
+        12.6
+      ],
+      "note": "honeycomb grille cell floors; removed by build_speaker so the grille is open"
     }
   ]
 }
