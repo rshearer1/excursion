@@ -7,3 +7,4 @@ blender/scenes/*.blend
 node_modules/
 assets/generated/
 __pycache__/
+blender/scenes/*.glb

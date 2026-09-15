@@ -36,7 +36,7 @@ export async function loadSceneGltf(dir: FileSystemDirectoryHandle, scene: strin
   const tweeterMat = emissiveOf(root.getObjectByName("Tweeter"));
   const slateMat = emissiveOf(root.getObjectByName("Slate"));
   const key = root.getObjectByName("KeyLight");
-  const rim = root.getObjectByName("RimLight");
+  const rim = root.getObjectByName("RimLight") ?? root.getObjectByName("RimLeft") ?? root.getObjectByName("TopBack");
   const keyBase = key instanceof THREE.Light ? key.intensity : 0;
   const rimBase = rim instanceof THREE.Light ? rim.intensity : 0;
 

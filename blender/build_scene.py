@@ -2314,3 +2314,42 @@ out = os.path.join(HERE, "scenes", "void.blend")
 os.makedirs(os.path.dirname(out), exist_ok=True)
 bpy.ops.wm.save_as_mainfile(filepath=out)
 print(f"saved {out}")
+
+# the scene-kit as glTF for the grid tool's 3D preview (phase 11): the hero and its parts,
+# cameras and the main lights, with the woofers' Excursion shape key as a morph target. No
+# dust, smoke or shells, no images (the STL has no UVs; box projection does not export).
+GLB_SKIP = ("Dust", "Smoke", "Floor", "Scope_Bezel")
+
+
+def export_glb(path):
+    bpy.ops.object.select_all(action="DESELECT")
+    n = 0
+    for obj in scene.objects:
+        keep = (
+            obj.type in ("CAMERA", "LIGHT")
+            or (obj.type == "MESH" and obj.name not in GLB_SKIP and not obj.name.startswith(("Shell_", "Lyric", "Dust", "Laser", "Beam")))
+            or obj.name.startswith("Lyric_")
+        )
+        if keep:
+            obj.select_set(True)
+            n += 1
+    bpy.ops.export_scene.gltf(
+        filepath=path,
+        export_format="GLB",
+        use_selection=True,
+        export_apply=True,
+        export_morph=True,
+        export_morph_normal=False,
+        export_cameras=True,
+        export_lights=True,
+        export_image_format="NONE",
+        export_animations=False,
+        export_yup=True,
+    )
+    print(f"glb: {n} objects -> {path}")
+
+
+try:
+    export_glb(os.path.join(HERE, "scenes", "void.glb"))
+except Exception as e:  # the preview falls back to its placeholder
+    print(f"glb: export failed ({e})")
