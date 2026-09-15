@@ -1,6 +1,6 @@
 // Excursion — one command from drive.json to reel.mp4.
 //
-//   node blender/make_reel.mjs blender/jobs/track.drive.json [--engine eevee|cycles] [--draft] [--audio path] [--sweep deg] [--shutter 0..1] [--slate] [--crf n]
+//   node blender/make_reel.mjs blender/jobs/track.drive.json [--engine eevee|cycles] [--draft] [--test] [--audio path] [--sweep deg] [--shutter 0..1] [--slate] [--crf n]
 //
 // Steps: fetch scene assets -> build scene if missing -> apply drive + render frames -> ffmpeg mux.
 // Audio is resolved from drive.audio.file sitting NEXT TO the drive.json (or pass --audio).
@@ -15,7 +15,7 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const args = process.argv.slice(2);
 const drivePath = args.find((a) => !a.startsWith("--"));
 if (!drivePath) {
-  console.error("usage: node blender/make_reel.mjs <drive.json> [--engine eevee|cycles] [--draft] [--audio path]");
+  console.error("usage: node blender/make_reel.mjs <drive.json> [--engine eevee|cycles] [--draft] [--test] [--audio path]");
   process.exit(1);
 }
 const flag = (name) => args.includes(name);
@@ -25,6 +25,7 @@ const opt = (name, dflt) => {
 };
 const engine = opt("--engine", "eevee");
 const draft = flag("--draft");
+const test = flag("--test");
 const blender = process.env.BLENDER || "blender";
 const exists = (p) => access(p).then(() => true, () => false);
 
@@ -65,6 +66,7 @@ const applyArgs = [
   "--", path.resolve(drivePath), "--render", "--out", framesDir, "--engine", engine,
 ];
 if (draft) applyArgs.push("--draft");
+if (test) applyArgs.push("--test");
 if (opt("--sweep")) applyArgs.push("--sweep", opt("--sweep"));
 if (opt("--shutter")) applyArgs.push("--shutter", opt("--shutter"));
 if (flag("--slate")) applyArgs.push("--slate");

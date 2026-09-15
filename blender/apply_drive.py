@@ -33,6 +33,7 @@ ap.add_argument("--engine", default="eevee", choices=["eevee", "cycles"])
 ap.add_argument("--render", action="store_true")
 ap.add_argument("--out", default="frames/job")
 ap.add_argument("--draft", action="store_true", help="half resolution, low samples")
+ap.add_argument("--test", action="store_true", help="cycles look test: half resolution, 32 samples, full fps (about 3 s a frame)")
 ap.add_argument("--sweep", type=float, default=12.0, help="camera orbit arc in degrees (0 = static)")
 ap.add_argument("--slate", action="store_true", help="show the orange sync slate above the speaker (flashes on beats)")
 ap.add_argument("--shutter", type=float, default=0.5, help="motion blur shutter as a fraction of the frame (0.5 = 180 degrees)")
@@ -644,7 +645,7 @@ if args.engine == "cycles":
     # a fast profile: few samples cleaned by the denoiser, adaptive sampling so black areas stop
     # early, short light paths (nothing here needs deep bounces), coarse volume steps, and the
     # scene kept in memory between frames instead of being rebuilt for each one
-    cy.samples = 16 if args.draft else args.samples
+    cy.samples = 16 if args.draft else (min(args.samples, 32) if args.test else args.samples)
     cy.use_adaptive_sampling = True
     cy.adaptive_threshold = 0.05
     cy.use_denoising = True
@@ -677,7 +678,7 @@ else:
         # the volume (smoke, beams, lasers) must be computed out to the rig camera, 6 m away
         scene.eevee.volumetric_end = max(scene.eevee.volumetric_end, VOLUME_RANGE)
         scene.eevee.volumetric_samples = 96 if args.draft else 160
-scene.render.resolution_percentage = 50 if args.draft else 100
+scene.render.resolution_percentage = 50 if (args.draft or args.test) else 100
 scene.render.image_settings.file_format = "PNG"
 
 if args.render:
