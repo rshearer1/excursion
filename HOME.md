@@ -115,6 +115,18 @@ Shipped: **moody** (the default; old drives that say `smoke` mean this), **ember
 held), **neon** (cyan / magenta / blue chase), **clean** (product shot, no smoke). Add a mood
 by copying a file; the grid tool lists whatever is in the folder.
 
+## The photoreal handoff (2026-09-16)
+
+`blender/PHOTOREAL-HANDOFF.md` is a ranked critique of the renders. Applied: the HDRI now
+lights reflections and bounce at 0.1 (camera rays still see black), the key and graze are
+softer sources (a 0.7 m spot radius dimmed the whole frame — a true softbox needs an area
+light, still to do), a 1.5 mm shader bevel rounds every cabinet edge, the cone is 0.45 rough
+and the surround a diffuse rubber, a glue ring sits where the cap meets the cone, chromatic
+aberration, vignette and grain are halved (scene defaults and every mood), the Cycles seed is
+fixed and finals use adaptive threshold 0.01 (tests keep 0.05), the lyric room light is up.
+Not done: walls (`SET_WALLS` stays off — the void was chosen), hex-socket screw heads, dust
+culled to the beams, the LED wall's glass front, a metal badge instead of the glowing one.
+
 ## Hits and the Ableton project (phases 09 and 08, 2026-09-15)
 
 The **hits** checkbox tracks kicks and snares from the mix: band-split spectral flux at a 10 ms

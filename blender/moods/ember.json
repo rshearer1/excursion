@@ -37,7 +37,7 @@
   },
   "grade": {
     "bloom": 0.1,
-    "chromatic": 0.012,
+    "chromatic": 0.006,
     "black_lift": 0.02,
     "gain": [
       1.08,
@@ -50,11 +50,11 @@
       0.965
     ],
     "saturation": 1.05,
-    "vignette": 0.22,
-    "grain": 0.014
+    "vignette": 0.11,
+    "grain": 0.007
   },
   "shells": {
     "show": true,
-    "strength": 0.5
+    "strength": 0.25
   }
 }

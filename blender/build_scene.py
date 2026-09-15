@@ -160,8 +160,15 @@ def plastic_material(name, scale=22.0):
         if shading_normal is not None:
             nt.links.new(shading_normal, bump.inputs["Normal"])
         shading_normal = bump.outputs["Normal"]
+    # rounded edges in the shader: the STL has razor edges, and a 1.5 mm bevel is what makes
+    # a highlight run along a rim instead of a hairline (handoff item 3; Cycles only)
+    bevel = nt.nodes.new("ShaderNodeBevel")
+    bevel.samples = 4
+    bevel.inputs["Radius"].default_value = 0.0015
     if shading_normal is not None:
-        nt.links.new(shading_normal, bsdf.inputs["Normal"])
+        nt.links.new(shading_normal, bevel.inputs["Normal"])
+    shading_normal = bevel.outputs["Normal"]
+    nt.links.new(shading_normal, bsdf.inputs["Normal"])
     if not (color or rough or normal):
         print(f"note: {CABINET_TEXTURE[0]} textures not found — flat CabinetMat (run fetch-assets)")
     if SETTLED_DUST > 0:
@@ -320,7 +327,7 @@ def driver_material(name, kind):
         next(s for s in tone.inputs if s.identifier == "B_Color").default_value = (0.026, 0.025, 0.023, 1.0)
         L.new(speckle.outputs["Fac"], next(s for s in tone.inputs if s.identifier == "Factor_Float"))
         blend("Base Color", "RGBA", next(s for s in tone.outputs if s.identifier == "Result_Color"))
-        blend("Roughness", "FLOAT", math_node("ADD", 0.36, math_node("MULTIPLY", 0.12, grain.outputs["Fac"])))
+        blend("Roughness", "FLOAT", math_node("ADD", 0.45, math_node("MULTIPLY", 0.12, grain.outputs["Fac"])))  # doped paper: between the photo's sheen and the handoff's matte
         # the dust cap (real geometry, see add_woofer_details) is the same doped paper, a touch glossier
         cap = N.new("ShaderNodeMapRange")
         cap.interpolation_type = "SMOOTHSTEP"
@@ -353,7 +360,7 @@ def driver_material(name, kind):
     band_out.inputs["To Max"].default_value = 0.0
     band = math_node("MULTIPLY", band_in.outputs["Result"], band_out.outputs["Result"])
     blend("Base Color", "RGBA", (0.018, 0.018, 0.019, 1.0), mask_socket=band)
-    blend("Roughness", "FLOAT", 0.42, mask_socket=band)
+    blend("Roughness", "FLOAT", 0.6, mask_socket=band)  # rubber: a diffuse highlight, not a glossy one
     flat = N.new("ShaderNodeNewGeometry").outputs["Normal"]
     blend("Normal", "VECTOR", flat, mask_socket=band)
     return m
@@ -484,6 +491,15 @@ def add_woofer_details(piece, name, cx, cz, r_cone, r_surround, r_cut, front, y_
     for p in cap.data.polygons:
         p.use_smooth = True
     _join(piece, cap)
+    # the glue ring where the cap meets the cone (handoff item 4)
+    bpy.ops.mesh.primitive_torus_add(
+        major_radius=r_cap, minor_radius=0.0007, major_segments=128, minor_segments=12,
+        location=(cx, y_cap + 0.0002, cz), rotation=(math.pi / 2, 0, 0),
+    )
+    glue = bpy.context.object
+    for p in glue.data.polygons:
+        p.use_smooth = True
+    _join(piece, glue)
 
     gap = r_surround - r_cone
     r_roll = r_cone + 0.5 * gap
@@ -1241,13 +1257,13 @@ key_target["path"] = [
     woofer_x + 0.02, front_y, lower,
     0.05, front_y, upper + 0.03,
 ]
-key = add_spot("KeyLight", (-0.30, front_y - 0.85, 0.70), key_target.location, 380 if MOODY else 450, WARM, 18, blend=0.6)
+key = add_spot("KeyLight", (-0.30, front_y - 0.85, 0.70), key_target.location, 380 if MOODY else 450, WARM, 18, blend=0.6, radius=0.2)  # softer than a pinpoint; a 0.7 m radius on a spot cone dimmed the whole frame (a real softbox needs an area light)
 track = key.constraints.new("TRACK_TO")
 track.target = key_target
 track.track_axis = "TRACK_NEGATIVE_Z"
 track.up_axis = "UP_Y"
 
-add_spot("Graze", (-0.80, front_y - 0.12, -0.02), (0.10, front_y - 0.02, 0.0), 150 if MOODY else 220, (1.0, 0.95, 0.9), 22, radius=0.01)
+add_spot("Graze", (-0.80, front_y - 0.12, -0.02), (0.10, front_y - 0.02, 0.0), 150 if MOODY else 220, (1.0, 0.95, 0.9), 22, radius=0.08)
 rig_mid = (rig_x0 + rig_x1) / 2
 add_spot("TopBack", (rig_mid + 0.1, 0.9, 1.2), (rig_mid, -0.12, top_z - 0.3), 1800, RIM_COLOR, 40, blend=0.8, radius=0.08, volume=0.35)
 add_spot("RimLeft", (rig_x0 - 0.9, 0.9, 0.35), (rig_x0, 0.3, -0.2), 900, RIM_COLOR, 28, blend=0.8, radius=0.08, volume=0.05)
@@ -1893,7 +1909,7 @@ build_dust(front_y, woofer_x, woofer_z_mid, woofer_z_half, half_w, top_z, -front
 
 # world: black to camera and to lighting. Raise WORLD_STRENGTH to bring back the studio HDRI
 # as soft fill / reflections. --------------------------------------------------------------
-WORLD_STRENGTH = 0.0
+WORLD_STRENGTH = 0.1  # the HDRI for reflections and bounce only; camera rays still see black (handoff item 1)
 world = bpy.data.worlds.new("VoidWorld")
 scene.world = world
 world.use_nodes = True
@@ -2087,12 +2103,12 @@ def build_shells(front, wx, wz):
         trans = N.new("ShaderNodeBsdfTransparent")
         emit = N.new("ShaderNodeEmission")
         emit.inputs["Color"].default_value = (1.0, 0.8, 0.55, 1.0)
-        emit.inputs["Strength"].default_value = 3.0
+        emit.inputs["Strength"].default_value = 2.0
         facing = N.new("ShaderNodeLayerWeight")
         facing.inputs["Blend"].default_value = 0.5
         rim = N.new("ShaderNodeMath")
         rim.operation = "POWER"
-        rim.inputs[1].default_value = 5.0  # a thin rim, not a tinted disc
+        rim.inputs[1].default_value = 8.0  # a thin rim, not a tinted disc
         L.new(facing.outputs["Facing"], rim.inputs[0])
         alpha = N.new("ShaderNodeValue")
         alpha.name = alpha.label = "Alpha"
@@ -2186,9 +2202,9 @@ if hasattr(backlight, "light_linking"):
 # and barrel distortion, a vignette, film grain (apply_drive re-seeds it every frame) and a
 # gentle S-curve. Cheap enough to stay on for drafts. ----------------------------------------
 COMP_BLOOM = 0.08
-COMP_CHROMATIC = 0.012
-COMP_VIGNETTE = 0.15  # corners to ~0.85: a soft lens vignette, not a spotlight (0 = off)
-COMP_GRAIN = 0.012  # fine sensor noise, enough to break banding in the blacks
+COMP_CHROMATIC = 0.006  # halved (handoff item 7): one or two lens artefacts, subtly
+COMP_VIGNETTE = 0.08  # corners to ~0.85: a soft lens vignette, not a spotlight (0 = off)
+COMP_GRAIN = 0.006  # fine sensor noise, enough to break banding in the blacks
 
 
 def build_compositor():

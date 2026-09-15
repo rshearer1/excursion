@@ -446,7 +446,7 @@ LYRIC_PALETTE = {"accent": (1.0, 0.62, 0.3), "cyan": (0.35, 0.9, 1.0), "white": 
 LYRIC_SIZES = {"S": 0.055, "M": 0.08, "L": 0.12}  # metres, cap height-ish
 LYRIC_MAX_WIDTH = {"behind": 0.55, "front-low": 0.3, "wall": 0.9}  # a line wider than this is scaled to fit the frame
 LYRIC_EMISSION = 14.0  # emission strength at full glow (bloom is on)
-LYRIC_LIGHT = 12.0  # W of the paired area light at full glow: a glow on the haze and the cabinet, not a wash
+LYRIC_LIGHT = 20.0  # W of the paired area light at full glow: a glow on the haze and the cabinet, not a wash
 LYRIC_FONTS = [r"C:\Windows\Fonts\ariblk.ttf", r"C:\Windows\Fonts\impact.ttf", r"C:\Windows\Fonts\arialbd.ttf"]
 lyrics = data.get("lyrics") or {}
 lyric_lines = [l for l in lyrics.get("lines", []) if l.get("text", "").strip() and l.get("t", -1) >= 0]
@@ -646,7 +646,10 @@ if shells:
         emitted, k = 0, 0
         events = data.get("events") or {}
         wave_times = events.get("kick") if events.get("kick") else data.get("beats", [])
+        last_wave = -10.0
         for t in wave_times:
+            if t - last_wave < 0.3:  # a double kick is one wave
+                continue
             i0 = round(t * fps)
             if not (0 <= i0 < n):
                 continue
@@ -666,6 +669,7 @@ if shells:
                 alpha[k][i] = max(alpha[k][i], shell_cfg.get("strength", 0.6) * min(1.0, hit * 2.0) * (1.0 - u) ** 1.5)
             k = (k + 1) % len(shells)
             emitted += 1
+            last_wave = t
         tint = tuple(mood["cues"][0]["trace"]) if mood.get("cues") else (1.0, 0.8, 0.55)
         for s, sc, al in zip(shells, scale, alpha):
             for axis in range(3):
@@ -979,9 +983,9 @@ if args.engine == "cycles":
     # scene kept in memory between frames instead of being rebuilt for each one
     cy.samples = 16 if args.draft else (min(args.samples, 32) if args.test else args.samples)
     cy.use_adaptive_sampling = True
-    cy.adaptive_threshold = 0.05
+    cy.adaptive_threshold = 0.05 if (args.draft or args.test) else 0.01  # finals keep the cone grain the denoiser would smear (handoff item 4)
     cy.use_denoising = True
-    cy.use_animated_seed = True  # noise moves like grain instead of sitting still on the frame
+    cy.use_animated_seed = False  # a fixed seed: the animated one flickered in smooth gradients through the denoiser; the compositor grain moves instead
     try:
         cy.denoiser = "OPTIX"
         cy.denoising_prefilter = "ACCURATE"
