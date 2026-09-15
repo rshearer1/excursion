@@ -1257,7 +1257,19 @@ key_target["path"] = [
     woofer_x + 0.02, front_y, lower,
     0.05, front_y, upper + 0.03,
 ]
-key = add_spot("KeyLight", (-0.30, front_y - 0.85, 0.70), key_target.location, 380 if MOODY else 450, WARM, 18, blend=0.6, radius=0.2)  # softer than a pinpoint; a 0.7 m radius on a spot cone dimmed the whole frame (a real softbox needs an area light)
+KEY_SOFTBOX = 0.8  # metres: the key is a square softbox this wide (0 = the old spot). Handoff item 2.
+if KEY_SOFTBOX > 0:
+    key_data = bpy.data.lights.new("KeyLight", "AREA")
+    key_data.shape = "SQUARE"
+    key_data.size = KEY_SOFTBOX
+    key_data.spread = math.radians(40)  # a softbox with a grid: a pool on the drivers, not the whole room
+    key_data.energy = 10.0 if MOODY else 13.0  # area watts go forward; matched by eye against the 380 W spot (A/B on the board)
+    key_data.color = WARM
+    key_data.volume_factor = 0.6
+    key = new_object("KeyLight", key_data)
+    key.location = (-0.30, front_y - 0.85, 0.70)
+else:
+    key = add_spot("KeyLight", (-0.30, front_y - 0.85, 0.70), key_target.location, 380 if MOODY else 450, WARM, 18, blend=0.6, radius=0.2)
 track = key.constraints.new("TRACK_TO")
 track.target = key_target
 track.track_axis = "TRACK_NEGATIVE_Z"
@@ -1297,6 +1309,28 @@ def build_led_wall(x, y, z, w, h):
     screen = bpy.context.object
     screen.name = "Scope"
     screen.scale = (w, h, 1)
+    # the glass front of the panel: a thin sheet a hair in front, so the key reflects in it
+    bpy.ops.mesh.primitive_plane_add(size=1, location=(x, y - 0.004, z), rotation=(math.pi / 2, 0, 0))
+    glass = bpy.context.object
+    glass.name = "Scope_Glass"
+    glass.scale = (w, h, 1)
+    gm = bpy.data.materials.new("ScopeGlassMat")
+    gm.use_nodes = True
+    gn, gl = gm.node_tree.nodes, gm.node_tree.links
+    gn.remove(gn["Principled BSDF"])
+    # a coating, not a slab: transparent straight through, a fresnel-weighted gloss on top
+    trans = gn.new("ShaderNodeBsdfTransparent")
+    gloss = gn.new("ShaderNodeBsdfGlossy")
+    gloss.inputs["Roughness"].default_value = 0.04
+    fres = gn.new("ShaderNodeFresnel")
+    fres.inputs["IOR"].default_value = 1.5
+    mixg = gn.new("ShaderNodeMixShader")
+    gl.new(fres.outputs[0], mixg.inputs["Fac"])
+    gl.new(trans.outputs[0], mixg.inputs[1])
+    gl.new(gloss.outputs[0], mixg.inputs[2])
+    gl.new(mixg.outputs[0], gn["Material Output"].inputs["Surface"])
+    glass.data.materials.append(gm)
+    glass.visible_shadow = False
     m = bpy.data.materials.new("ScopeMat")
     m.use_nodes = True
     nt = m.node_tree

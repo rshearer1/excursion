@@ -334,7 +334,7 @@ if logo_mat is not None and logo_mat.node_tree is not None:
     fcurve_fill(
         logo_mat.node_tree,
         'nodes["Principled BSDF"].inputs["Emission Strength"].default_value',
-        [max(v, 30.0 * drop_pulse(i, 0.5)) for i, v in enumerate(beat_flash(6.0, 14.0, 0.62, floor=0.35))],
+        [max(v, 12.0 * drop_pulse(i, 0.5)) for i, v in enumerate(beat_flash(3.0, 7.0, 0.62, floor=0.06))],  # a badge, not a lamp: the key lights it, the beat flashes it (handoff item 9)
     )
 
 neon_mat = bpy.data.materials.get("NeonMat")
