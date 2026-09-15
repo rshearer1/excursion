@@ -68,6 +68,7 @@ if (draft) applyArgs.push("--draft");
 if (opt("--sweep")) applyArgs.push("--sweep", opt("--sweep"));
 if (opt("--shutter")) applyArgs.push("--shutter", opt("--shutter"));
 if (flag("--slate")) applyArgs.push("--slate");
+if (opt("--samples")) applyArgs.push("--samples", opt("--samples"));
 await run(blender, applyArgs, "apply drive + render");
 
 await mkdir(outDir, { recursive: true });

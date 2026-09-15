@@ -36,6 +36,7 @@ ap.add_argument("--draft", action="store_true", help="half resolution, low sampl
 ap.add_argument("--sweep", type=float, default=12.0, help="camera orbit arc in degrees (0 = static)")
 ap.add_argument("--slate", action="store_true", help="show the orange sync slate above the speaker (flashes on beats)")
 ap.add_argument("--shutter", type=float, default=0.5, help="motion blur shutter as a fraction of the frame (0.5 = 180 degrees)")
+ap.add_argument("--samples", type=int, default=48, help="cycles samples per pixel (denoised; 48 is clean for this scene)")
 args = ap.parse_args(argv)
 
 with open(args.drive, encoding="utf-8") as fh:
@@ -560,7 +561,30 @@ def use_gpu_for_cycles():
 
 if args.engine == "cycles":
     scene.render.engine = "CYCLES"
-    scene.cycles.samples = 32 if args.draft else 128
+    cy = scene.cycles
+    # a fast profile: few samples cleaned by the denoiser, adaptive sampling so black areas stop
+    # early, short light paths (nothing here needs deep bounces), coarse volume steps, and the
+    # scene kept in memory between frames instead of being rebuilt for each one
+    cy.samples = 16 if args.draft else args.samples
+    cy.use_adaptive_sampling = True
+    cy.adaptive_threshold = 0.05
+    cy.use_denoising = True
+    try:
+        cy.denoiser = "OPTIX"
+    except TypeError:
+        pass
+    cy.max_bounces = 6
+    cy.diffuse_bounces = 2
+    cy.glossy_bounces = 3
+    cy.transmission_bounces = 2
+    cy.volume_bounces = 0
+    cy.transparent_max_bounces = 4
+    cy.caustics_reflective = False
+    cy.caustics_refractive = False
+    cy.volume_step_rate = 2.0
+    cy.volume_max_steps = 256
+    cy.light_sampling_threshold = 0.05
+    scene.render.use_persistent_data = True
     use_gpu_for_cycles()
 else:
     try:
