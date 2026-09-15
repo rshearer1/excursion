@@ -48,8 +48,13 @@
     .drophint { font-family: var(--mono); font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); }
 
     /* canvases */
+    .stage { display: flex; gap: 10px; align-items: flex-start; }
+    .lanes { flex: 1; min-width: 0; }
     #overview { width: 100%; height: 56px; display: block; background: var(--panel); border: 1px solid var(--line); border-radius: 4px 4px 0 0; cursor: crosshair; }
     #wave { width: 100%; height: 240px; display: block; background: var(--panel); border: 1px solid var(--line); border-top: 0; border-radius: 0 0 4px 4px; cursor: crosshair; }
+    #preview { flex: none; width: 216px; height: 384px; display: block; background: #04060a; border: 1px solid var(--line); border-radius: 4px; }
+    #preview[hidden] { display: none; }
+    @media (max-width: 640px) { .stage { flex-direction: column; } #preview { width: 100%; max-width: 216px; } }
 
     /* console */
     .console { display: flex; gap: 10px; align-items: stretch; flex-wrap: wrap; margin-top: 12px; }
@@ -118,7 +123,7 @@
   <div class="wrap">
     <header>
       <span class="wordmark">EXCURSION <em>GRID</em></span>
-      <span class="phase">phase 1 &mdash; beatgrid / drive.json</span>
+      <span class="phase">beatgrid / drive.json / 3D preview</span>
       <span class="gap"></span>
       <span id="trackname">no track loaded</span>
     </header>
@@ -129,8 +134,13 @@
       <span class="drophint">or drop audio anywhere</span>
     </div>
 
-    <canvas id="overview" width="2080" height="112"></canvas>
-    <canvas id="wave" width="2080" height="480"></canvas>
+    <div class="stage">
+      <div class="lanes">
+        <canvas id="overview" width="2080" height="112"></canvas>
+        <canvas id="wave" width="2080" height="480"></canvas>
+      </div>
+      <canvas id="preview" width="216" height="384" hidden title="3D preview — placeholder monitor, or blender/scenes/<scene>.glb from the linked folder"></canvas>
+    </div>
 
     <div class="console">
       <fieldset class="strip" style="border:1px solid var(--line)">
@@ -139,6 +149,7 @@
         <span class="time" id="time">0:00.000 / 0:00.000</span>
         <label><input type="checkbox" id="metro" checked /> click</label>
         <label title="overlay the exported woofer envelope + onsets on the beat lane"><input type="checkbox" id="driveOverlay" /> drive</label>
+        <label title="live 3D preview of the scene driven by the same drive.json"><input type="checkbox" id="preview3d" /> 3D</label>
       </fieldset>
 
       <fieldset class="strip grow" style="border:1px solid var(--line)">
@@ -202,7 +213,8 @@
       <kbd>space</kbd> play/pause &nbsp;&middot;&nbsp; <kbd>&larr;</kbd><kbd>&rarr;</kbd> nudge &plusmn;10 ms &nbsp;&middot;&nbsp; <kbd>shift</kbd>+<kbd>&larr;</kbd><kbd>&rarr;</kbd> &plusmn;1 ms &nbsp;&middot;&nbsp;
       click the <b>beat lane on a kick</b> to set the downbeat there &nbsp;&middot;&nbsp; click the <b>overview</b> to seek.<br />
       <kbd>I</kbd>/<kbd>O</kbd> render range in/out at playhead (<kbd>shift</kbd> clears) &nbsp;&middot;&nbsp; <kbd>M</kbd> drop marker &nbsp;&middot;&nbsp; <kbd>B</kbd> break marker &nbsp;&middot;&nbsp; click a marker line in the beat lane to delete it.<br />
-      Orange lines are downbeats, cyan are beats. The grid is right when the clicks disappear into the drums.
+      Orange lines are downbeats, cyan are beats. The grid is right when the clicks disappear into the drums.<br />
+      <b>3D</b> shows the scene live from the same drive data: cones pump on bass, the slate flashes on beats, cuts alternate cameras, dust drifts and gets shoved on each stroke.
     </div>
   </div>
   <script type="module" src="/src/main.ts"></script>

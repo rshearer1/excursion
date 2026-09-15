@@ -1,4 +1,4 @@
-# Excursion — grid tool (phase 1)
+# Excursion — grid tool
 
 Browser beatgrid + analysis tool for the Excursion audio-visualizer pipeline.
 Drop any audio file (or load the built-in 140 BPM demo), set BPM / tap tempo,
@@ -25,7 +25,19 @@ npm run track-job -- track.wav --start 20 --end 40 [--bpm 140 --offset 0]   # re
   auto-gain, FFT, feature extraction, drive.json builder, and a deterministic
   test-track synth (kick on 1, snare on 3 at 140 halftime — the demo track
   and the tests' ground truth).
+- `src/preview/` — the 3D preview (phase 11, live tier). `rig.ts` is pure and
+  unit-tested: drive frames + a time → rig state (excursion, cone velocity, slate
+  flash, lights, camera index) and the deterministic dust step (drag, turbulence,
+  cone jets scaled by cone velocity). `placeholder.ts` rebuilds the build_scene.py
+  monitor in three.js with the kit-contract names; `gltf.ts` binds
+  `blender/scenes/<scene>.glb` from the linked folder by those same names (woofer
+  `Excursion` shape key → morph target); `viewport.ts` is the renderer glue
+  (portrait camera on a 36 mm vertical sensor, fog haze, 20k-point dust, bloom).
+  three.js is only fetched when the **3D** checkbox is first switched on.
 - `src/main.ts` + `index.html` — the thin UI over the engine.
+
+Deep link: `?demo` loads the demo track, `?demo&3d` also turns the preview on
+(handy for a headless screenshot smoke test).
 
 Grid settings persist per track (keyed by file SHA-1) in localStorage.
 

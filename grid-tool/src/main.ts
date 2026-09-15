@@ -6,13 +6,15 @@ import {
   beatDurationSec,
 } from "./engine/grid";
 import { extractFeatures } from "./engine/features";
-import { buildDrive } from "./engine/exporter";
+import { buildDrive, type DriveJson } from "./engine/exporter";
 import { coneMotion, MID_DOME } from "./engine/cone";
 import { synthTestTrack } from "./engine/synth";
 import { computeCuts } from "./engine/cuts";
 import { envelopeFollow } from "./engine/envelope";
 import { autoGain } from "./engine/autogain";
 import type { FrameFeatures } from "./engine/features";
+import { rigStateAt, type DriveLike } from "./preview/rig";
+import type { PreviewViewport } from "./preview/viewport";
 
 declare global {
   interface Window {
@@ -39,6 +41,8 @@ const moodSel = $<HTMLSelectElement>("mood");
 const sceneSel = $<HTMLSelectElement>("scene");
 const linkBtn = $<HTMLButtonElement>("linkdir");
 const driveChk = $<HTMLInputElement>("driveOverlay");
+const previewChk = $<HTMLInputElement>("preview3d");
+const previewCanvas = $<HTMLCanvasElement>("preview");
 const cutsSel = $<HTMLSelectElement>("cuts");
 const cutMarkersChk = $<HTMLInputElement>("cutMarkers");
 const fpsSel = $<HTMLSelectElement>("fps");
@@ -80,6 +84,11 @@ let markers: { t: number; kind: "drop" | "break" }[] = [];
 let driveCache: FrameFeatures | null = null; // 30fps features for the overlay
 let overlayBass: Float32Array | null = null;
 let overlayOnsets: number[] = [];
+let preview: PreviewViewport | null = null;
+let previewDrive: DriveLike | null = null; // same frames the exporter writes, at 30 fps
+let previewDirty = true;
+let previewBuilding = false;
+let previewLastTs = 0;
 
 const status = (msg: string, err = false): void => {
   statusEl.textContent = msg;
@@ -112,6 +121,7 @@ interface Saved {
 const storeKey = (sha1: string): string => `excursion:grid:${sha1}`;
 function saveState(): void {
   if (!track) return;
+  previewDirty = true; // every persisted change can move a beat, a cut or an envelope
   const saved: Saved = {
     bpm: grid.bpm,
     offsetMs: grid.offsetMs,
@@ -207,6 +217,8 @@ function adoptTrack(name: string, sha1: string, buffer: AudioBuffer): void {
   driveCache = null;
   overlayBass = null;
   overlayOnsets = [];
+  previewDrive = null;
+  previewDirty = true;
   trackNameEl.textContent = `${name} — ${buffer.duration.toFixed(2)}s @ ${buffer.sampleRate}Hz`;
   playBtn.disabled = false;
   exportBtn.disabled = false;
@@ -489,6 +501,44 @@ function draw(): void {
   drawZoom();
   if (track) timeEl.textContent = `${fmtTime(songTime())} / ${fmtTime(track.buffer.duration)}`;
   scheduleClicks();
+  tickPreview();
+}
+
+// ---------- 3D preview ----------
+async function ensurePreviewDrive(): Promise<void> {
+  if (!track || previewBuilding) return;
+  previewBuilding = true;
+  try {
+    if (!driveCache) {
+      status("Analysing for 3D preview…");
+      await new Promise((r) => setTimeout(r, 30));
+      driveCache = extractFeatures(track.mono, track.buffer.sampleRate, { fps: 30 });
+    }
+    previewDrive = buildCurrentDrive(30, driveCache);
+    previewDirty = false;
+  } finally {
+    previewBuilding = false;
+  }
+}
+function tickPreview(): void {
+  if (!preview || !previewChk.checked || !track) return;
+  if (previewDirty) void ensurePreviewDrive();
+  if (!previewDrive) return;
+  const now = performance.now();
+  const dt = playing && previewLastTs ? (now - previewLastTs) / 1000 : 0;
+  previewLastTs = now;
+  preview.render(rigStateAt(previewDrive, songTime()), dt);
+}
+/** Bind the scene-kit glTF export when the linked folder has one; otherwise the placeholder stays. */
+async function loadPreviewRig(): Promise<void> {
+  if (!preview || !projectDir) return;
+  const { loadSceneGltf } = await import("./preview/gltf");
+  const rig = await loadSceneGltf(projectDir, sceneSel.value).catch(() => null);
+  if (rig && preview) {
+    preview.setRig(rig);
+    preview.resize();
+    status(`3D preview: bound blender/scenes/${sceneSel.value}.glb.`);
+  }
 }
 
 // ---------- drive overlay ----------
@@ -508,6 +558,38 @@ async function ensureOverlay(): Promise<void> {
 }
 
 // ---------- export ----------
+/** drive.json for the loaded track from the current controls — the export and the 3D preview share it. */
+function buildCurrentDrive(
+  fps: number,
+  features: FrameFeatures,
+  motion: { cone?: [number, number][]; dome?: [number, number][] } = {},
+): DriveJson {
+  if (!track) throw new Error("no track loaded");
+  const sortedMarkers = [...markers].sort((a, b) => a.t - b.t);
+  const range =
+    rangeIn !== null && rangeOut !== null && rangeOut > rangeIn
+      ? { start: rangeIn, end: rangeOut }
+      : undefined;
+  return buildDrive({
+    fileName: track.name,
+    sha1: track.sha1,
+    durationSec: track.buffer.duration,
+    grid,
+    fps,
+    scene: sceneSel.value,
+    mood: moodSel.value,
+    features,
+    ...motion,
+    range,
+    sections: sortedMarkers,
+    cuts: computeCuts(grid, track.buffer.duration, {
+      everyBars: Number(cutsSel.value) || 0,
+      markerTimes: cutMarkersChk.checked ? sortedMarkers.map((m) => m.t) : [],
+    }),
+    leadMs: Number(leadInput.value) || 0,
+    tuning: { trim: Number(trimInput.value) || 1 },
+  });
+}
 async function exportDrive(): Promise<void> {
   if (!track) return;
   status("Analysing… (this can take a moment on long tracks)");
@@ -516,30 +598,9 @@ async function exportDrive(): Promise<void> {
   try {
     const fps = Number(fpsSel.value) || 30;
     const features = extractFeatures(track.mono, track.buffer.sampleRate, { fps });
-    const sortedMarkers = [...markers].sort((a, b) => a.t - b.t);
-    const range =
-      rangeIn !== null && rangeOut !== null && rangeOut > rangeIn
-        ? { start: rangeIn, end: rangeOut }
-        : undefined;
-    const drive = buildDrive({
-      fileName: track.name,
-      sha1: track.sha1,
-      durationSec: track.buffer.duration,
-      grid,
-      fps,
-      scene: sceneSel.value,
-      mood: moodSel.value,
-      features,
+    const drive = buildCurrentDrive(fps, features, {
       cone: coneMotion(track.mono, track.buffer.sampleRate, { fps }),
       dome: coneMotion(track.mono, track.buffer.sampleRate, { fps, ...MID_DOME }),
-      range,
-      sections: sortedMarkers,
-      cuts: computeCuts(grid, track.buffer.duration, {
-        everyBars: Number(cutsSel.value) || 0,
-        markerTimes: cutMarkersChk.checked ? sortedMarkers.map((m) => m.t) : [],
-      }),
-      leadMs: Number(leadInput.value) || 0,
-      tuning: { trim: Number(trimInput.value) || 1 },
     });
     const json = JSON.stringify(drive);
     const fname = `${track.name.replace(/\.[^.]+$/, "")}.drive.json`;
@@ -613,7 +674,10 @@ zoomCanvas.addEventListener("click", (e) => {
 });
 exportBtn.addEventListener("click", () => void exportDrive());
 moodSel.addEventListener("change", saveState);
-sceneSel.addEventListener("change", saveState);
+sceneSel.addEventListener("change", () => {
+  saveState();
+  void loadPreviewRig();
+});
 trimInput.addEventListener("change", () => {
   saveState();
   if (driveChk.checked) void ensureOverlay();
@@ -621,6 +685,35 @@ trimInput.addEventListener("change", () => {
 driveChk.addEventListener("change", () => {
   if (driveChk.checked) void ensureOverlay();
 });
+previewChk.addEventListener("change", async () => {
+  previewCanvas.hidden = !previewChk.checked;
+  if (!previewChk.checked) return;
+  if (!preview) {
+    try {
+      // three.js is only fetched the first time the preview is switched on
+      const [{ PreviewViewport }, { buildPlaceholder }] = await Promise.all([
+        import("./preview/viewport"),
+        import("./preview/placeholder"),
+      ]);
+      preview = new PreviewViewport(previewCanvas, buildPlaceholder());
+    } catch (e) {
+      previewChk.checked = false;
+      previewCanvas.hidden = true;
+      status(`3D preview unavailable: ${e instanceof Error ? e.message : String(e)}`, true);
+      return;
+    }
+    void loadPreviewRig();
+  }
+  preview.resize();
+  previewDirty = true;
+  previewLastTs = 0;
+  status(
+    track
+      ? "3D preview on — placeholder monitor until blender/scenes/<scene>.glb exists in the linked folder."
+      : "3D preview on — load a track to drive it.",
+  );
+});
+window.addEventListener("resize", () => preview?.resize());
 cutsSel.addEventListener("change", saveState);
 cutMarkersChk.addEventListener("change", saveState);
 fpsSel.addEventListener("change", saveState);
@@ -634,6 +727,7 @@ linkBtn.addEventListener("click", async () => {
     projectDir = await window.showDirectoryPicker({ mode: "readwrite" });
     linkBtn.textContent = `→ ${projectDir.name}/blender/jobs`;
     status(`Linked. Exports now write straight into ${projectDir.name}/blender/jobs/.`);
+    void loadPreviewRig();
   } catch {
     /* picker cancelled */
   }
@@ -718,3 +812,14 @@ document.addEventListener("keydown", (e) => {
 syncControls();
 draw();
 status("Drop a track anywhere, or load the demo.");
+
+// deep link: ?demo loads the demo track, ?demo&3d also switches the preview on
+const params = new URLSearchParams(location.search);
+if (params.has("demo")) {
+  void loadDemo().then(() => {
+    if (params.has("3d")) {
+      previewChk.checked = true;
+      previewChk.dispatchEvent(new Event("change"));
+    }
+  });
+}

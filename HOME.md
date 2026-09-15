@@ -71,6 +71,11 @@ first reaches 70 % of its peak), 20 s long, with a drop marker. MP3s: convert fi
    Then the per-reel controls: `I`/`O` set the render range (a reel is 15–60 s, not the
    whole track), `M`/`B` drop and break markers, the **cuts** select picks camera-cut
    cadence, and the **drive** checkbox previews the woofer envelope before you render.
+   The **3D** checkbox opens the live preview: cones pump, the slate flashes, cuts alternate
+   cameras, dust gets shoved on each stroke — all from the same drive data. It shows the
+   placeholder monitor until `blender/scenes/<scene>.glb` exists in the linked folder
+   (export the scene-kit as glTF from Blender with the kit names; the woofer `Excursion`
+   shape key becomes a morph target).
 4. **Export drive.json**, then:
    ```
    node blender/make_reel.mjs blender/jobs/<track>.drive.json --draft
