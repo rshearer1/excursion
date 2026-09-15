@@ -21,6 +21,7 @@
 import argparse
 import math
 import json
+import os
 import sys
 
 import bpy
@@ -38,6 +39,7 @@ ap.add_argument("--sweep", type=float, default=12.0, help="camera orbit arc in d
 ap.add_argument("--slate", action="store_true", help="show the orange sync slate above the speaker (flashes on beats)")
 ap.add_argument("--shutter", type=float, default=0.5, help="motion blur shutter as a fraction of the frame (0.5 = 180 degrees)")
 ap.add_argument("--samples", type=int, default=48, help="cycles samples per pixel (denoised; 48 is clean for this scene)")
+ap.add_argument("--mood", default=None, help="override drive.mood: a name in blender/moods/")
 args = ap.parse_args(argv)
 
 with open(args.drive, encoding="utf-8") as fh:
@@ -143,14 +145,96 @@ if mid_objs:
     print(f"mid domes: {len(mid_objs)}, {dome_source}")
 
 
+# mood: blender/moods/<name>.json re-grades the scene at apply time (no rebuild) -------------
+# A mood is a palette, a cue list, a smoke setting and a grade. Every knob here reads the
+# JSON; anything the file leaves out keeps the scene's built-in value. drive.mood names it,
+# --mood overrides; old drives said "smoke", which is the moody default.
+MOOD_ALIASES = {"smoke": "moody", "": "moody"}
+MOODS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "moods")
+
+
+def load_mood(name):
+    name = MOOD_ALIASES.get(name, name)
+    path = os.path.join(MOODS_DIR, f"{name}.json")
+    if not os.path.exists(path):
+        print(f"mood: no blender/moods/{name}.json — the scene's built-in look")
+        return {"name": name}
+    with open(path, encoding="utf-8") as fh:
+        m = json.load(fh)
+    m["name"] = name
+    return m
+
+
+mood = load_mood(args.mood or data.get("mood", "moody"))
+
+
+def mood_light(name, color=None, gain=None):
+    obj = bpy.data.objects.get(name)
+    if obj is None or obj.type != "LIGHT":
+        return
+    if color is not None:
+        obj.data.color = tuple(color)
+    if gain is not None:
+        obj.data.energy *= gain
+
+
+if "exposure" in mood:
+    scene.view_settings.exposure = mood["exposure"]
+if "key" in mood:
+    mood_light("KeyLight", mood["key"].get("color"), mood["key"].get("gain"))
+mood_light("Graze", gain=mood.get("graze_gain"))
+mood_light("DustBack", gain=mood.get("dust_back_gain"))
+smoke_cfg = mood.get("smoke", {})
+_smoke_mat = bpy.data.materials.get("SmokeMat")
+if _smoke_mat is not None and _smoke_mat.node_tree is not None:
+    for node_name, key in (("Density", "density_gain"), ("Haze", "haze_gain")):
+        node = _smoke_mat.node_tree.nodes.get(node_name)
+        if node is not None and key in smoke_cfg:
+            node.outputs[0].default_value *= smoke_cfg[key]
+_scope = bpy.data.materials.get("ScopeMat")
+if _scope is not None and _scope.node_tree is not None and mood.get("cues"):
+    _scope.node_tree.nodes["Principled BSDF"].inputs["Emission Color"].default_value = (*mood["cues"][0]["trace"], 1.0)
+grade = mood.get("grade", {})
+comp_tree = scene.compositing_node_group
+if comp_tree is not None and grade:
+    cn = comp_tree.nodes
+
+    def comp_set(node_name, socket, value):
+        node = cn.get(node_name)
+        if node is not None:
+            sock = next((s for s in node.inputs if s.identifier == socket or s.name == socket), None)
+            if sock is not None:
+                sock.default_value = value
+
+    if "bloom" in grade:
+        comp_set("Bloom", "Strength", grade["bloom"])
+    if "chromatic" in grade:
+        comp_set("Lens", "Dispersion", grade["chromatic"])
+    if "black_lift" in grade and cn.get("Curve") is not None:
+        c = cn["Curve"].mapping.curves[3]
+        c.points[0].location = (0.0, grade["black_lift"])
+        cn["Curve"].mapping.update()
+    if "gain" in grade:
+        comp_set("Balance", "Color Gain", (*grade["gain"], 1.0))
+    if "lift" in grade:
+        comp_set("Balance", "Color Lift", (*grade["lift"], 1.0))
+    if "saturation" in grade:
+        comp_set("Saturation", "Saturation", grade["saturation"])
+    if "vignette" in grade:
+        comp_set("Vignette", "To Min", 1.0 - grade["vignette"])
+    if "grain" in grade:
+        comp_set("GrainAmount", "To Min", -grade["grain"])
+        comp_set("GrainAmount", "To Max", grade["grain"])
+print(f"mood: {mood['name']} — {mood.get('description', 'built-in look')}")
+
+
 # smoke: kicks shove it out of the woofers, bass keeps the cloud drifting ----
 smoke = bpy.data.objects.get("Smoke")
 smoke_mat = bpy.data.materials.get("SmokeMat")
 if smoke is not None and smoke_mat is not None:
-    mood = data.get("mood", "smoke")
-    smoke.hide_render = mood != "smoke"
+    smoke.hide_render = not smoke_cfg.get("show", True)
     if smoke.hide_render:
-        print(f"smoke: hidden for mood {mood!r}")
+        print(f"smoke: hidden for mood {mood['name']!r}")
     else:
         push, drift = [], []
         env, total, prev = 0.0, 0.0, 0.0
@@ -277,13 +361,19 @@ rim_level = [0.6 + 0.7 * p + 0.5 * drop_pulse(i, 3.0) for i, p in enumerate(down
 #   B  cool rims against the warm key, blue trace
 #   A  dark red rims, red trace
 #   F  warm only: rims off, backlight up, amber trace
-LOOK_CUES = [
+# The list, the bar count and the fade come from the mood JSON (blender/moods/); this is
+# the built-in fallback when the mood has no cues.
+DEFAULT_CUES = [
     {"rim": (0.4, 0.6, 1.0), "rim_gain": 1.0, "back_gain": 1.0, "trace": (0.55, 0.75, 1.0)},
     {"rim": (0.55, 0.035, 0.02), "rim_gain": 1.0, "back_gain": 1.0, "trace": (1.0, 0.32, 0.18)},
     {"rim": (1.0, 0.7, 0.4), "rim_gain": 0.0, "back_gain": 2.2, "trace": (1.0, 0.68, 0.38)},
 ]
-CUE_BARS = 2
-CUE_FADE = 6  # frames
+LOOK_CUES = [
+    {"rim": tuple(c["rim"]), "rim_gain": c.get("rim_gain", 1.0), "back_gain": c.get("back_gain", 1.0), "trace": tuple(c["trace"])}
+    for c in mood.get("cues", [])
+] or DEFAULT_CUES
+CUE_BARS = max(1, int(mood.get("cue_bars", 2)))
+CUE_FADE = max(1, int(mood.get("cue_fade", 6)))  # frames
 downbeats_fr = sorted(round(t * fps) for t in data.get("downbeats", []))
 
 
@@ -310,7 +400,7 @@ def cue_mix(key, i):
     return sum(w * v for w, v in zip(ws, vals))
 
 
-if len(LOOK_CUES) > 1:
+if True:  # one cue is still a cue: the rims take its colour and gain
     n_frames = len(frames)
     rim_gain = [cue_mix("rim_gain", i) for i in range(n_frames)]
     rim_col = [cue_mix("rim", i) for i in range(n_frames)]
@@ -337,12 +427,6 @@ if len(LOOK_CUES) > 1:
         for axis in range(3):
             fcurve_fill(scope.node_tree, 'nodes["Principled BSDF"].inputs["Emission Color"].default_value', [c[axis] for c in trace], index=axis)
     print(f"cues: {len(LOOK_CUES)} looks, one every {CUE_BARS} bars, {CUE_FADE}-frame crossfade")
-else:
-    for name in ("RimLeft", "RimRight", "TopBack"):
-        light = bpy.data.objects.get(name)
-        if light is not None:
-            base = light.data.energy
-            fcurve_fill(light.data, "energy", [base * lvl for lvl in rim_level])
 print("lights: key follows the bass level, rims pulse on downbeats")
 
 # render range: drive.range (seconds) -> frame window --------------------

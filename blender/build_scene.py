@@ -2058,7 +2058,9 @@ def build_compositor():
     img = over(main_rl.outputs["Image"], main_rl.outputs["Alpha"], black.outputs[0])
     img = over(dust_rl.outputs["Image"], dust_rl.outputs["Alpha"], img)
 
+    # every stage is named: apply_drive re-grades these from the mood JSON (blender/moods/)
     glare = N.new("CompositorNodeGlare")
+    glare.name = glare.label = "Bloom"
     glare.inputs["Type"].default_value = "Bloom"
     glare.inputs["Highlights Threshold"].default_value = 1.0
     glare.inputs["Strength"].default_value = COMP_BLOOM
@@ -2066,12 +2068,14 @@ def build_compositor():
     img = glare.outputs["Image"]
 
     lens = N.new("CompositorNodeLensdist")
+    lens.name = lens.label = "Lens"
     lens.inputs["Distortion"].default_value = 0.005
     lens.inputs["Dispersion"].default_value = COMP_CHROMATIC
     L.new(img, lens.inputs["Image"])
     img = lens.outputs["Image"]
 
     curve = N.new("CompositorNodeCurveRGB")
+    curve.name = curve.label = "Curve"
     c = curve.mapping.curves[3]  # combined
     c.points[0].location = (0.0, 0.02)  # blacks a touch above full crush: Instagram butchers crushed gradients
     c.points.new(0.25, 0.22)
@@ -2079,12 +2083,21 @@ def build_compositor():
     curve.mapping.update()
     L.new(img, curve.inputs["Image"])
     img = curve.outputs["Image"]
-    if MOODY:  # warm the highlights, cool nothing: the whole frame lives between amber and dark red
-        warm = N.new("CompositorNodeColorBalance")
-        next(s for s in warm.inputs if s.identifier == "Color Gain").default_value = (1.06, 0.96, 0.86, 1.0)
-        next(s for s in warm.inputs if s.identifier == "Color Lift").default_value = (1.0, 0.985, 0.97, 1.0)
-        L.new(img, warm.inputs["Image"])
-        img = warm.outputs["Image"]
+    # split tone: warm the highlights, cool nothing, so the frame lives between amber and dark
+    # red (the moody default; a mood JSON can set any lift/gain pair)
+    warm = N.new("CompositorNodeColorBalance")
+    warm.name = warm.label = "Balance"
+    gain = (1.06, 0.96, 0.86, 1.0) if MOODY else (1.0, 1.0, 1.0, 1.0)
+    lift = (1.0, 0.985, 0.97, 1.0) if MOODY else (1.0, 1.0, 1.0, 1.0)
+    next(s for s in warm.inputs if s.identifier == "Color Gain").default_value = gain
+    next(s for s in warm.inputs if s.identifier == "Color Lift").default_value = lift
+    L.new(img, warm.inputs["Image"])
+    img = warm.outputs["Image"]
+    sat = N.new("CompositorNodeHueSat")
+    sat.name = sat.label = "Saturation"
+    sat.inputs["Saturation"].default_value = 1.0
+    L.new(img, sat.inputs["Image"])
+    img = sat.outputs["Image"]
 
     if COMP_VIGNETTE > 0:
         mask = N.new("CompositorNodeEllipseMask")
@@ -2093,6 +2106,7 @@ def build_compositor():
         blur.inputs["Size"].default_value = (420, 420)
         L.new(mask.outputs["Mask"], blur.inputs["Image"])
         lift = N.new("ShaderNodeMapRange")
+        lift.name = lift.label = "Vignette"
         lift.inputs["To Min"].default_value = 1.0 - COMP_VIGNETTE
         L.new(blur.outputs["Image"], lift.inputs["Value"])
         vig = N.new("ShaderNodeMix")
@@ -2110,6 +2124,7 @@ def build_compositor():
         noise.inputs["Scale"].default_value = 3200
         noise.inputs["Detail"].default_value = 0.0
         grain = N.new("ShaderNodeMapRange")
+        grain.name = grain.label = "GrainAmount"
         grain.inputs["To Min"].default_value = -COMP_GRAIN
         grain.inputs["To Max"].default_value = COMP_GRAIN
         L.new(noise.outputs["Fac"], grain.inputs["Value"])

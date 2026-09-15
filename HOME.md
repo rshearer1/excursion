@@ -76,7 +76,15 @@ first reaches 70 % of its peak), 20 s long, with a drop marker. MP3s: convert fi
    placeholder monitor until `blender/scenes/<scene>.glb` exists in the linked folder
    (export the scene-kit as glTF from Blender with the kit names; the woofer `Excursion`
    shape key becomes a morph target).
-4. **Export drive.json**, then:
+4. **Render** (phase 05). Pick a profile and press Render: the page hands the track and
+   the drive to the local helper inside `npm run dev`, Blender and ffmpeg run on this
+   machine, the panel under the console shows frames done and the time left, and the reel
+   plays in the same tab when it lands (it is also in `out/<slug>.mp4`). Profiles:
+   **test** is Cycles at half size and 32 samples (about 3 s a frame, a 10 s clip in 16 min),
+   **draft** is half size with few samples, **final** is full size. One job at a time; Stop
+   kills it. The helper needs Blender on this machine (`BLENDER` env var, or the newest
+   install under Program Files). The mood list comes from `blender/moods/`.
+   Or by hand: **Export drive.json**, then:
    ```
    node blender/make_reel.mjs blender/jobs/<track>.drive.json --draft
    ```
@@ -87,6 +95,19 @@ first reaches 70 % of its peak), 20 s long, with a drop marker. MP3s: convert fi
    `--slate` shows the orange sync slate, `--crf 18` trades file size for quality (default 20:
    the film grain makes these files large).
    `--shutter 0.25` (90-degree) makes cone hits crisper, `--shutter 0.75` smears them more.
+
+## Moods (phase 05, 2026-09-15)
+
+A mood is a JSON file in `blender/moods/`: the key light's colour and gain, the cue list
+(rim colour and gain, dust-backlight gain and LED trace colour per cue; `cue_bars`,
+`cue_fade`), the smoke (`show`, density and haze gains) and the grade (bloom, chromatic
+aberration, black lift, split-tone lift/gain, saturation, vignette, grain) plus exposure.
+`apply_drive.py` reads `drive.mood` (or `--mood name`) and applies it **at apply time**, so
+switching moods never rebuilds the scene: the compositor stages are named (`Bloom`, `Lens`,
+`Curve`, `Balance`, `Saturation`, `Vignette`, `GrainAmount`) and re-graded from the JSON.
+Shipped: **moody** (the default; old drives that say `smoke` mean this), **ember** (look A
+held), **neon** (cyan / magenta / blue chase), **clean** (product shot, no smoke). Add a mood
+by copying a file; the grid tool lists whatever is in the folder.
 
 ## What runs where
 
@@ -217,6 +238,9 @@ If the STL is not cached the builder falls back to the phase-2 placeholder primi
 
 ## Next build steps (with Claude, per the plan artifact)
 
-Phases 4+: neon/clean moods, lights driven by the track, more scenes/cameras. A `Mid` binding is free to add:
+Phase 05 is in (moods as JSON, the Render button). Open from the plan: pressure-wave shells
+and grid-advected haze (04), the safe-zone overlay and batch rendering (06), Ableton import
+(08), hit tracking (09), the lyric lane (10), the glTF export and Preview-frame button (11),
+the other scenes, and a modelled mid waveguide to replace the CAD's cog. A `Mid` binding is free to add:
 `frames[].mid` is already in drive.json and the PMC55 waveguide sits at scene
 (x 0.045, z 0.0) on the Cabinet.

@@ -1,6 +1,6 @@
 // Excursion — one command from drive.json to reel.mp4.
 //
-//   node blender/make_reel.mjs blender/jobs/track.drive.json [--engine eevee|cycles] [--draft] [--test] [--audio path] [--sweep deg] [--shutter 0..1] [--slate] [--crf n]
+//   node blender/make_reel.mjs blender/jobs/track.drive.json [--engine eevee|cycles] [--draft] [--test] [--mood name] [--audio path] [--sweep deg] [--shutter 0..1] [--slate] [--crf n]
 //
 // Steps: fetch scene assets -> build scene if missing -> apply drive + render frames -> ffmpeg mux.
 // Audio is resolved from drive.audio.file sitting NEXT TO the drive.json (or pass --audio).
@@ -71,6 +71,7 @@ if (opt("--sweep")) applyArgs.push("--sweep", opt("--sweep"));
 if (opt("--shutter")) applyArgs.push("--shutter", opt("--shutter"));
 if (flag("--slate")) applyArgs.push("--slate");
 if (opt("--samples")) applyArgs.push("--samples", opt("--samples"));
+if (opt("--mood")) applyArgs.push("--mood", opt("--mood"));
 await run(blender, applyArgs, "apply drive + render");
 
 await mkdir(outDir, { recursive: true });

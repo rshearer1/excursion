@@ -112,6 +112,17 @@
     details.adv[open] summary::before { content: "\2212 "; }
     details.adv .row { display: flex; gap: 16px; align-items: center; flex-wrap: wrap; padding: 8px 0 2px; }
 
+    /* render panel */
+    .renderpanel { margin-top: 12px; background: var(--panel); border: 1px solid var(--line); border-radius: 4px; padding: 10px 12px 12px; }
+    .renderpanel[hidden] { display: none; }
+    .renderhead { display: flex; justify-content: space-between; gap: 12px; font: 11px var(--mono); color: var(--muted); margin-bottom: 8px; flex-wrap: wrap; }
+    .renderhead b { color: var(--text); font-weight: 500; }
+    .renderhead .err { color: #e06c60; }
+    progress { width: 100%; height: 6px; accent-color: var(--orange); display: block; }
+    #reel { display: block; margin-top: 10px; width: 100%; max-width: 270px; border-radius: 4px; background: #000; border: 1px solid var(--line); }
+    #reel[hidden] { display: none; }
+    .renderlog { font: 10px var(--mono); color: var(--muted); white-space: pre-wrap; margin-top: 8px; max-height: 60px; overflow: hidden; }
+
     #status { font: 11px var(--mono); color: var(--muted); min-height: 18px; margin-top: 10px; }
     #status.err { color: #e06c60; }
     .hints { color: var(--muted); font-size: 11.5px; margin-top: 10px; line-height: 1.8; }
@@ -192,6 +203,29 @@
         <button id="linkdir" title="Choose your excursion project folder — exports then write straight into blender/jobs/">Link folder</button>
         <button id="export" class="export" disabled>Export drive.json</button>
       </fieldset>
+
+      <fieldset class="strip" style="border:1px solid var(--line)">
+        <legend>Render</legend>
+        <label>profile
+          <select id="profile" title="test: Cycles, half size, 32 samples, about 3 s a frame · draft: half size, few samples · final: full size, full samples">
+            <option value="test" selected>test</option>
+            <option value="draft">draft</option>
+            <option value="final">final</option>
+          </select>
+        </label>
+        <label>engine
+          <select id="engine"><option value="cycles" selected>cycles</option><option value="eevee">eevee</option></select>
+        </label>
+        <button id="render" class="primary" disabled title="needs the dev server (npm run dev) on this machine, with Blender installed">Render</button>
+        <button id="stopRender" hidden>Stop</button>
+      </fieldset>
+    </div>
+
+    <div id="renderPanel" class="renderpanel" hidden>
+      <div class="renderhead"><span id="renderText"></span><span id="renderEta"></span></div>
+      <progress id="renderBar" max="1" value="0"></progress>
+      <video id="reel" controls playsinline hidden></video>
+      <div id="renderLog" class="renderlog"></div>
     </div>
 
     <details class="adv">
@@ -214,7 +248,8 @@
       click the <b>beat lane on a kick</b> to set the downbeat there &nbsp;&middot;&nbsp; click the <b>overview</b> to seek.<br />
       <kbd>I</kbd>/<kbd>O</kbd> render range in/out at playhead (<kbd>shift</kbd> clears) &nbsp;&middot;&nbsp; <kbd>M</kbd> drop marker &nbsp;&middot;&nbsp; <kbd>B</kbd> break marker &nbsp;&middot;&nbsp; click a marker line in the beat lane to delete it.<br />
       Orange lines are downbeats, cyan are beats. The grid is right when the clicks disappear into the drums.<br />
-      <b>3D</b> shows the scene live from the same drive data: cones pump on bass, the slate flashes on beats, cuts alternate cameras, dust drifts and gets shoved on each stroke.
+      <b>3D</b> shows the scene live from the same drive data: cones pump on bass, the slate flashes on beats, cuts alternate cameras, dust drifts and gets shoved on each stroke.<br />
+      <b>Render</b> sends the track and the drive to Blender on this machine and plays the reel here when it lands; <b>test</b> is the 10-second look check, <b>final</b> is the post.
     </div>
   </div>
   <script type="module" src="/src/main.ts"></script>

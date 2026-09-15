@@ -14,6 +14,7 @@ import { envelopeFollow } from "./engine/envelope";
 import { autoGain } from "./engine/autogain";
 import type { FrameFeatures } from "./engine/features";
 import { rigStateAt, type DriveLike } from "./preview/rig";
+import { etaSeconds, formatDuration, slugify, type RenderEngine, type RenderProfile, type RenderState } from "./engine/renderJob";
 import type { PreviewViewport } from "./preview/viewport";
 
 declare global {
@@ -56,6 +57,16 @@ const halftimeChk = $<HTMLInputElement>("halftime");
 const bpbInput = $<HTMLInputElement>("bpb");
 const trimInput = $<HTMLInputElement>("trim");
 const statusEl = $<HTMLDivElement>("status");
+const profileSel = $<HTMLSelectElement>("profile");
+const engineSel = $<HTMLSelectElement>("engine");
+const renderBtn = $<HTMLButtonElement>("render");
+const stopRenderBtn = $<HTMLButtonElement>("stopRender");
+const renderPanel = $<HTMLDivElement>("renderPanel");
+const renderText = $<HTMLSpanElement>("renderText");
+const renderEta = $<HTMLSpanElement>("renderEta");
+const renderBar = $<HTMLProgressElement>("renderBar");
+const reelVideo = $<HTMLVideoElement>("reel");
+const renderLog = $<HTMLDivElement>("renderLog");
 const loadRow = $<HTMLDivElement>("drop");
 
 const ZOOM_BEATS = 8; // width of the beat lane window
@@ -64,6 +75,8 @@ const ZOOM_BEATS = 8; // width of the beat lane window
 interface Track {
   name: string;
   sha1: string;
+  /** The file as loaded, so Render can hand the audio to Blender; null for the demo. */
+  file: File | null;
   buffer: AudioBuffer;
   mono: Float32Array;
   peaks: { min: Float32Array; max: Float32Array };
@@ -206,10 +219,10 @@ function computePeaks(mono: Float32Array, columns: number): Track["peaks"] {
   }
   return { min, max };
 }
-function adoptTrack(name: string, sha1: string, buffer: AudioBuffer): void {
+function adoptTrack(name: string, sha1: string, buffer: AudioBuffer, file: File | null = null): void {
   stop();
   const mono = monoMix(buffer);
-  track = { name, sha1, buffer, mono, peaks: computePeaks(mono, overviewCanvas.width) };
+  track = { name, sha1, file, buffer, mono, peaks: computePeaks(mono, overviewCanvas.width) };
   startOffsetSec = 0;
   rangeIn = null;
   rangeOut = null;
@@ -222,6 +235,7 @@ function adoptTrack(name: string, sha1: string, buffer: AudioBuffer): void {
   trackNameEl.textContent = `${name} — ${buffer.duration.toFixed(2)}s @ ${buffer.sampleRate}Hz`;
   playBtn.disabled = false;
   exportBtn.disabled = false;
+  renderBtn.disabled = !(file && helperOnline);
   const restored = loadState(sha1);
   syncControls();
   status(
@@ -236,7 +250,7 @@ async function loadFile(file: File): Promise<void> {
     const bytes = await file.arrayBuffer();
     const sha1 = await sha1Hex(bytes.slice(0));
     const buffer = await ctx().decodeAudioData(bytes);
-    adoptTrack(file.name, sha1, buffer);
+    adoptTrack(file.name, sha1, buffer, file);
   } catch (e) {
     status(`Could not decode that file: ${e instanceof Error ? e.message : String(e)}`, true);
   }
@@ -628,6 +642,135 @@ async function exportDrive(): Promise<void> {
     exportBtn.disabled = false;
   }
 }
+
+// ---------- render (phase 05) ----------
+// The dev server carries a local helper (server/render.ts): the page stores the audio in
+// blender/jobs/, posts the drive, and polls the job until the reel is muxed, then plays it.
+let helperOnline = false;
+let renderPoll: number | null = null;
+
+async function detectHelper(): Promise<void> {
+  try {
+    const res = await fetch("/api/moods");
+    if (!res.ok) return;
+    const moods = (await res.json()) as { name: string; description: string }[];
+    helperOnline = true;
+    if (moods.length) {
+      const current = moodSel.value;
+      moodSel.replaceChildren(
+        ...moods.map((m) => {
+          const o = document.createElement("option");
+          o.value = m.name;
+          o.textContent = m.name;
+          o.title = m.description;
+          return o;
+        }),
+      );
+      moodSel.value = moods.some((m) => m.name === current) ? current : moods[0]!.name;
+    }
+    renderBtn.disabled = !(track?.file && helperOnline);
+    const st = (await (await fetch("/api/render")).json()) as RenderState;
+    if (st.status === "running") {
+      showRender(st);
+      startPolling();
+    }
+  } catch {
+    helperOnline = false; // a static build, or the page is open without npm run dev
+  }
+}
+
+function showRender(st: RenderState): void {
+  renderPanel.hidden = false;
+  const pct = st.total > 0 ? st.done / st.total : 0;
+  renderBar.value = pct;
+  const where = st.slug ? `<b>${st.slug}</b> · ${st.engine} · ${st.profile}` : "";
+  if (st.status === "running") {
+    const eta = etaSeconds(st, Date.now());
+    renderText.innerHTML = `${where} · frame ${st.done} / ${st.total}`;
+    renderEta.textContent = eta === null ? "starting Blender…" : `about ${formatDuration(eta)} left`;
+    reelVideo.hidden = true;
+    stopRenderBtn.hidden = false;
+    renderBtn.disabled = true;
+  } else if (st.status === "done") {
+    const took = st.startedAt && st.finishedAt ? formatDuration((st.finishedAt - st.startedAt) / 1000) : "";
+    renderText.innerHTML = `${where} · done${took ? ` in ${took}` : ""} · out/${st.slug}${st.profile === "draft" ? ".draft" : ""}.mp4`;
+    renderEta.textContent = "";
+    renderBar.value = 1;
+    if (st.reel && reelVideo.dataset["src"] !== st.reel) {
+      reelVideo.src = `${st.reel}?t=${st.finishedAt ?? Date.now()}`;
+      reelVideo.dataset["src"] = st.reel;
+    }
+    reelVideo.hidden = false;
+    stopRenderBtn.hidden = true;
+    renderBtn.disabled = !(track?.file && helperOnline);
+  } else if (st.status === "error") {
+    renderText.innerHTML = `${where} · <span class="err">${st.error ?? "failed"}</span>`;
+    renderEta.textContent = "";
+    stopRenderBtn.hidden = true;
+    renderBtn.disabled = !(track?.file && helperOnline);
+  }
+  renderLog.textContent = st.status === "done" ? "" : st.log.slice(-4).join("\n");
+}
+
+function startPolling(): void {
+  if (renderPoll !== null) return;
+  renderPoll = window.setInterval(async () => {
+    try {
+      const st = (await (await fetch("/api/render")).json()) as RenderState;
+      showRender(st);
+      if (st.status !== "running" && renderPoll !== null) {
+        clearInterval(renderPoll);
+        renderPoll = null;
+        status(st.status === "done" ? "Reel ready — playing below. It is also in out/." : `Render failed: ${st.error ?? "see the log"}`, st.status !== "done");
+      }
+    } catch {
+      /* the helper went away; keep trying */
+    }
+  }, 1500);
+}
+
+async function renderReel(): Promise<void> {
+  if (!track?.file) return;
+  renderBtn.disabled = true;
+  try {
+    status("Analysing the track…");
+    await new Promise((r) => setTimeout(r, 30));
+    const fps = Number(fpsSel.value) || 30;
+    const features = extractFeatures(track.mono, track.buffer.sampleRate, { fps });
+    const drive = buildCurrentDrive(fps, features, {
+      cone: coneMotion(track.mono, track.buffer.sampleRate, { fps }),
+      dome: coneMotion(track.mono, track.buffer.sampleRate, { fps, ...MID_DOME }),
+    });
+    status(`Sending ${track.name} to Blender…`);
+    const put = await fetch(`/api/jobs/${encodeURIComponent(track.name)}`, { method: "PUT", body: track.file });
+    if (!put.ok) throw new Error(`could not store the audio (${put.status})`);
+    const res = await fetch("/api/render", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        slug: slugify(track.name),
+        engine: engineSel.value as RenderEngine,
+        profile: profileSel.value as RenderProfile,
+        drive,
+      }),
+    });
+    const st = (await res.json()) as RenderState & { error?: string };
+    if (!res.ok) throw new Error(st.error ?? `render refused (${res.status})`);
+    saveState();
+    showRender(st);
+    startPolling();
+    status(`Rendering ${st.total} frames — ${profileSel.value} profile on ${engineSel.value}. You can keep gridding.`);
+  } catch (e) {
+    status(`Render failed to start: ${e instanceof Error ? e.message : String(e)}`, true);
+    renderBtn.disabled = false;
+  }
+}
+
+renderBtn.addEventListener("click", () => void renderReel());
+stopRenderBtn.addEventListener("click", async () => {
+  await fetch("/api/render/stop", { method: "POST" }).catch(() => undefined);
+});
+void detectHelper();
 
 // ---------- wiring ----------
 fileInput.addEventListener("change", () => {

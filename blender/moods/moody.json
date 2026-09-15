@@ -1,0 +1,26 @@
+{
+  "name": "moody",
+  "description": "The default. Warm key, cool blue rims, the look stepping B > A > F every two bars; smoke on; amber split tone, blacks just off crush.",
+  "exposure": -0.55,
+  "key": { "color": [1.0, 0.84, 0.66], "gain": 1.0 },
+  "graze_gain": 1.0,
+  "dust_back_gain": 1.0,
+  "cues": [
+    { "rim": [0.4, 0.6, 1.0], "rim_gain": 1.0, "back_gain": 1.0, "trace": [0.55, 0.75, 1.0] },
+    { "rim": [0.55, 0.035, 0.02], "rim_gain": 1.0, "back_gain": 1.0, "trace": [1.0, 0.32, 0.18] },
+    { "rim": [1.0, 0.7, 0.4], "rim_gain": 0.0, "back_gain": 2.2, "trace": [1.0, 0.68, 0.38] }
+  ],
+  "cue_bars": 2,
+  "cue_fade": 6,
+  "smoke": { "show": true, "density_gain": 1.0, "haze_gain": 1.0 },
+  "grade": {
+    "bloom": 0.08,
+    "chromatic": 0.012,
+    "black_lift": 0.02,
+    "gain": [1.06, 0.96, 0.86],
+    "lift": [1.0, 0.985, 0.97],
+    "saturation": 1.0,
+    "vignette": 0.15,
+    "grain": 0.012
+  }
+}
