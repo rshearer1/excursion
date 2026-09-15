@@ -84,10 +84,16 @@ first reaches 70 % of its peak), 20 s long, with a drop marker. MP3s: convert fi
    **draft** is half size with few samples, **final** is full size. One job at a time; Stop
    kills it. The helper needs Blender on this machine (`BLENDER` env var, or the newest
    install under Program Files). The mood list comes from `blender/moods/`.
+   **Preview frame** renders one EEVEE draft frame at the playhead through the same helper
+   (about 20 s) and shows it in the preview column: the true materials, lights, lyrics and
+   grade for that moment, before committing to a render. The **safe** checkbox shades where the
+   Instagram reels UI covers the 3D preview.
    Or by hand: **Export drive.json**, then:
    ```
    node blender/make_reel.mjs blender/jobs/<track>.drive.json --draft
    ```
+   Several drives in one command render as a batch, one after another. `--lut look.cube`
+   applies a display-referred LUT at mux time (a look without a re-render).
    Watch the draft: the orange **slate panel flashes on every beat — if the flashes
    sit on the drums, sync is proven end to end** (this is the phase-2 milestone).
    Then drop `--draft` for the real render, or `--engine cycles` for a hero pass.
@@ -108,6 +114,21 @@ switching moods never rebuilds the scene: the compositor stages are named (`Bloo
 Shipped: **moody** (the default; old drives that say `smoke` mean this), **ember** (look A
 held), **neon** (cyan / magenta / blue chase), **clean** (product shot, no smoke). Add a mood
 by copying a file; the grid tool lists whatever is in the folder.
+
+## Pressure-wave shells (phase 04, 2026-09-15)
+
+On each beat where the cone actually hits, a shell leaves the woofers and expands at 0.45 m per
+beat, its rim fading over a second (`Shell_k` pool in build_scene, keyed in apply_drive). A
+shell is a transparent sphere whose rim glows, so a wave reads as an expanding ring in the haze
+and never refracts the frame when it passes the camera. `mood.shells = { show, strength }`;
+clean turns them off.
+
+## The 3D preview's scene kit (phase 11, 2026-09-15)
+
+`build_scene.py` ends by exporting `blender/scenes/void.glb` (gitignored): the hero and its
+parts, the cameras, the main lights, the lyric anchors, and the woofers' `Excursion` shape key
+as a morph target. With the project folder linked, the grid tool's **3D** preview binds it in
+place of the placeholder box.
 
 ## Lyrics (phase 10, 2026-09-15)
 
@@ -257,9 +278,9 @@ If the STL is not cached the builder falls back to the phase-2 placeholder primi
 
 ## Next build steps (with Claude, per the plan artifact)
 
-Phases 05 (moods, Render button) and 10 (the lyric lane) are in, and the mid waveguide is
-modelled. Open from the plan: pressure-wave shells and grid-advected haze (04), the safe-zone
-overlay and batch rendering (06), Ableton import (08), hit tracking (09), WhisperX on this
-machine, lyrics in the 3D preview and the Preview-frame button (11), and the other scenes. A `Mid` binding is free to add:
+In: 05 (moods, Render button), 06 (safe zone, batch, LUT), 10 (the lyric lane), 11 (the glb
+export and the Preview-frame button), the shells, the modelled mid waveguide. Open from the
+plan: grid-advected haze (04), Ableton import (08), hit tracking (09), WhisperX on this
+machine, lyrics in the 3D preview, and the other scenes. A `Mid` binding is free to add:
 `frames[].mid` is already in drive.json and the PMC55 waveguide sits at scene
 (x 0.045, z 0.0) on the Cabinet.
