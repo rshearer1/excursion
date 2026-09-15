@@ -41,11 +41,11 @@ STL = os.path.join(CACHE, "pmc", "PMC6-2.stl")
 EXCURSION = 0.014  # metres of cone travel at shape key value 1.0 (a real driver is ~10 mm; exaggerated to read on video)
 MID_EXCURSION = 0.003  # the 75 mm mid dome moves far less
 SHARP_ANGLE = math.radians(30)
-CABINET_ALBEDO = 0.3  # multiplier on the texture's colour map
-CABINET_ROUGHNESS = (0.2, 0.5)  # the roughness map is remapped into this range
-CABINET_BUMP = 0.35  # displacement-map bump strength on top of the normal map
-SETTLED_DUST = 0.35  # how much dust has settled on the cabinet's up-facing surfaces (0 = none)
-SMUDGE = 0.18  # roughness variation from handling: 0 = perfectly uniform (the biggest CGI tell)
+CABINET_ALBEDO = 0.22  # multiplier on the texture's colour map
+CABINET_ROUGHNESS = (0.42, 0.68)  # the roughness map is remapped into this range (PMC's finish is a flat textured black)
+CABINET_BUMP = 0.22  # displacement-map bump strength on top of the normal map (a fine textured paint, not leather)
+SETTLED_DUST = 0.12  # how much dust has settled on the cabinet's up-facing surfaces (0 = none)
+SMUDGE = 0.08  # roughness variation from handling: 0 = perfectly uniform (the biggest CGI tell)
 # LOOK: "moody" = the single-speaker-in-the-void grade — warm key, dark red rims, almost no
 # fill, big soft dust bokeh, crushed blacks, heavy vignette; show fixtures dimmed to sit inside
 # it. Set to "show" for a brighter club grade.
@@ -88,7 +88,7 @@ def assign(obj, material):
     obj.data.materials.append(material)
 
 
-def plastic_material(name, scale=11.0):
+def plastic_material(name, scale=22.0):
     """ambientCG PBR set box-projected in object space (the STL has no UVs): colour, roughness,
     normal map and the displacement map as a bump on top, so the surface grain catches the
     raking light. scale = tiles per metre."""
@@ -320,7 +320,16 @@ def driver_material(name, kind):
         next(s for s in tone.inputs if s.identifier == "B_Color").default_value = (0.026, 0.025, 0.023, 1.0)
         L.new(speckle.outputs["Fac"], next(s for s in tone.inputs if s.identifier == "Factor_Float"))
         blend("Base Color", "RGBA", next(s for s in tone.outputs if s.identifier == "Result_Color"))
-        blend("Roughness", "FLOAT", math_node("ADD", 0.6, math_node("MULTIPLY", 0.15, grain.outputs["Fac"])))
+        blend("Roughness", "FLOAT", math_node("ADD", 0.36, math_node("MULTIPLY", 0.12, grain.outputs["Fac"])))
+        # the dust cap (real geometry, see add_woofer_details) is the same doped paper, a touch glossier
+        cap = N.new("ShaderNodeMapRange")
+        cap.interpolation_type = "SMOOTHSTEP"
+        L.new(r, cap.inputs["Value"])
+        L.new(math_node("MULTIPLY", prop("cap_r"), 0.9), cap.inputs["From Min"])
+        L.new(prop("cap_r"), cap.inputs["From Max"])
+        cap.inputs["To Min"].default_value = 1.0
+        cap.inputs["To Max"].default_value = 0.0
+        blend("Roughness", "FLOAT", 0.28, mask_socket=cap.outputs["Result"])
     else:
         blend("Base Color", "RGBA", (0.008, 0.008, 0.009, 1.0))
         blend("Roughness", "FLOAT", 0.75)
@@ -420,6 +429,87 @@ def add_excursion_key(obj, cx, cz, r_in, r_out, y_skin, amount=EXCURSION):
         pt.co.y -= amount * w  # -Y is toward the camera
     return key
 
+
+
+# the parts PMC's STL leaves off the woofers, from the product photos: a domed dust cap over
+# the centre of each cone, the rubber half-roll surround between cone and chassis, and the
+# polished aluminium ring around the chassis edge (the one bright thing on a PMC baffle).
+WOOFER_CAP = 0.45  # dust cap radius as a fraction of the cone radius (~22 mm on the 6")
+WOOFER_CAP_RISE = 0.35  # cap height as a fraction of its radius
+WOOFER_ROLL = 0.42  # half-roll minor radius as a fraction of the cone-to-chassis gap
+TRIM_RING = 0.0015  # the polished ring's tube radius
+
+
+def _skin_y(me, cx, cz, radius, y_skin, tol=0.002):
+    ys = sorted(v.co.y for v in me.vertices if v.co.y < y_skin and abs(math.hypot(v.co.x - cx, v.co.z - cz) - radius) < tol)
+    return ys[len(ys) // 2] if ys else None
+
+
+def _join(target, extra):
+    """Join extra into target; its faces take target's slot 0 (join would otherwise give an
+    unmaterialed primitive its own empty slot, which renders as flat grey)."""
+    slots = len(target.data.materials)
+    bpy.ops.object.select_all(action="DESELECT")
+    extra.select_set(True)
+    target.select_set(True)
+    bpy.context.view_layer.objects.active = target
+    bpy.ops.object.join()
+    me = target.data
+    # the exact boolean already gave the piece an empty slot for the cutter's faces, and join
+    # reuses it for the primitive: send every face in an empty slot to slot 0
+    for p in me.polygons:
+        if p.material_index >= slots or me.materials[p.material_index] is None:
+            p.material_index = 0
+
+
+def add_woofer_details(piece, name, cx, cz, r_cone, r_surround, r_cut, front, y_skin):
+    """Cap and roll are joined into the piece before its shape key exists, so they move with
+    the cone. Returns the (static) trim ring, a separate object on the chassis edge."""
+    me = piece.data
+    r_cap = WOOFER_CAP * r_cone
+    h = WOOFER_CAP_RISE * r_cap
+    y_cap = _skin_y(me, cx, cz, r_cap, y_skin)
+    if y_cap is None:
+        y_cap = front + 0.012
+    R = (r_cap * r_cap + h * h) / (2 * h)  # sphere radius for a cap of base r_cap, height h
+    bpy.ops.mesh.primitive_uv_sphere_add(segments=96, ring_count=48, radius=R, location=(0, 0, 0))
+    cap = bpy.context.object
+    y_cut = h - R + 0.0015  # keep the front of the sphere (-Y is toward the camera): the cap plus 1.5 mm buried in the cone
+    bm = bmesh.new()
+    bm.from_mesh(cap.data)
+    bmesh.ops.delete(bm, geom=[v for v in bm.verts if v.co.y > y_cut], context="VERTS")
+    bm.to_mesh(cap.data)
+    bm.free()
+    cap.data.transform(Matrix.Translation((cx, y_cap - h + R, cz)))
+    for p in cap.data.polygons:
+        p.use_smooth = True
+    _join(piece, cap)
+
+    gap = r_surround - r_cone
+    r_roll = r_cone + 0.5 * gap
+    minor = WOOFER_ROLL * gap
+    y_roll = _skin_y(me, cx, cz, r_roll, y_skin)
+    if y_roll is None:
+        y_roll = front + 0.004
+    bpy.ops.mesh.primitive_torus_add(
+        major_radius=r_roll, minor_radius=minor, major_segments=160, minor_segments=24,
+        location=(cx, y_roll + 0.35 * minor, cz), rotation=(math.pi / 2, 0, 0),
+    )
+    roll = bpy.context.object
+    for p in roll.data.polygons:
+        p.use_smooth = True
+    _join(piece, roll)
+
+    bpy.ops.mesh.primitive_torus_add(
+        major_radius=r_cut - TRIM_RING, minor_radius=TRIM_RING, major_segments=192, minor_segments=16,
+        location=(cx, front + 0.0022, cz), rotation=(math.pi / 2, 0, 0),
+    )
+    ring = bpy.context.object
+    ring.name = f"{name}_Trim"
+    for p in ring.data.polygons:
+        p.use_smooth = True
+    assign(ring, trim_mat)
+    return ring
 
 
 
@@ -572,6 +662,7 @@ PMC_DIR = os.path.join(CACHE, "pmc")
 STAND_STL = os.path.join(PMC_DIR, "PMC8-2STAND.stl")
 STAND_SIZE = (0.540, 1.090, 0.400)  # w, h, d of the PMC8-2 stand
 PLATE_REGION = (0.0, 0.135, -0.18, 0.2, 0.0065)  # hero mid/tweeter plate: local x0, x1, z0, z1, depth
+PLATE_HEX_TOP, PLATE_HEX_BOTTOM = 0.133, -0.142  # local z: honeycomb above the tweeter ring / below the badge
 
 
 def load_kit(model):
@@ -633,22 +724,44 @@ def plate_material(name, cell_mm=6.0):
     tex.image = img
     tex.projection = "BOX"
     L.new(mapping.outputs["Vector"], tex.inputs["Vector"])
+    # on the real plate the honeycomb is only above the tweeter and below the badge; the
+    # middle, around the mid dome and the tweeter, is plain
+    zsep = N.new("ShaderNodeSeparateXYZ")
+    L.new(coord.outputs["Object"], zsep.inputs[0])
+    top = N.new("ShaderNodeMapRange")
+    top.interpolation_type = "SMOOTHSTEP"
+    top.inputs["From Min"].default_value = PLATE_HEX_TOP
+    top.inputs["From Max"].default_value = PLATE_HEX_TOP + 0.004
+    L.new(zsep.outputs[2], top.inputs["Value"])
+    bottom = N.new("ShaderNodeMapRange")
+    bottom.interpolation_type = "SMOOTHSTEP"
+    bottom.inputs["From Min"].default_value = PLATE_HEX_BOTTOM
+    bottom.inputs["From Max"].default_value = PLATE_HEX_BOTTOM - 0.004
+    L.new(zsep.outputs[2], bottom.inputs["Value"])
+    zone = N.new("ShaderNodeMath")
+    zone.operation = "MAXIMUM"
+    L.new(top.outputs["Result"], zone.inputs[0])
+    L.new(bottom.outputs["Result"], zone.inputs[1])
+    relief = N.new("ShaderNodeMath")
+    relief.operation = "MULTIPLY"
+    L.new(tex.outputs["Color"], relief.inputs[0])
+    L.new(zone.outputs[0], relief.inputs[1])
     bump = N.new("ShaderNodeBump")
-    bump.inputs["Strength"].default_value = 0.3
+    bump.inputs["Strength"].default_value = 0.2
     bump.inputs["Distance"].default_value = 0.00025
-    L.new(tex.outputs["Color"], bump.inputs["Height"])
+    L.new(relief.outputs[0], bump.inputs["Height"])
     prev = bsdf.inputs["Normal"].links[0].from_socket if bsdf.inputs["Normal"].links else None
     if prev is not None:
         L.new(prev, bump.inputs["Normal"])
     for link in list(bsdf.inputs["Normal"].links):
         L.remove(link)
     L.new(bump.outputs["Normal"], bsdf.inputs["Normal"])
-    bsdf.inputs["Metallic"].default_value = 0.35
+    bsdf.inputs["Metallic"].default_value = 0.12  # anodised, not chrome
     # the cell tops sit a touch glossier than the edges
     gloss = N.new("ShaderNodeMapRange")
-    gloss.inputs["To Min"].default_value = 0.45
-    gloss.inputs["To Max"].default_value = 0.28
-    L.new(tex.outputs["Color"], gloss.inputs["Value"])
+    gloss.inputs["To Min"].default_value = 0.5
+    gloss.inputs["To Max"].default_value = 0.4
+    L.new(relief.outputs[0], gloss.inputs["Value"])
     for link in list(bsdf.inputs["Roughness"].links):
         L.remove(link)
     L.new(gloss.outputs["Result"], bsdf.inputs["Roughness"])
@@ -732,10 +845,13 @@ def build_speaker(model, prefix, location, yaw=0.0, hero=False, scale=(1, 1, 1))
             piece.data.materials[0] = tweeter_mat
         else:
             amount = EXCURSION if drv["kind"] == "woofer" else MID_EXCURSION
+            if drv["kind"] == "woofer":
+                parts.append(add_woofer_details(piece, name, cx, cz, r_cone, r_surround, r_cut, front, y_skin=back - 0.002))
             add_excursion_key(piece, cx, cz, r_cone, r_surround, y_skin=back - 0.002, amount=amount)
             piece.data.materials[0] = woofer_mat if drv["kind"] == "woofer" else dome_mat
             piece["cone_cx"], piece["cone_cz"], piece["cone_r"] = cx, cz, r_cone
             piece["surround_r"] = r_surround
+            piece["cap_r"] = WOOFER_CAP * r_cone if drv["kind"] == "woofer" else 0.0
         parts.append(piece)
         info["drivers"].append({"kind": drv["kind"], "name": name, "x": cx, "z": cz, "r": r_cone})
     for obj in parts:
@@ -771,6 +887,8 @@ tweeter_mat = make_material("TweeterMat", base=(0.012, 0.012, 0.013, 1), rough=0
 tweeter_mat.node_tree.nodes["Principled BSDF"].inputs["Sheen Weight"].default_value = 0.3  # coated fabric dome
 stand_mat = make_material("StandMat", base=(0.03, 0.03, 0.032, 1), rough=0.35)
 cavity_mat = make_material("CavityMat", base=(0.003, 0.003, 0.003, 1), rough=0.95)
+trim_mat = make_material("TrimMat", base=(0.78, 0.79, 0.8, 1), rough=0.38)  # brushed aluminium chassis ring (a mirror would only reflect the void)
+trim_mat.node_tree.nodes["Principled BSDF"].inputs["Metallic"].default_value = 1.0
 stand_mat.node_tree.nodes["Principled BSDF"].inputs["Metallic"].default_value = 0.9
 
 # the rig: a stage. Model, object-name prefix, (x, y) of the cabinet centre, yaw
@@ -1955,7 +2073,7 @@ def build_compositor():
 
     curve = N.new("CompositorNodeCurveRGB")
     c = curve.mapping.curves[3]  # combined
-    c.points[0].location = (0.0, 0.045)  # blacks a touch above full crush: Instagram butchers crushed gradients
+    c.points[0].location = (0.0, 0.02)  # blacks a touch above full crush: Instagram butchers crushed gradients
     c.points.new(0.25, 0.22)
     c.points.new(0.75, 0.78)
     curve.mapping.update()

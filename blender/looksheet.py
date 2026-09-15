@@ -14,6 +14,17 @@ import bpy
 variant = os.environ.get("LOOK_VARIANT", "current")
 scene = bpy.context.scene
 
+# LOOK_CAMERA=<name> renders the still from that camera whatever the cuts say
+cam_name = os.environ.get("LOOK_CAMERA")
+if cam_name:
+    cam = bpy.data.objects.get(cam_name)
+    if cam is None:
+        print(f"looksheet: no camera {cam_name!r}")
+    else:
+        for m in scene.timeline_markers:
+            m.camera = None
+        scene.camera = cam
+
 
 def light(name):
     o = bpy.data.objects.get(name)
