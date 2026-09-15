@@ -44,6 +44,8 @@ SHARP_ANGLE = math.radians(30)
 CABINET_ALBEDO = 0.3  # multiplier on the texture's colour map
 CABINET_ROUGHNESS = (0.2, 0.5)  # the roughness map is remapped into this range
 CABINET_BUMP = 0.35  # displacement-map bump strength on top of the normal map
+SETTLED_DUST = 0.35  # how much dust has settled on the cabinet's up-facing surfaces (0 = none)
+SMUDGE = 0.18  # roughness variation from handling: 0 = perfectly uniform (the biggest CGI tell)
 # LOOK: "moody" = the single-speaker-in-the-void grade — warm key, dark red rims, almost no
 # fill, big soft dust bokeh, crushed blacks, heavy vignette; show fixtures dimmed to sit inside
 # it. Set to "show" for a brighter club grade.
@@ -86,7 +88,7 @@ def assign(obj, material):
     obj.data.materials.append(material)
 
 
-def plastic_material(name, scale=5.0):
+def plastic_material(name, scale=11.0):
     """ambientCG PBR set box-projected in object space (the STL has no UVs): colour, roughness,
     normal map and the displacement map as a bump on top, so the surface grain catches the
     raking light. scale = tiles per metre."""
@@ -130,7 +132,20 @@ def plastic_material(name, scale=5.0):
         gloss.inputs["To Min"].default_value = CABINET_ROUGHNESS[0]
         gloss.inputs["To Max"].default_value = CABINET_ROUGHNESS[1]
         nt.links.new(rough.outputs["Color"], gloss.inputs["Value"])
-        nt.links.new(gloss.outputs["Result"], bsdf.inputs["Roughness"])
+        # smudges and handling: a slow noise varies the roughness across the surface
+        smudge = nt.nodes.new("ShaderNodeTexNoise")
+        smudge.inputs["Scale"].default_value = 2.5
+        smudge.inputs["Detail"].default_value = 2.0
+        nt.links.new(mapping.outputs["Vector"], smudge.inputs["Vector"])
+        vary = nt.nodes.new("ShaderNodeMapRange")
+        vary.inputs["To Min"].default_value = 1.0 - SMUDGE
+        vary.inputs["To Max"].default_value = 1.0 + SMUDGE
+        nt.links.new(smudge.outputs["Fac"], vary.inputs["Value"])
+        rough_var = nt.nodes.new("ShaderNodeMath")
+        rough_var.operation = "MULTIPLY"
+        nt.links.new(gloss.outputs["Result"], rough_var.inputs[0])
+        nt.links.new(vary.outputs["Result"], rough_var.inputs[1])
+        nt.links.new(rough_var.outputs[0], bsdf.inputs["Roughness"])
     shading_normal = None
     if normal:
         nmap = nt.nodes.new("ShaderNodeNormalMap")
@@ -149,6 +164,54 @@ def plastic_material(name, scale=5.0):
         nt.links.new(shading_normal, bsdf.inputs["Normal"])
     if not (color or rough or normal):
         print(f"note: {CABINET_TEXTURE[0]} textures not found — flat CabinetMat (run fetch-assets)")
+    if SETTLED_DUST > 0:
+        # settled dust: up-facing surfaces, patchy, collecting where the grain is rough; it
+        # lightens the colour and kills the gloss
+        geom = nt.nodes.new("ShaderNodeNewGeometry")
+        nsep = nt.nodes.new("ShaderNodeSeparateXYZ")
+        nt.links.new(geom.outputs["Normal"], nsep.inputs[0])
+        up = nt.nodes.new("ShaderNodeMapRange")
+        up.interpolation_type = "SMOOTHSTEP"
+        up.inputs["From Min"].default_value = 0.55
+        up.inputs["From Max"].default_value = 0.95
+        nt.links.new(nsep.outputs[2], up.inputs["Value"])
+        grit = nt.nodes.new("ShaderNodeTexNoise")
+        grit.inputs["Scale"].default_value = 60.0
+        grit.inputs["Detail"].default_value = 3.0
+        nt.links.new(mapping.outputs["Vector"], grit.inputs["Vector"])
+        patchy = nt.nodes.new("ShaderNodeMapRange")
+        patchy.inputs["From Min"].default_value = 0.35
+        patchy.inputs["From Max"].default_value = 0.8
+        nt.links.new(grit.outputs["Fac"], patchy.inputs["Value"])
+        amount = nt.nodes.new("ShaderNodeMath")
+        amount.operation = "MULTIPLY"
+        nt.links.new(up.outputs["Result"], amount.inputs[0])
+        nt.links.new(patchy.outputs["Result"], amount.inputs[1])
+        scaled = nt.nodes.new("ShaderNodeMath")
+        scaled.operation = "MULTIPLY"
+        nt.links.new(amount.outputs[0], scaled.inputs[0])
+        scaled.inputs[1].default_value = SETTLED_DUST
+
+        def mix_in(input_name, data_type, b_value):
+            mix = nt.nodes.new("ShaderNodeMix")
+            mix.data_type = data_type
+            ids = {"RGBA": ("A_Color", "B_Color", "Result_Color"), "FLOAT": ("A_Float", "B_Float", "Result_Float")}[data_type]
+            a_sock = next(s for s in mix.inputs if s.identifier == ids[0])
+            b_sock = next(s for s in mix.inputs if s.identifier == ids[1])
+            o_sock = next(s for s in mix.outputs if s.identifier == ids[2])
+            nt.links.new(scaled.outputs[0], next(s for s in mix.inputs if s.identifier == "Factor_Float"))
+            src = bsdf.inputs[input_name].links[0].from_socket if bsdf.inputs[input_name].links else None
+            if src is not None:
+                nt.links.new(src, a_sock)
+            else:
+                a_sock.default_value = bsdf.inputs[input_name].default_value
+            b_sock.default_value = b_value
+            for link in list(bsdf.inputs[input_name].links):
+                nt.links.remove(link)
+            nt.links.new(o_sock, bsdf.inputs[input_name])
+
+        mix_in("Base Color", "RGBA", (0.42, 0.4, 0.36, 1.0))
+        mix_in("Roughness", "FLOAT", 0.95)
     return m
 
 
@@ -224,14 +287,14 @@ def driver_material(name, kind):
     bump.inputs["Distance"].default_value = 0.0002
     L.new(height, bump.inputs["Height"])
 
-    def blend(input_name, data_type, driver_value):
+    def blend(input_name, data_type, driver_value, mask_socket=None):
         mix = N.new("ShaderNodeMix")
         mix.data_type = data_type
         ids = {"RGBA": ("A_Color", "B_Color", "Result_Color"), "FLOAT": ("A_Float", "B_Float", "Result_Float"), "VECTOR": ("A_Vector", "B_Vector", "Result_Vector")}[data_type]
         a_sock = next(s for s in mix.inputs if s.identifier == ids[0])
         b_sock = next(s for s in mix.inputs if s.identifier == ids[1])
         o_sock = next(s for s in mix.outputs if s.identifier == ids[2])
-        L.new(mask, next(s for s in mix.inputs if s.identifier == "Factor_Float"))
+        L.new(mask_socket if mask_socket is not None else mask, next(s for s in mix.inputs if s.identifier == "Factor_Float"))
         src = upstream(bsdf.inputs[input_name])
         if src is not None:
             L.new(src, a_sock)
@@ -246,13 +309,44 @@ def driver_material(name, kind):
         L.new(o_sock, bsdf.inputs[input_name])
 
     if kind == "cone":
-        blend("Base Color", "RGBA", (0.014, 0.014, 0.016, 1.0))
-        blend("Roughness", "FLOAT", math_node("ADD", 0.38, math_node("MULTIPLY", 0.12, grain.outputs["Fac"])))
+        # doped paper: matte, with a fine speckle in the colour rather than a gloss
+        speckle = N.new("ShaderNodeTexNoise")
+        speckle.inputs["Scale"].default_value = 1400
+        speckle.inputs["Detail"].default_value = 2.0
+        L.new(coord, speckle.inputs["Vector"])
+        tone = N.new("ShaderNodeMix")
+        tone.data_type = "RGBA"
+        next(s for s in tone.inputs if s.identifier == "A_Color").default_value = (0.010, 0.010, 0.011, 1.0)
+        next(s for s in tone.inputs if s.identifier == "B_Color").default_value = (0.026, 0.025, 0.023, 1.0)
+        L.new(speckle.outputs["Fac"], next(s for s in tone.inputs if s.identifier == "Factor_Float"))
+        blend("Base Color", "RGBA", next(s for s in tone.outputs if s.identifier == "Result_Color"))
+        blend("Roughness", "FLOAT", math_node("ADD", 0.6, math_node("MULTIPLY", 0.15, grain.outputs["Fac"])))
     else:
         blend("Base Color", "RGBA", (0.008, 0.008, 0.009, 1.0))
         blend("Roughness", "FLOAT", 0.75)
         blend("Sheen Weight", "FLOAT", 0.25)  # a little velvety edge glow, as on a fabric dome
     blend("Normal", "VECTOR", bump.outputs["Normal"])
+
+    # the surround: a rubber half-roll between the cone edge and the trim ring — smooth, faint
+    # sheen, no grain. Its outer radius is the piece's surround_r property.
+    surround_r = prop("surround_r")
+    band_in = N.new("ShaderNodeMapRange")
+    band_in.interpolation_type = "SMOOTHSTEP"
+    L.new(r, band_in.inputs["Value"])
+    L.new(math_node("MULTIPLY", prop("cone_r"), 0.97), band_in.inputs["From Min"])
+    L.new(math_node("MULTIPLY", prop("cone_r"), 1.03), band_in.inputs["From Max"])
+    band_out = N.new("ShaderNodeMapRange")
+    band_out.interpolation_type = "SMOOTHSTEP"
+    L.new(r, band_out.inputs["Value"])
+    L.new(math_node("MULTIPLY", surround_r, 0.96), band_out.inputs["From Min"])
+    L.new(surround_r, band_out.inputs["From Max"])
+    band_out.inputs["To Min"].default_value = 1.0
+    band_out.inputs["To Max"].default_value = 0.0
+    band = math_node("MULTIPLY", band_in.outputs["Result"], band_out.outputs["Result"])
+    blend("Base Color", "RGBA", (0.018, 0.018, 0.019, 1.0), mask_socket=band)
+    blend("Roughness", "FLOAT", 0.42, mask_socket=band)
+    flat = N.new("ShaderNodeNewGeometry").outputs["Normal"]
+    blend("Normal", "VECTOR", flat, mask_socket=band)
     return m
 
 
@@ -506,7 +600,7 @@ def hex_tile_image(path, R=40, nx=6, ny=4):
             d = np.maximum(dy, (math.sqrt(3) * dx + dy) / 2)  # hex metric, apothem = sqrt3/2 R
             best = np.minimum(best, d)
     edge = math.sqrt(3) / 2 * R - best  # distance to the cell edge
-    height = np.clip(edge / (0.16 * R), 0, 1)
+    height = np.clip(edge / (0.09 * R), 0, 1)  # flat tops, narrow bevels
     height = height * height * (3 - 2 * height)
     rgba = np.empty((H, W, 4), dtype=np.float32)
     rgba[..., :3] = height[..., None]
@@ -540,8 +634,8 @@ def plate_material(name, cell_mm=6.0):
     tex.projection = "BOX"
     L.new(mapping.outputs["Vector"], tex.inputs["Vector"])
     bump = N.new("ShaderNodeBump")
-    bump.inputs["Strength"].default_value = 0.45
-    bump.inputs["Distance"].default_value = 0.0003
+    bump.inputs["Strength"].default_value = 0.3
+    bump.inputs["Distance"].default_value = 0.00025
     L.new(tex.outputs["Color"], bump.inputs["Height"])
     prev = bsdf.inputs["Normal"].links[0].from_socket if bsdf.inputs["Normal"].links else None
     if prev is not None:
@@ -641,6 +735,7 @@ def build_speaker(model, prefix, location, yaw=0.0, hero=False, scale=(1, 1, 1))
             add_excursion_key(piece, cx, cz, r_cone, r_surround, y_skin=back - 0.002, amount=amount)
             piece.data.materials[0] = woofer_mat if drv["kind"] == "woofer" else dome_mat
             piece["cone_cx"], piece["cone_cz"], piece["cone_r"] = cx, cz, r_cone
+            piece["surround_r"] = r_surround
         parts.append(piece)
         info["drivers"].append({"kind": drv["kind"], "name": name, "x": cx, "z": cz, "r": r_cone})
     for obj in parts:
@@ -672,8 +767,8 @@ def place_stand(name, x, y, floor_z, width_scale):
 cabinet_mat = plastic_material("CabinetMat")
 woofer_mat = driver_material("WooferMat", "cone")
 dome_mat = driver_material("DomeMat", "dome")
-tweeter_mat = make_material("TweeterMat", base=(0.02, 0.02, 0.022, 1), rough=0.2)
-tweeter_mat.node_tree.nodes["Principled BSDF"].inputs["Metallic"].default_value = 0.6
+tweeter_mat = make_material("TweeterMat", base=(0.012, 0.012, 0.013, 1), rough=0.45)
+tweeter_mat.node_tree.nodes["Principled BSDF"].inputs["Sheen Weight"].default_value = 0.3  # coated fabric dome
 stand_mat = make_material("StandMat", base=(0.03, 0.03, 0.032, 1), rough=0.35)
 cavity_mat = make_material("CavityMat", base=(0.003, 0.003, 0.003, 1), rough=0.95)
 stand_mat.node_tree.nodes["Principled BSDF"].inputs["Metallic"].default_value = 0.9
