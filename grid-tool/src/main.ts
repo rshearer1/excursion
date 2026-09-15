@@ -61,6 +61,9 @@ const linkBtn = $<HTMLButtonElement>("linkdir");
 const driveChk = $<HTMLInputElement>("driveOverlay");
 const previewChk = $<HTMLInputElement>("preview3d");
 const previewCanvas = $<HTMLCanvasElement>("preview");
+const previewWrap = $<HTMLDivElement>("previewWrap");
+const safeChk = $<HTMLInputElement>("safeChk");
+const safezone = $<HTMLDivElement>("safezone");
 const cutsSel = $<HTMLSelectElement>("cuts");
 const cutMarkersChk = $<HTMLInputElement>("cutMarkers");
 const fpsSel = $<HTMLSelectElement>("fps");
@@ -1082,8 +1085,10 @@ trimInput.addEventListener("change", () => {
 driveChk.addEventListener("change", () => {
   if (driveChk.checked) void ensureOverlay();
 });
+safeChk.addEventListener("change", () => safezone.classList.toggle("on", safeChk.checked));
 previewChk.addEventListener("change", async () => {
   previewCanvas.hidden = !previewChk.checked;
+  previewWrap.hidden = !previewChk.checked;
   if (!previewChk.checked) return;
   if (!preview) {
     try {
@@ -1096,6 +1101,7 @@ previewChk.addEventListener("change", async () => {
     } catch (e) {
       previewChk.checked = false;
       previewCanvas.hidden = true;
+      previewWrap.hidden = true;
       status(`3D preview unavailable: ${e instanceof Error ? e.message : String(e)}`, true);
       return;
     }

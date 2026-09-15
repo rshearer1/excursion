@@ -1,6 +1,6 @@
 // Excursion — one command from drive.json to reel.mp4.
 //
-//   node blender/make_reel.mjs blender/jobs/track.drive.json [--engine eevee|cycles] [--draft] [--test] [--mood name] [--audio path] [--sweep deg] [--shutter 0..1] [--slate] [--crf n]
+//   node blender/make_reel.mjs blender/jobs/track.drive.json [more drives: a batch] [--engine eevee|cycles] [--draft] [--test] [--mood name] [--lut look.cube] [--audio path] [--sweep deg] [--shutter 0..1] [--slate] [--crf n]
 //
 // Steps: fetch scene assets -> build scene if missing -> apply drive + render frames -> ffmpeg mux.
 // Audio is resolved from drive.audio.file sitting NEXT TO the drive.json (or pass --audio).
@@ -13,7 +13,16 @@ import { fileURLToPath } from "node:url";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const args = process.argv.slice(2);
-const drivePath = args.find((a) => !a.startsWith("--"));
+const valueFlags = new Set(["--engine", "--audio", "--sweep", "--shutter", "--crf", "--samples", "--mood", "--lut"]);
+const drivePaths = args.filter((a, i) => !a.startsWith("--") && !valueFlags.has(args[i - 1] ?? ""));
+if (drivePaths.length > 1) {
+  // batch: one reel after another, same flags; a failure stops the batch
+  for (const p of drivePaths) {
+    await run(process.execPath, [fileURLToPath(import.meta.url), p, ...args.filter((a) => !drivePaths.includes(a))], `reel ${p}`);
+  }
+  process.exit(0);
+}
+const drivePath = drivePaths[0];
 if (!drivePath) {
   console.error("usage: node blender/make_reel.mjs <drive.json> [--engine eevee|cycles] [--draft] [--test] [--audio path]");
   process.exit(1);
@@ -87,6 +96,10 @@ if (await exists(audio)) {
   ffmpegArgs.push("-i", audio, "-c:a", "aac", "-shortest");
 } else {
   console.warn(`warning: audio not found at ${audio} — writing silent video (use --audio)`);
+}
+if (opt("--lut")) {
+  // a display-referred .cube LUT applied at mux time: a look without a re-render
+  ffmpegArgs.push("-vf", `lut3d=${path.resolve(opt("--lut")).replace(/\/g, "/").replace(/:/g, "\:")}`);
 }
 ffmpegArgs.push("-c:v", "libx264", "-crf", opt("--crf", "20"), "-pix_fmt", "yuv420p", reel);
 await run("ffmpeg", ffmpegArgs, "mux reel");
