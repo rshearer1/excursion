@@ -118,6 +118,25 @@ by name. Models that are not cached are skipped. `Cam4_Rig` (28 mm, 6 m back) jo
 rotation to show the whole wall. The hero's mid/tweeter plate carries a machined honeycomb
 relief (`PlateMat`, generated tile in `assets/generated/`).
 
+## The photoreal pass (from the plan, 2026-09-15)
+
+Target is Cycles only; EEVEE is for sync drafts. What the pass changed:
+
+- **Dust**: 25k matte, half-translucent motes (no specular — glints read as glitter), log-normal
+  0.25–0.7 mm so in-focus motes are sub-pixel and out-of-focus ones bloom into discs, 7 % lint.
+  Pushed by the cone's *signed velocity* (outward stroke shoves, return stroke sucks), flowing in
+  from behind and around the cabinet. Own view layer (`Dust`, undenoised, main layer held out)
+  composited over `Main`; a dedicated backlight `DustBack` light-linked to the dust, and the
+  front lights (`KeyLight`, `Graze`) linked to everything *but* the dust.
+- **Colour**: ACES 2.0 view transform (pinned — never change it mid-project), blacks kept ~5 %
+  above crush, sensor-noise grain, soft vignette, `exposure` in `build_scene.py`.
+- **Camera**: vertical 36 mm sensor, 11 blades, round bokeh, wide f/1.4, 90 mm f/2.8, 180° shutter.
+- **Surfaces**: cabinet grain at 11 tiles/m with roughness smudges (`SMUDGE`) and settled dust
+  on up-facing surfaces (`SETTLED_DUST`); doped-paper cones with colour speckle; a rubber
+  surround band (`surround_r` on each driver piece); fabric tweeter dome; flat-topped honeycomb.
+- **Cycles**: 48–64 denoised samples with the accurate prefilter, animated seed, adaptive
+  sampling, persistent data — about 13 s/frame at 1080×1920 on the 3070.
+
 ## The look (phase 7 — intimate, 2026-09-15)
 
 Two switches at the top of `build_scene.py` decide what the film is:
