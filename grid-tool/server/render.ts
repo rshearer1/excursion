@@ -12,6 +12,8 @@
 //   GET  /api/reels/<slug>.mp4       the finished reel, with Range support for <video>
 //   POST /api/preview                { slug, drive, time } -> one EEVEE draft frame at that time,
 //                                    the true look; answers { url } (served under /api/previews/)
+//   POST /api/separate               { file } -> Demucs drums stem of an audio file in blender/jobs/
+//                                    (501 with a hint when demucs is not installed); GET /api/stems/<slug>/drums.wav
 //   POST /api/transcribe             { file } -> WhisperX word-level lines for an audio file
 //                                    already in blender/jobs/ (501 with a hint when it is not installed)
 //
@@ -148,15 +150,46 @@ function startRender(req: RenderRequest): void {
   });
 }
 
-function whichWhisperx(): string | null {
+/** A console tool from the project's AI venv (.venv-ai, see HOME.md) or PATH. */
+function whichTool(name: string): string | null {
   const exts = process.platform === "win32" ? [".exe", ".cmd", ".bat", ""] : [""];
-  for (const dir of (process.env["PATH"] ?? "").split(path.delimiter)) {
+  const venvBin = path.join(root, ".venv-ai", process.platform === "win32" ? "Scripts" : "bin");
+  for (const dir of [venvBin, ...(process.env["PATH"] ?? "").split(path.delimiter)]) {
     for (const ext of exts) {
-      const p = path.join(dir, `whisperx${ext}`);
+      const p = path.join(dir, `${name}${ext}`);
       if (dir && existsSync(p)) return p;
     }
   }
   return null;
+}
+const whichWhisperx = (): string | null => whichTool("whisperx");
+
+const stemsDir = path.join(root, "assets", "generated", "demucs");
+
+/** Demucs two-stem split of blender/jobs/<file>; resolves to the drums WAV path. */
+function separateDrums(file: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const exe = whichTool("demucs");
+    if (!exe) {
+      const err = new Error("demucs is not installed") as Error & { hint?: string; code?: number };
+      err.hint = "pip install demucs in .venv-ai (see HOME.md), then restart npm run dev";
+      err.code = 501;
+      return reject(err);
+    }
+    const slug = path.basename(file, path.extname(file));
+    const out = path.join(stemsDir, "htdemucs", slug, "drums.wav");
+    if (existsSync(out)) return resolve(out);
+    mkdirSync(stemsDir, { recursive: true });
+    const proc = spawn(exe, ["--two-stems", "drums", "-o", stemsDir, path.join(jobsDir, file)], { cwd: root });
+    let log = "";
+    proc.stdout?.on("data", (c: Buffer) => (log += c.toString()));
+    proc.stderr?.on("data", (c: Buffer) => (log += c.toString()));
+    proc.on("error", reject);
+    proc.on("exit", (code) => {
+      if (code !== 0 || !existsSync(out)) return reject(new Error(`demucs exited ${code}: ${log.slice(-400)}`));
+      resolve(out);
+    });
+  });
 }
 
 interface WhisperSegment {
@@ -327,6 +360,28 @@ export function renderHelper(): Plugin {
           }
           if (req.method === "GET" && url.pathname.startsWith("/api/previews/")) {
             return servePreview(res, decodeURIComponent(url.pathname.slice("/api/previews/".length)));
+          }
+          if (req.method === "POST" && url.pathname === "/api/separate") {
+            const body = JSON.parse((await readBody(req)).toString("utf8")) as { file?: string };
+            const name = safeName(body.file ?? "");
+            if (!name || !existsSync(path.join(jobsDir, name))) return json(res, 400, { error: "audio not stored" });
+            try {
+              await separateDrums(name);
+              const slug = path.basename(name, path.extname(name));
+              return json(res, 200, { url: `/api/stems/${encodeURIComponent(slug)}/drums.wav` });
+            } catch (e) {
+              const err = e as Error & { hint?: string; code?: number };
+              return json(res, err.code ?? 500, { error: err.message, hint: err.hint });
+            }
+          }
+          if (req.method === "GET" && url.pathname.startsWith("/api/stems/")) {
+            const [slug, stem] = url.pathname.slice("/api/stems/".length).split("/").map((s) => decodeURIComponent(s));
+            const full = path.join(stemsDir, "htdemucs", safeName(slug ?? "") ?? "", safeName(stem ?? "") ?? "");
+            if (!slug || !stem || !existsSync(full)) return json(res, 404, { error: "no such stem" });
+            res.setHeader("Content-Type", "audio/wav");
+            res.setHeader("Content-Length", String(statSync(full).size));
+            createReadStream(full).pipe(res);
+            return;
           }
           if (req.method === "POST" && url.pathname === "/api/transcribe") {
             const body = JSON.parse((await readBody(req)).toString("utf8")) as { file?: string };

@@ -1739,8 +1739,8 @@ if hasattr(slate, "visible_shadow"):
 # a box, drifting toward camera, streamed and puffed by the woofers' air (see build_dust) and
 # wandering on 4D noise over Time. They carry no emission — they only sparkle where a beam
 # catches them, and out of focus they open into soft bokeh shapes.
-DUST_COUNT = 25000  # the plan's void row is 50-100k; 25k reads right at this distance
-DUST_BOX = ((rig_x0 - 0.7, -0.50, floor_z), (rig_x1 + 0.7, 1.2, 0.80))  # from well behind the speaker to just short of the close-up lens
+DUST_COUNT = 12000  # fewer, in a smaller box: motes live where the wide frame and the backlight are (handoff item 6)
+DUST_BOX = ((rig_x0 - 0.45, -0.50, -0.6), (rig_x1 + 0.45, 1.2, 0.6))  # the wide frame's width and height, from behind the speaker to just short of the close-up lens
 DUST_RADIUS = (0.00025, 0.0007)  # metres, log-normal: in focus they are sub-pixel, out of focus they bloom
 DUST_LINT = 0.07  # fraction of motes that are lint: flattened, elongated, randomly turned
 DUST_BACKLIGHT = 110  # W, the dedicated dust backlight

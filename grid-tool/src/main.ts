@@ -63,6 +63,7 @@ const linkBtn = $<HTMLButtonElement>("linkdir");
 const driveChk = $<HTMLInputElement>("driveOverlay");
 const hitsChk = $<HTMLInputElement>("hitsChk");
 const alsFile = $<HTMLInputElement>("alsFile");
+const stemBtn = $<HTMLButtonElement>("stemBtn");
 const previewChk = $<HTMLInputElement>("preview3d");
 const previewCanvas = $<HTMLCanvasElement>("preview");
 const previewWrap = $<HTMLDivElement>("previewWrap");
@@ -294,6 +295,7 @@ function adoptTrack(name: string, sha1: string, buffer: AudioBuffer, file: File 
   exportBtn.disabled = false;
   renderBtn.disabled = !(file && helperOnline);
   previewBtn.disabled = !helperOnline;
+  stemBtn.disabled = !(file && helperOnline);
   previewFrameImg.hidden = true;
   const restored = loadState(sha1);
   syncControls();
@@ -824,6 +826,31 @@ async function ensureHits(): Promise<void> {
   const sure = (l: Hits["kick"]): number => l.filter((h) => h.conf >= 0.5).length;
   status(`Hits: ${sure(hits.kick)} kicks and ${sure(hits.snare)} snares sure, ${hits.kick.length + hits.snare.length - sure(hits.kick) - sure(hits.snare)} doubtful. Click a tick to delete, K / N to add.`);
 }
+/** Demucs drums stem through the helper, then hits tracked on the stem (clean, no bleed). */
+stemBtn.addEventListener("click", async () => {
+  if (!track?.file) return;
+  stemBtn.disabled = true;
+  try {
+    status("Storing the audio and separating drums with Demucs… (a minute or two on the GPU)");
+    const put = await fetch(`/api/jobs/${encodeURIComponent(track.name)}`, { method: "PUT", body: track.file });
+    if (!put.ok) throw new Error(`could not store the audio (${put.status})`);
+    const res = await fetch("/api/separate", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ file: track.name }) });
+    const body = (await res.json()) as { url?: string; error?: string; hint?: string };
+    if (!res.ok || !body.url) throw new Error(`${body.error ?? res.status}${body.hint ? ` — ${body.hint}` : ""}`);
+    status("Decoding the drums stem…");
+    const stem = await ctx().decodeAudioData(await (await fetch(body.url)).arrayBuffer());
+    hits = detectHits(monoMix(stem), stem.sampleRate, { grid });
+    hitsChk.checked = true;
+    saveState();
+    draw();
+    const sure = (l: Hits["kick"]): number => l.filter((h) => h.conf >= 0.5).length;
+    status(`Drums stem: ${sure(hits.kick)} kicks and ${sure(hits.snare)} snares sure. Click a tick to delete, K / N to add.`);
+  } catch (e) {
+    status(`Drums stem: ${e instanceof Error ? e.message : String(e)}`, true);
+  } finally {
+    stemBtn.disabled = !(track?.file && helperOnline);
+  }
+});
 hitsChk.addEventListener("change", () => {
   if (hitsChk.checked) void ensureHits().then(draw);
   else {
@@ -1057,6 +1084,7 @@ async function detectHelper(): Promise<void> {
     }
     renderBtn.disabled = !(track?.file && helperOnline);
     previewBtn.disabled = !(track && helperOnline);
+    stemBtn.disabled = !(track?.file && helperOnline);
     const st = (await (await fetch("/api/render")).json()) as RenderState;
     if (st.status === "running") {
       showRender(st);

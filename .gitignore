@@ -8,3 +8,4 @@ node_modules/
 assets/generated/
 __pycache__/
 blender/scenes/*.glb
+.venv-ai/
