@@ -1014,11 +1014,12 @@ stand_mat.node_tree.nodes["Principled BSDF"].inputs["Metallic"].default_value = 
 RIG_SPACING = 1.4  # hero (left) to its twin (right)
 RISER_H = 0.0
 STACK_GAP = 0.06  # metres between cabinets in the stack
-STACK_RIG = [  # four more PMC6-2 on the floor either side of the hero's stand, two high
+STACK_RIG = [  # a wall of six: the hero on the floor in the middle of the bottom row, five more around it
     ("PMC6-2", "L1_", (-(0.43 + STACK_GAP), 0.0), 0.0, "floor"),
-    ("PMC6-2", "L2_", (-(0.43 + STACK_GAP), 0.0), 0.0, 0.40 + 0.01),
+    ("PMC6-2", "L2_", (-(0.43 + STACK_GAP), 0.0), 0.0, 0.40 + STACK_GAP),
+    ("PMC6-2", "C2_", (0.0, 0.0), 0.0, 0.40 + STACK_GAP),
     ("PMC6-2", "R1_", (0.43 + STACK_GAP, 0.0), 0.0, "floor"),
-    ("PMC6-2", "R2_", (0.43 + STACK_GAP, 0.0), 0.0, 0.40 + 0.01),
+    ("PMC6-2", "R2_", (0.43 + STACK_GAP, 0.0), 0.0, 0.40 + STACK_GAP),
 ]
 RIG = STACK_RIG if SCENE == "stack" else [] if INTIMATE else [
     ("PMC6-2", "R6-2_", (RIG_SPACING, 0.0), 0.0, "stand"),
@@ -1044,8 +1045,9 @@ if kit_ready("PMC6-2"):
     tw = next(drv for drv in hero["drivers"] if drv["kind"] == "tweeter")
     tweeter_xz, badge_xz = (tw["x"], tw["z"]), BADGE_CENTRE
     build_logo(cabinet_mat)
-    floor_z = -top_z - STAND_SIZE[1] if os.path.exists(STAND_STL) else -top_z
-    if os.path.exists(STAND_STL):
+    on_stand = os.path.exists(STAND_STL) and SCENE != "stack"  # the stack sits on the floor
+    floor_z = -top_z - STAND_SIZE[1] if on_stand else -top_z
+    if on_stand:
         place_stand("Stand_L", 0, 0, floor_z, hero["w"] / STAND_SIZE[0])
     rig_built = []
     for model, prefix, (x, y), yaw, how in RIG:
@@ -1171,7 +1173,7 @@ for _name, (_loc, _standing) in LYRIC_ANCHORS.items():
 
 
 upper, lower = woofer_z_mid + woofer_z_half, woofer_z_mid - woofer_z_half
-wide = add_camera("Cam1_Wide", (0, front_y - (2.3 if SCENE == "stack" else 1.30), 0.02 if SCENE != "stack" else -0.3), (0, front_y, 0.0 if SCENE != "stack" else -0.3), 50)
+wide = add_camera("Cam1_Wide", (0, front_y - (2.4 if SCENE == "stack" else 1.30), 0.02 if SCENE != "stack" else 0.2), (0, front_y, 0.0 if SCENE != "stack" else 0.2), 50)
 set_dof(
     wide,
     add_focus("Focus_Wide", (woofer_x, front_y, upper)),
@@ -1234,7 +1236,7 @@ if INTIMATE:
     if SCENE == "macro":
         # the cone shot: a 90 mm macro a hand from the upper woofer's cap, wide open
         cone_cam = add_camera("Cam8_Cone", (woofer_x + 0.10, front_y - 0.30, upper + 0.02), (woofer_x, front_y, upper), 90)
-        set_dof(cone_cam, add_focus("Focus_Cone", (woofer_x, front_y - 0.012, upper)), 2.8)
+        set_dof(cone_cam, add_focus("Focus_Cone", (woofer_x, front_y + 0.004, upper)), 4.0)  # on the dust cap's apex
         aim(cone_cam, add_focus("Aim_Cone", (woofer_x, front_y, upper)))
         cone_cam["move"] = [0.03, 0.0, -0.02]
         for name in ("Cam1_Wide", "Cam6_Side", "Cam7_Top"):  # macro is the close cameras only
@@ -1302,8 +1304,8 @@ if KEY_SOFTBOX > 0:
     key_data = bpy.data.lights.new("KeyLight", "AREA")
     key_data.shape = "SQUARE"
     key_data.size = KEY_SOFTBOX
-    key_data.spread = math.radians(40)  # a softbox with a grid: a pool on the drivers, not the whole room
-    key_data.energy = 10.0 if MOODY else 13.0  # area watts go forward; matched by eye against the 380 W spot (A/B on the board)
+    key_data.spread = math.radians(70 if SCENE == "stack" else 40)  # a softbox with a grid: a pool on the drivers, not the whole room (wider for the wall of six)
+    key_data.energy = (10.0 if MOODY else 13.0) * (2.4 if SCENE == "stack" else 1.0)  # area watts go forward; matched by eye against the 380 W spot (A/B on the board)
     key_data.color = WARM
     key_data.volume_factor = 0.6
     key = new_object("KeyLight", key_data)

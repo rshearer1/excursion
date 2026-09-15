@@ -115,17 +115,55 @@ Shipped: **moody** (the default; old drives that say `smoke` mean this), **ember
 held), **neon** (cyan / magenta / blue chase), **clean** (product shot, no smoke). Add a mood
 by copying a file; the grid tool lists whatever is in the folder.
 
+## Scenes (2026-09-16)
+
+One builder, one switch: `EXCURSION_SCENE=void|macro|stack|concrete blender -b -P
+blender/build_scene.py` writes `blender/scenes/<scene>.blend` and `.glb`. `make_reel` builds
+a missing scene on demand from `drive.scene`, and the Preview-frame button uses it too.
+- **void** — the hero floating in the dark, five cameras (the default).
+- **macro** — the same hero, only the close cameras plus `Cam8_Cone`, a 90 mm f/4 a hand from
+  the upper dust cap; finer, denser dust packed in front of the baffle. No lyric anchors.
+- **stack** — a wall of six PMC6-2 on the floor, the hero in the middle of the bottom row, the
+  wide camera back at 2.4 m, a wider and brighter softbox. Every cone is driven.
+- **concrete** — the hero in a room corner (`SET_WALLS`), walls in ambientCG Concrete034; lyric
+  anchors `wall-left`, `wall-right`, `wall-top` on the back wall.
+Each scene has a manifest next to it; concrete adds the concrete texture set (2K).
+
+## Stems and routing (phase 08, second slice, 2026-09-16)
+
+**stems** (advanced row) takes Ableton's Export All Individual Tracks. Each file becomes a
+channel in `drive.channels` (one 0..1 value per frame; the channel name comes from the file
+name: kick, snare, hats, drums, bass, vocal, synth, fx, else the name itself), and when there
+is a kick, drums or bass stem the **woofer follows that stem** through the driver model
+instead of the mix — the cone ignores everything but the kick. Stems are not persisted;
+reload them with the track. A mood's `routing` names the channel for `key` (the key light's
+breathing) and `smoke` (the drift); the mix's bass band stands in when the channel is absent.
+
+## The AI env (2026-09-16)
+
+`.venv-ai/` (gitignored) is a Python 3.13 venv with CUDA torch 2.8 (cu128), WhisperX and
+Demucs; the helper finds `whisperx` and `demucs` there first, then on PATH. To recreate it:
+```
+python3.13 -m venv .venv-ai
+.venv-ai/Scripts/python -m pip install whisperx demucs
+.venv-ai/Scripts/python -m pip install --force-reinstall --no-deps torch==2.8.0 torchaudio==2.8.0 torchvision==0.23.0 --index-url https://download.pytorch.org/whl/cu128
+```
+(WhisperX pulls a CPU torch; the last line puts the CUDA build back.) **Drums stem** in the
+advanced row runs Demucs and tracks kicks and snares on the stem; **Transcribe** in the lyrics
+box runs WhisperX. Both cache under `assets/generated/`.
+
 ## The photoreal handoff (2026-09-16)
 
 `blender/PHOTOREAL-HANDOFF.md` is a ranked critique of the renders. Applied: the HDRI now
-lights reflections and bounce at 0.1 (camera rays still see black), the key and graze are
-softer sources (a 0.7 m spot radius dimmed the whole frame — a true softbox needs an area
-light, still to do), a 1.5 mm shader bevel rounds every cabinet edge, the cone is 0.45 rough
+lights reflections and bounce at 0.1 (camera rays still see black), the key is a 0.8 m
+softbox (an area light, 40-degree spread, 10 W; `KEY_SOFTBOX = 0` brings the spot back) and
+the graze a softer source, the LED wall has a glass front, the badge glows only on the beat,
+dust lives in a smaller box with fewer motes, a 1.5 mm shader bevel rounds every cabinet edge, the cone is 0.45 rough
 and the surround a diffuse rubber, a glue ring sits where the cap meets the cone, chromatic
 aberration, vignette and grain are halved (scene defaults and every mood), the Cycles seed is
 fixed and finals use adaptive threshold 0.01 (tests keep 0.05), the lyric room light is up.
-Not done: walls (`SET_WALLS` stays off — the void was chosen), hex-socket screw heads, dust
-culled to the beams, the LED wall's glass front, a metal badge instead of the glowing one.
+Not done: hex-socket screw heads, dust culled to the beam cones, deeper vent slots. Walls are
+the concrete scene.
 
 ## Hits and the Ableton project (phases 09 and 08, 2026-09-15)
 
@@ -309,8 +347,8 @@ If the STL is not cached the builder falls back to the phase-2 placeholder primi
 
 In: 05 (moods, Render button), 06 (safe zone, batch, LUT), 10 (the lyric lane), 11 (the glb
 export and the Preview-frame button), the shells, the modelled mid waveguide. Also in: hit
-tracking (09) and the .als intake (08, first slice). Open from the plan: grid-advected haze
-(04), stems and the routing matrix (08), Demucs (09), WhisperX on this machine, lyrics in the
-3D preview, and the other scenes. A `Mid` binding is free to add:
+tracking with Demucs (09), the .als intake, stems and routing (08), WhisperX on this machine,
+lyrics in the 3D preview, and the macro, stack and concrete scenes. Open from the plan:
+grid-advected haze (04), Desk Set and Liquid, automation lanes as control signals. A `Mid` binding is free to add:
 `frames[].mid` is already in drive.json and the PMC55 waveguide sits at scene
 (x 0.045, z 0.0) on the Cabinet.

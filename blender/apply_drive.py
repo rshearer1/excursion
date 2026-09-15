@@ -231,6 +231,25 @@ if comp_tree is not None and grade:
 print(f"mood: {mood['name']} — {mood.get('description', 'built-in look')}")
 
 
+# routing (phase 08): a mood names which drive.channels (per-stem envelopes) drive what;
+# without stems, or without a named channel, the mix's bass band does the job as before.
+channels = data.get("channels") or {}
+routing = mood.get("routing", {})
+
+
+def routed(target, default):
+    """The per-frame list a mood routes to `target` ("channels.kick"), else `default`."""
+    spec = routing.get(target, "")
+    if spec.startswith("channels."):
+        ch = channels.get(spec[len("channels."):])
+        if ch and len(ch) >= len(frames):
+            return ch[: len(frames)]
+    return default
+
+
+if routing and channels:
+    print(f"routing: {', '.join(f'{k} <- {v}' for k, v in routing.items() if v.startswith('channels.') and v[9:] in channels) or 'nothing matched'}")
+
 # smoke: kicks shove it out of the woofers, bass keeps the cloud drifting ----
 smoke = bpy.data.objects.get("Smoke")
 smoke_mat = bpy.data.materials.get("SmokeMat")
@@ -344,25 +363,6 @@ if neon_mat is not None and neon_mat.node_tree is not None:
         'nodes["Principled BSDF"].inputs["Emission Strength"].default_value',
         [max(v, 9.0 * drop_pulse(i, 0.5)) for i, v in enumerate(beat_flash(2.6, 4.5, 0.6, floor=0.9))],
     )
-
-# routing (phase 08): a mood names which drive.channels (per-stem envelopes) drive what;
-# without stems, or without a named channel, the mix's bass band does the job as before.
-channels = data.get("channels") or {}
-routing = mood.get("routing", {})
-
-
-def routed(target, default):
-    """The per-frame list a mood routes to `target` ("channels.kick"), else `default`."""
-    spec = routing.get(target, "")
-    if spec.startswith("channels."):
-        ch = channels.get(spec[len("channels."):])
-        if ch and len(ch) >= len(frames):
-            return ch[: len(frames)]
-    return default
-
-
-if routing and channels:
-    print(f"routing: {', '.join(f'{k} <- {v}' for k, v in routing.items() if v.startswith('channels.') and v[9:] in channels) or 'nothing matched'}")
 
 # lights follow the track: the key breathes with the bass level (dim in breaks, back at the
 # drop), the red rims and back light pulse on downbeats and flare at a drop -----------------
