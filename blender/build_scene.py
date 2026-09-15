@@ -767,6 +767,87 @@ def plate_material(name, cell_mm=6.0):
     L.new(gloss.outputs["Result"], bsdf.inputs["Roughness"])
     return m
 
+# the mid's N-compass waveguide, modelled: PMC's CAD has it as a coarse eight-tooth cog. The
+# real part is a smooth flared horn with eight soft petals (valleys on the 45-degree lines,
+# ridges between). The cog faces are deleted from the cabinet and this surface sits in the
+# hole, from the dome pocket out to a thin flange on the plate. Profiles were read off the
+# CAD: ridges run from ~18 mm deep at the dome to the plate at 3.3 mm, valleys stay ~18 mm
+# deep out to r 38 mm then climb to meet the ridges at the rim.
+WAVEGUIDE_R_IN = 0.0273  # just outside the mid pocket wall (r_cut 27 mm), so the seam is covered
+WAVEGUIDE_R_OUT = 0.052  # where the horn meets the plate
+WAVEGUIDE_FLANGE = 0.054  # the flange's outer radius, a hair proud of the plate to hide the cut
+WAVEGUIDE_PLATE = 0.0033  # plate surface depth around the mid (metres below the baffle)
+WAVEGUIDE_PETALS = 8
+
+
+def _wg_depth(r, theta):
+    span = WAVEGUIDE_R_OUT - WAVEGUIDE_R_IN
+    u = min(1.0, max(0.0, (WAVEGUIDE_R_OUT - r) / span))  # 1 at the dome, 0 at the rim
+    ridge = WAVEGUIDE_PLATE + 0.015 * u ** 2.2
+    v = min(1.0, max(0.0, (WAVEGUIDE_R_OUT - r) / 0.014))
+    valley = max(ridge, min(0.018, WAVEGUIDE_PLATE + 0.015 * v ** 1.6))
+    m = 0.5 + 0.5 * math.cos(WAVEGUIDE_PETALS * theta)
+    m = m * m * (3 - 2 * m)  # rounded lobes, not a sine
+    return ridge + (valley - ridge) * m
+
+
+def build_waveguide(body, cx, cz, front, prefix):
+    """Delete the CAD cog from body around (cx, cz) and return the modelled horn object."""
+    me = body.data
+    bm = bmesh.new()
+    bm.from_mesh(me)
+    doomed = []
+    for f in bm.faces:
+        c = f.calc_center_median()
+        r = math.hypot(c.x - cx, c.z - cz)
+        depth = c.y - front
+        if 0.0274 < r < 0.0505 and 0.0025 < depth < 0.030:
+            doomed.append(f)
+    bmesh.ops.delete(bm, geom=doomed, context="FACES")
+    bm.to_mesh(me)
+    bm.free()
+    print(f"waveguide: {len(doomed)} cog faces removed from {prefix or 'hero'}")
+
+    n_t, rings = 256, []
+    # ring radii: an inner lip down the pocket, the horn, then the flange
+    radii = [(0.0270, "lip"), (WAVEGUIDE_R_IN, "horn")]
+    for k in range(1, 41):
+        radii.append((WAVEGUIDE_R_IN + (WAVEGUIDE_R_OUT - WAVEGUIDE_R_IN) * k / 40, "horn"))
+    radii.append((WAVEGUIDE_FLANGE, "flange"))
+    radii.append((WAVEGUIDE_FLANGE + 0.0002, "skirt"))  # a wall down into the plate: no gap from any angle
+    bm = bmesh.new()
+    for r, kind in radii:
+        ring = []
+        for j in range(n_t):
+            t = 2 * math.pi * j / n_t
+            if kind == "lip":
+                depth = 0.027
+            elif kind == "flange":
+                depth = WAVEGUIDE_PLATE - 0.0003
+            elif kind == "skirt":
+                depth = 0.012
+            else:
+                depth = _wg_depth(r, t)
+            ring.append(bm.verts.new((cx + r * math.cos(t), front + depth, cz + r * math.sin(t))))
+        rings.append(ring)
+    for a, b in zip(rings, rings[1:]):
+        for j in range(n_t):
+            bm.faces.new((a[j], a[(j + 1) % n_t], b[(j + 1) % n_t], b[j]))
+    bm.normal_update()
+    bm.faces.ensure_lookup_table()
+    # faces wind so normals point out of the cabinet (-Y): flip if the first face looks inward
+    if bm.faces[0].normal.y > 0:
+        bmesh.ops.reverse_faces(bm, faces=bm.faces[:])
+    for f in bm.faces:
+        f.smooth = True
+    mesh = bpy.data.meshes.new(f"{prefix}Waveguide")
+    bm.to_mesh(mesh)
+    bm.free()
+    obj = new_object(f"{prefix}Waveguide", mesh)
+    assign(obj, cabinet_mat)
+    return obj
+
+
 
 def build_speaker(model, prefix, location, yaw=0.0, hero=False, scale=(1, 1, 1)):
     kit = load_kit(model)
@@ -834,6 +915,7 @@ def build_speaker(model, prefix, location, yaw=0.0, hero=False, scale=(1, 1, 1))
 
     names = {k: names_for(k) for k in ("woofer", "mid", "tweeter")}
     info = {"front_y": front, "w": w, "h": h, "d": d, "drivers": []}
+    mid_centre = None
     for drv in kit["drivers"]:
         cx = drv["x_mm"] / 1000 - w / 2
         cz = drv["y_mm"] / 1000 - h / 2
@@ -854,6 +936,10 @@ def build_speaker(model, prefix, location, yaw=0.0, hero=False, scale=(1, 1, 1))
             piece["cap_r"] = WOOFER_CAP * r_cone if drv["kind"] == "woofer" else 0.0
         parts.append(piece)
         info["drivers"].append({"kind": drv["kind"], "name": name, "x": cx, "z": cz, "r": r_cone})
+        if drv["kind"] == "mid":
+            mid_centre = (cx, cz)
+    if hero and mid_centre is not None:
+        parts.append(build_waveguide(body, mid_centre[0], mid_centre[1], front, prefix))
     for obj in parts:
         obj.location = location
         obj.rotation_euler = (0, 0, yaw)
