@@ -231,7 +231,6 @@
             <option value="concrete">concrete</option>
             <option value="macro">macro</option>
             <option value="stack">stack</option>
-            <option value="desk">desk</option>
           </select>
         </label>
         <label>mood
@@ -278,6 +277,7 @@
         <label>trim <input type="number" id="trim" value="1" min="0.1" max="3" step="0.05" style="width:70px" /></label>
         <label>offset ms <input type="number" id="offset" value="0" step="1" /></label>
         <button id="stemBtn" title="Demucs on this machine: split a drums stem and track kicks and snares on it instead of the mix" disabled>Drums stem</button>
+        <label title="Ableton's Export All Individual Tracks: pick the stem files; each becomes a channel, and the kick stem drives the woofer instead of the mix">stems <input type="file" id="stemsFiles" accept="audio/*" multiple style="max-width:200px" /></label>
         <label title="an Ableton .als: its tempo becomes the grid, locators become markers, drum-track MIDI becomes kicks and snares">project <input type="file" id="alsFile" accept=".als,.xml" style="max-width:200px" /></label>
         <label>fps
           <select id="fps"><option value="30" selected>30</option><option value="60">60</option></select>
@@ -309,7 +309,7 @@
       <kbd>space</kbd> play/pause &nbsp;&middot;&nbsp; <kbd>&larr;</kbd><kbd>&rarr;</kbd> nudge &plusmn;10 ms &nbsp;&middot;&nbsp; <kbd>shift</kbd>+<kbd>&larr;</kbd><kbd>&rarr;</kbd> &plusmn;1 ms &nbsp;&middot;&nbsp;
       click the <b>beat lane</b> or the <b>overview</b> to seek &nbsp;&middot;&nbsp; <b>double-click the beat lane on a kick</b> to set the downbeat there &nbsp;&middot;&nbsp; <b>lock</b> freezes the grid.<br />
       <kbd>I</kbd>/<kbd>O</kbd> render range in/out at playhead (<kbd>shift</kbd> clears) &nbsp;&middot;&nbsp; <kbd>M</kbd> drop marker &nbsp;&middot;&nbsp; <kbd>B</kbd> break marker &nbsp;&middot;&nbsp; click a marker line in the beat lane to delete it.<br />
-      <b>project</b> (advanced) takes the track's Ableton <code>.als</code>: exact tempo, locators as drop/break markers, drum MIDI as kicks and snares, no estimating.<br />
+      <b>project</b> (advanced) takes the track's Ableton <code>.als</code>: exact tempo, locators as drop/break markers, drum MIDI as kicks and snares, no estimating. <b>stems</b> takes the exported tracks: one channel each in the drive, and the woofer follows the kick stem alone.<br />
       <b>hits</b> tracks kicks (orange row) and snares (cyan row) with a grid prior; bright ticks are sure, dim ones are doubtful. Click a tick to delete it, <kbd>K</kbd> / <kbd>N</kbd> add a kick / snare at the playhead. Shells and the logo ride the kicks in the render.<br />
       Orange lines are downbeats, cyan are beats. The grid is right when the clicks disappear into the drums.<br />
       <b>3D</b> shows the scene live from the same drive data: cones pump on bass, the slate flashes on beats, cuts alternate cameras, dust drifts and gets shoved on each stroke.<br />

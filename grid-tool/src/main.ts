@@ -12,6 +12,7 @@ import { synthTestTrack } from "./engine/synth";
 import { computeCuts } from "./engine/cuts";
 import { detectHits, type Hits } from "./engine/hits";
 import { inflateAls, parseAls } from "./engine/ableton";
+import { stemChannel, stemNameOf, wooferStem } from "./engine/stems";
 import { envelopeFollow } from "./engine/envelope";
 import { autoGain } from "./engine/autogain";
 import type { FrameFeatures } from "./engine/features";
@@ -64,6 +65,7 @@ const driveChk = $<HTMLInputElement>("driveOverlay");
 const hitsChk = $<HTMLInputElement>("hitsChk");
 const alsFile = $<HTMLInputElement>("alsFile");
 const stemBtn = $<HTMLButtonElement>("stemBtn");
+const stemsFiles = $<HTMLInputElement>("stemsFiles");
 const previewChk = $<HTMLInputElement>("preview3d");
 const previewCanvas = $<HTMLCanvasElement>("preview");
 const previewWrap = $<HTMLDivElement>("previewWrap");
@@ -140,6 +142,7 @@ let rangeOut: number | null = null;
 let markers: { t: number; kind: "drop" | "break" }[] = [];
 let lyrics: Lyrics = structuredClone(DEFAULT_LYRICS);
 let hits: Hits | null = null; // tracked kicks and snares, edited in the audit lane
+let stems = new Map<string, { mono: Float32Array; sampleRate: number }>(); // loaded stem files by channel name (this session only)
 let driveCache: FrameFeatures | null = null; // 30fps features for the overlay
 let overlayBass: Float32Array | null = null;
 let overlayOnsets: number[] = [];
@@ -290,6 +293,7 @@ function adoptTrack(name: string, sha1: string, buffer: AudioBuffer, file: File 
   syncLyricControls();
   hits = null;
   hitsChk.checked = false;
+  stems = new Map();
   trackNameEl.textContent = `${name} — ${buffer.duration.toFixed(2)}s @ ${buffer.sampleRate}Hz`;
   playBtn.disabled = false;
   exportBtn.disabled = false;
@@ -741,7 +745,21 @@ function buildCurrentDrive(
     tuning: { trim: Number(trimInput.value) || 1 },
     lyrics: exportLyrics(lyrics),
     ...(hits ? { hits } : {}),
+    ...(stems.size ? { channels: Object.fromEntries([...stems].map(([name, s]) => [name, stemChannel(s.mono, s.sampleRate, fps)])) } : {}),
   });
+}
+
+/** Everything a drive needs from the audio: features of the mix, the cone from the kick stem when there is one. */
+function analyseForDrive(fps: number): { features: FrameFeatures; cone: [number, number][]; dome: [number, number][] } {
+  if (!track) throw new Error("no track loaded");
+  const features = extractFeatures(track.mono, track.buffer.sampleRate, { fps });
+  const follow = wooferStem(stems.keys());
+  const src = follow ? stems.get(follow)! : { mono: track.mono, sampleRate: track.buffer.sampleRate };
+  return {
+    features,
+    cone: coneMotion(src.mono, src.sampleRate, { fps }),
+    dome: coneMotion(track.mono, track.buffer.sampleRate, { fps, ...MID_DOME }),
+  };
 }
 async function exportDrive(): Promise<void> {
   if (!track) return;
@@ -750,11 +768,8 @@ async function exportDrive(): Promise<void> {
   await new Promise((r) => setTimeout(r, 30)); // let the status paint
   try {
     const fps = Number(fpsSel.value) || 30;
-    const features = extractFeatures(track.mono, track.buffer.sampleRate, { fps });
-    const drive = buildCurrentDrive(fps, features, {
-      cone: coneMotion(track.mono, track.buffer.sampleRate, { fps }),
-      dome: coneMotion(track.mono, track.buffer.sampleRate, { fps, ...MID_DOME }),
-    });
+    const { features, cone, dome } = analyseForDrive(fps);
+    const drive = buildCurrentDrive(fps, features, { cone, dome });
     const json = JSON.stringify(drive);
     const fname = `${track.name.replace(/\.[^.]+$/, "")}.drive.json`;
     if (projectDir) {
@@ -813,6 +828,30 @@ alsFile.addEventListener("change", async () => {
     status(`Could not read that project: ${e instanceof Error ? e.message : String(e)}`, true);
   } finally {
     alsFile.value = "";
+  }
+});
+
+// ---------- stems (phase 08) ----------
+stemsFiles.addEventListener("change", async () => {
+  const files = [...(stemsFiles.files ?? [])];
+  if (!files.length) return;
+  if (!track) {
+    status("Load the mix first, then its stems.", true);
+    return;
+  }
+  status(`Decoding ${files.length} stems…`);
+  try {
+    for (const f of files) {
+      const buffer = await ctx().decodeAudioData(await f.arrayBuffer());
+      stems.set(stemNameOf(f.name), { mono: monoMix(buffer), sampleRate: buffer.sampleRate });
+    }
+    const follow = wooferStem(stems.keys());
+    previewDirty = true;
+    status(`Stems: ${[...stems.keys()].join(", ")}. ${follow ? `The woofer follows the ${follow} stem.` : "No kick, drums or bass stem — the woofer follows the mix."} Export full-length stems so they stay aligned.`);
+  } catch (e) {
+    status(`Stems: ${e instanceof Error ? e.message : String(e)}`, true);
+  } finally {
+    stemsFiles.value = "";
   }
 });
 
@@ -1152,11 +1191,8 @@ async function renderReel(): Promise<void> {
     status("Analysing the track…");
     await new Promise((r) => setTimeout(r, 30));
     const fps = Number(fpsSel.value) || 30;
-    const features = extractFeatures(track.mono, track.buffer.sampleRate, { fps });
-    const drive = buildCurrentDrive(fps, features, {
-      cone: coneMotion(track.mono, track.buffer.sampleRate, { fps }),
-      dome: coneMotion(track.mono, track.buffer.sampleRate, { fps, ...MID_DOME }),
-    });
+    const { features, cone, dome } = analyseForDrive(fps);
+    const drive = buildCurrentDrive(fps, features, { cone, dome });
     status(`Sending ${track.name} to Blender…`);
     const put = await fetch(`/api/jobs/${encodeURIComponent(track.name)}`, { method: "PUT", body: track.file });
     if (!put.ok) throw new Error(`could not store the audio (${put.status})`);
@@ -1193,11 +1229,8 @@ async function previewFrameNow(): Promise<void> {
     status(`Preview frame at ${fmtTime(t)} — EEVEE draft, about 20 seconds…`);
     await new Promise((r) => setTimeout(r, 30));
     const fps = Number(fpsSel.value) || 30;
-    const features = extractFeatures(track.mono, track.buffer.sampleRate, { fps });
-    const drive = buildCurrentDrive(fps, features, {
-      cone: coneMotion(track.mono, track.buffer.sampleRate, { fps }),
-      dome: coneMotion(track.mono, track.buffer.sampleRate, { fps, ...MID_DOME }),
-    });
+    const { features, cone, dome } = analyseForDrive(fps);
+    const drive = buildCurrentDrive(fps, features, { cone, dome });
     const res = await fetch("/api/preview", {
       method: "POST",
       headers: { "Content-Type": "application/json" },

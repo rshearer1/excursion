@@ -250,8 +250,9 @@ function previewFrame(slug: string, drive: RenderRequest["drive"], time: number)
     writeFileSync(drivePath, JSON.stringify(drive));
     const frame = Math.max(1, Math.round(time * drive.fps) + 1);
     const png = path.join(previewDir, `${slug}.png`);
+    const sceneName = (drive as { scene?: string }).scene || "void";
     const args = [
-      "-b", path.join(root, "blender", "scenes", "void.blend"),
+      "-b", path.join(root, "blender", "scenes", `${sceneName}.blend`),
       "-P", path.join(root, "blender", "apply_drive.py"),
       "--", drivePath, "--engine", "eevee", "--draft", "--frame", String(frame), "--out", png,
     ];

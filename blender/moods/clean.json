@@ -56,5 +56,10 @@
   "shells": {
     "show": false,
     "strength": 0.0
+  },
+  "routing": {
+    "key": "channels.bass",
+    "smoke": "channels.bass",
+    "wash": "channels.bass"
   }
 }

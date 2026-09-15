@@ -38,10 +38,10 @@ const test = flag("--test");
 const blender = process.env.BLENDER || "blender";
 const exists = (p) => access(p).then(() => true, () => false);
 
-function run(cmd, argv, label) {
+function run(cmd, argv, label, env = {}) {
   return new Promise((resolve, reject) => {
     console.log(`\n=== ${label}\n${cmd} ${argv.join(" ")}`);
-    const child = spawn(cmd, argv, { stdio: "inherit" });
+    const child = spawn(cmd, argv, { stdio: "inherit", env: { ...process.env, ...env } });
     child.on("error", reject);
     child.on("exit", (code) => (code === 0 ? resolve() : reject(new Error(`${label} exited ${code}`))));
   });
@@ -62,11 +62,8 @@ if (await exists(manifest)) {
   await run(process.execPath, [path.join(root, "scripts", "fetch-assets.mjs"), manifest], "fetch assets");
 }
 if (!(await exists(sceneBlend))) {
-  if (sceneName !== "void") {
-    console.error(`scene ${sceneBlend} does not exist and only "void" can be auto-built`);
-    process.exit(1);
-  }
-  await run(blender, ["-b", "-P", path.join(root, "blender", "build_scene.py")], "build scene");
+  // every scene comes from the one builder: EXCURSION_SCENE picks the set
+  await run(blender, ["-b", "-P", path.join(root, "blender", "build_scene.py")], `build scene ${sceneName}`, { EXCURSION_SCENE: sceneName });
 }
 
 const applyArgs = [

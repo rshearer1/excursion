@@ -241,7 +241,7 @@ if smoke is not None and smoke_mat is not None:
     else:
         push, drift = [], []
         env, total, prev = 0.0, 0.0, 0.0
-        for i, b in enumerate(bass):
+        for i, b in enumerate(routed("smoke", bass)):
             if "cone" in frames[i]:
                 first, second = frames[i]["cone"]
                 hit = min(1.0, abs(second - first))  # air moved: how far the cone swung this frame
@@ -345,10 +345,29 @@ if neon_mat is not None and neon_mat.node_tree is not None:
         [max(v, 9.0 * drop_pulse(i, 0.5)) for i, v in enumerate(beat_flash(2.6, 4.5, 0.6, floor=0.9))],
     )
 
+# routing (phase 08): a mood names which drive.channels (per-stem envelopes) drive what;
+# without stems, or without a named channel, the mix's bass band does the job as before.
+channels = data.get("channels") or {}
+routing = mood.get("routing", {})
+
+
+def routed(target, default):
+    """The per-frame list a mood routes to `target` ("channels.kick"), else `default`."""
+    spec = routing.get(target, "")
+    if spec.startswith("channels."):
+        ch = channels.get(spec[len("channels."):])
+        if ch and len(ch) >= len(frames):
+            return ch[: len(frames)]
+    return default
+
+
+if routing and channels:
+    print(f"routing: {', '.join(f'{k} <- {v}' for k, v in routing.items() if v.startswith('channels.') and v[9:] in channels) or 'nothing matched'}")
+
 # lights follow the track: the key breathes with the bass level (dim in breaks, back at the
 # drop), the red rims and back light pulse on downbeats and flare at a drop -----------------
 slow, env = [], 0.0
-for i, level in enumerate(bass):
+for i, level in enumerate(routed("key", bass)):
     env = max(level, env * 0.985)  # ~2 s release
     slow.append(env * (0.5 if in_break[i] else 1.0))
 key_light = bpy.data.objects.get("KeyLight")
@@ -836,11 +855,11 @@ if heads or lasers:
 
 # camera cuts: timeline markers bound round-robin over all cameras -------
 cuts = data.get("cuts", [])
-cameras = sorted((o for o in scene.objects if o.type == "CAMERA"), key=lambda o: o.name)
+cameras = sorted((o for o in scene.objects if o.type == "CAMERA" and not o.get("unused")), key=lambda o: o.name)
 # the shot order: open on the rig reveal, then alternate the hero's close-ups with the moving
 # wide views, so no two similar shots sit next to each other
-SHOT_ORDER = ["Cam1_Wide", "Cam2_Woofers", "Cam7_Top", "Cam3_Macro", "Cam6_Side", "Cam4_Rig", "Cam5_Low"]
-shot_cams = [bpy.data.objects[n] for n in SHOT_ORDER if n in bpy.data.objects] or cameras
+SHOT_ORDER = ["Cam1_Wide", "Cam2_Woofers", "Cam8_Cone", "Cam7_Top", "Cam3_Macro", "Cam6_Side", "Cam4_Rig", "Cam5_Low"]
+shot_cams = [bpy.data.objects[n] for n in SHOT_ORDER if n in bpy.data.objects and not bpy.data.objects[n].get("unused")] or cameras
 if cuts and len(cameras) > 1:
     cut_frames = sorted(fr for fr in ({scene.frame_start} | {round(t * fps) + 1 for t in cuts}) if scene.frame_start <= fr <= scene.frame_end)
     if len(cut_frames) > 1 and cut_frames[1] - cut_frames[0] < fps:

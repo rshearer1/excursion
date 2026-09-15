@@ -35,6 +35,8 @@ export interface DriveJson {
   lyrics?: Lyrics;
   /** Kick and snare hit times in seconds (phase 09), lead-shifted; absent when not tracked. */
   events?: { kick: number[]; snare: number[] };
+  /** Per-stem envelopes (phase 08), one value per frame, 0..1; a mood's routing picks targets. */
+  channels?: Record<string, number[]>;
   frames: DriveFrame[];
 }
 
@@ -74,6 +76,7 @@ export interface BuildDriveInput {
   /** Tracked hits; only those at or above minConf are exported. */
   hits?: Hits;
   minConf?: number;
+  channels?: Record<string, number[]>;
 }
 
 const round6 = (x: number): number => Math.round(x * 1e6) / 1e6;
@@ -100,6 +103,7 @@ export function buildDrive(input: BuildDriveInput): DriveJson {
     lyrics,
     hits,
     minConf = 0.5,
+    channels,
   } = input;
   const {
     attack = 0.6,
@@ -149,6 +153,7 @@ export function buildDrive(input: BuildDriveInput): DriveJson {
     cuts: cuts.map(shift),
     sections: sections.map((s) => ({ t: shift(s.t), kind: s.kind })),
     ...(range ? { range } : {}),
+    ...(channels && Object.keys(channels).length ? { channels } : {}),
     ...(hits
       ? {
           events: {

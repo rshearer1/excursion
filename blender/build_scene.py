@@ -34,7 +34,16 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 CACHE = os.path.join(ROOT, "assets", "cache")
 HDRI = os.path.join(CACHE, "polyhaven", "studio_small_09_2k.hdr")
+# the scene (plan: the set list). One builder, one switch: EXCURSION_SCENE=void|macro|stack|concrete.
+#   void      the hero floating in the dark, five cameras (the default)
+#   macro     the same hero, only the close cameras plus a 90 mm on the cone, finer dust
+#   stack     the hero on its stand with four more PMC6-2 stacked either side, wide camera back
+#   concrete  the hero in a concrete room corner (walls on, concrete PBR)
+SCENE = os.environ.get("EXCURSION_SCENE", "void")
+if SCENE not in ("void", "macro", "stack", "concrete"):
+    raise SystemExit(f"unknown scene {SCENE!r}")
 CABINET_TEXTURE = ("Plastic012A", "4K")  # ambientCG id + resolution (see void.manifest.json)
+CONCRETE_TEXTURE = ("Concrete034", "2K")  # the concrete room's walls (concrete.manifest.json)
 PLASTIC = os.path.join(CACHE, "ambientcg", f"{CABINET_TEXTURE[0]}_{CABINET_TEXTURE[1]}-JPG")
 STL = os.path.join(CACHE, "pmc", "PMC6-2.stl")
 
@@ -88,10 +97,13 @@ def assign(obj, material):
     obj.data.materials.append(material)
 
 
-def plastic_material(name, scale=22.0):
+def plastic_material(name, scale=22.0, texture=None, albedo=None):
     """ambientCG PBR set box-projected in object space (the STL has no UVs): colour, roughness,
     normal map and the displacement map as a bump on top, so the surface grain catches the
-    raking light. scale = tiles per metre."""
+    raking light. scale = tiles per metre. texture/albedo default to the cabinet's."""
+    texture = texture or CABINET_TEXTURE
+    albedo = CABINET_ALBEDO if albedo is None else albedo
+    folder = os.path.join(CACHE, "ambientcg", f"{texture[0]}_{texture[1]}-JPG")
     m = make_material(name, rough=0.5)
     nt = m.node_tree
     bsdf = nt.nodes["Principled BSDF"]
@@ -101,7 +113,7 @@ def plastic_material(name, scale=22.0):
     nt.links.new(coord.outputs["Object"], mapping.inputs["Vector"])
 
     def tex(suffix, non_color):
-        path = os.path.join(PLASTIC, f"{CABINET_TEXTURE[0]}_{CABINET_TEXTURE[1]}-JPG_{suffix}.jpg")
+        path = os.path.join(folder, f"{texture[0]}_{texture[1]}-JPG_{suffix}.jpg")
         if not os.path.exists(path):
             return None
         node = nt.nodes.new("ShaderNodeTexImage")
@@ -123,7 +135,7 @@ def plastic_material(name, scale=22.0):
         dark.data_type = "RGBA"
         dark.blend_type = "MULTIPLY"
         dark.inputs["Factor"].default_value = 1.0
-        dark.inputs["B"].default_value = (CABINET_ALBEDO,) * 3 + (1.0,)
+        dark.inputs["B"].default_value = (albedo,) * 3 + (1.0,)
         nt.links.new(color.outputs["Color"], dark.inputs["A"])
         nt.links.new(dark.outputs["Result"], bsdf.inputs["Base Color"])
     if rough:
@@ -1001,7 +1013,14 @@ stand_mat.node_tree.nodes["Principled BSDF"].inputs["Metallic"].default_value = 
 # its PMC8-2 SUB, the right PMC8-2 main. Mains and fills are toed in toward the floor.
 RIG_SPACING = 1.4  # hero (left) to its twin (right)
 RISER_H = 0.0
-RIG = [] if INTIMATE else [
+STACK_GAP = 0.06  # metres between cabinets in the stack
+STACK_RIG = [  # four more PMC6-2 on the floor either side of the hero's stand, two high
+    ("PMC6-2", "L1_", (-(0.43 + STACK_GAP), 0.0), 0.0, "floor"),
+    ("PMC6-2", "L2_", (-(0.43 + STACK_GAP), 0.0), 0.0, 0.40 + 0.01),
+    ("PMC6-2", "R1_", (0.43 + STACK_GAP, 0.0), 0.0, "floor"),
+    ("PMC6-2", "R2_", (0.43 + STACK_GAP, 0.0), 0.0, 0.40 + 0.01),
+]
+RIG = STACK_RIG if SCENE == "stack" else [] if INTIMATE else [
     ("PMC6-2", "R6-2_", (RIG_SPACING, 0.0), 0.0, "stand"),
     ("PMC8-2INCSTAND", "L8-2_", (-1.35, 0.30), 15.0, "floor"),
     ("PMC8-2INCSTAND", "R8-2_", (RIG_SPACING + 1.35, 0.30), -15.0, "floor"),
@@ -1137,12 +1156,22 @@ LYRIC_ANCHORS = {
     "front-low": ((0.0, front_y - 0.28, -0.18), True),  # low in the frame, in front of the stand
     "wall": ((0.0, 1.05, 0.58), True),  # high, just in front of the LED wall
 }
+if SCENE == "concrete":  # the plan's concrete anchors, on the back wall
+    LYRIC_ANCHORS = {
+        "wall-left": ((-0.75, 1.32, 0.45), True),  # 3 cm off the back wall (WALL_Y = 1.35, defined further down)
+        "wall-right": ((0.75, 1.32, 0.45), True),
+        "wall-top": ((0.0, 1.32, 1.1), True),
+    }
+elif SCENE == "macro":
+    LYRIC_ANCHORS = {}
+elif SCENE == "stack":
+    LYRIC_ANCHORS = {"behind": ((0.0, 0.4, top_z + 0.30), True)}
 for _name, (_loc, _standing) in LYRIC_ANCHORS.items():
     add_lyric_anchor(_name, _loc, _standing)
 
 
 upper, lower = woofer_z_mid + woofer_z_half, woofer_z_mid - woofer_z_half
-wide = add_camera("Cam1_Wide", (0, front_y - 1.30, 0.02), (0, front_y, 0.0), 50)
+wide = add_camera("Cam1_Wide", (0, front_y - (2.3 if SCENE == "stack" else 1.30), 0.02 if SCENE != "stack" else -0.3), (0, front_y, 0.0 if SCENE != "stack" else -0.3), 50)
 set_dof(
     wide,
     add_focus("Focus_Wide", (woofer_x, front_y, upper)),
@@ -1202,6 +1231,17 @@ if INTIMATE:
     aim(side, add_focus("Aim_Side", (woofer_x, front_y, 0.0)))
     side["move"] = [0.3, -0.03, 0.0]  # track across the woofers from the left edge
     top = add_camera("Cam7_Top", (0.28, front_y - 0.5, 0.62), (0.0, front_y, 0.0), 24)
+    if SCENE == "macro":
+        # the cone shot: a 90 mm macro a hand from the upper woofer's cap, wide open
+        cone_cam = add_camera("Cam8_Cone", (woofer_x + 0.10, front_y - 0.30, upper + 0.02), (woofer_x, front_y, upper), 90)
+        set_dof(cone_cam, add_focus("Focus_Cone", (woofer_x, front_y - 0.012, upper)), 2.8)
+        aim(cone_cam, add_focus("Aim_Cone", (woofer_x, front_y, upper)))
+        cone_cam["move"] = [0.03, 0.0, -0.02]
+        for name in ("Cam1_Wide", "Cam6_Side", "Cam7_Top"):  # macro is the close cameras only
+            obj = bpy.data.objects.get(name)
+            if obj is not None:
+                obj["unused"] = True  # apply_drive leaves these out of the shot list
+        scene.camera = cone_cam
     set_dof(top, add_focus("Focus_Top", (0.0, front_y, top_z)), 1.4, rack=((0.0, front_y, top_z), (woofer_x, front_y, 0.0)))  # 24 mm f/1.4 GM from above
     aim(top, add_focus("Aim_Top", (0.0, front_y, 0.02)))
     top["move"] = [-0.3, 0.06, -0.35]  # fall from above the cabinet onto the drivers
@@ -1288,7 +1328,7 @@ if not INTIMATE:
 
 # the set: a room corner behind the rig — dark plaster walls, a riser under the sub stack,
 # red uplights along the wall base, and a neon BIGHECK on the wall that beats with the track
-SET_WALLS = False  # True: plaster room corner; False: black void
+SET_WALLS = SCENE == "concrete"  # True: room corner (concrete); False: black void
 WALL_Y = 1.35  # back wall plane (behind the set-back PMC8-2s)
 WALL_H = 3.2
 ROOM_MARGIN = 1.5  # side walls this far outside the rig
@@ -1436,16 +1476,21 @@ def wall(name, size, location, rotation):
     return obj
 
 
-if not INTIMATE:
-    # SET_WALLS: the room corner. Off = the rig floats in a black void with only the floor, the
-    # haze and the light — the more intentional look.
-    if SET_WALLS:
+# SET_WALLS: the room corner. Off = the rig floats in a black void with only the floor, the
+# haze and the light — the more intentional look. The concrete scene turns it on with a
+# concrete PBR; the stage rig used plaster.
+if SET_WALLS:
+    concrete_dir = os.path.join(CACHE, "ambientcg", f"{CONCRETE_TEXTURE[0]}_{CONCRETE_TEXTURE[1]}-JPG")
+    if SCENE == "concrete" and os.path.isdir(concrete_dir):
+        wall_mat = plastic_material("WallMat", scale=0.7, texture=CONCRETE_TEXTURE, albedo=0.55)
+    else:
         wall_mat = plaster_material("WallMat")
-        room_w = (rig_x1 - rig_x0) + 2 * ROOM_MARGIN
-        wall("Wall_Back", (room_w, WALL_H), (rig_mid, WALL_Y, floor_z + WALL_H / 2), (math.pi / 2, 0, 0))
-        wall("Wall_Left", (WALL_Y + 6.0, WALL_H), (rig_x0 - ROOM_MARGIN, WALL_Y - 3.0, floor_z + WALL_H / 2), (math.pi / 2, 0, math.pi / 2))
-        wall("Wall_Right", (WALL_Y + 6.0, WALL_H), (rig_x1 + ROOM_MARGIN, WALL_Y - 3.0, floor_z + WALL_H / 2), (math.pi / 2, 0, math.pi / 2))
+    room_w = max(2.6, (rig_x1 - rig_x0) + 2 * ROOM_MARGIN)
+    wall("Wall_Back", (room_w, WALL_H), (rig_mid, WALL_Y, floor_z + WALL_H / 2), (math.pi / 2, 0, 0))
+    wall("Wall_Left", (WALL_Y + 6.0, WALL_H), (rig_mid - room_w / 2, WALL_Y - 3.0, floor_z + WALL_H / 2), (math.pi / 2, 0, math.pi / 2))
+    wall("Wall_Right", (WALL_Y + 6.0, WALL_H), (rig_mid + room_w / 2, WALL_Y - 3.0, floor_z + WALL_H / 2), (math.pi / 2, 0, math.pi / 2))
 
+if not INTIMATE:
     # riser under the centre stack
     if RISER_H > 0:
         bpy.ops.mesh.primitive_cube_add(size=1, location=(rig_mid, 0.15, floor_z + RISER_H / 2))
@@ -1742,6 +1787,13 @@ if hasattr(slate, "visible_shadow"):
 DUST_COUNT = 12000  # fewer, in a smaller box: motes live where the wide frame and the backlight are (handoff item 6)
 DUST_BOX = ((rig_x0 - 0.45, -0.50, -0.6), (rig_x1 + 0.45, 1.2, 0.6))  # the wide frame's width and height, from behind the speaker to just short of the close-up lens
 DUST_RADIUS = (0.00025, 0.0007)  # metres, log-normal: in focus they are sub-pixel, out of focus they bloom
+if SCENE == "macro":  # the plan's macro row: finer motes, packed in front of the baffle
+    DUST_COUNT = 20000
+    DUST_BOX = ((-0.35, front_y - 0.40, -0.35), (0.35, front_y + 0.05, 0.35))
+    DUST_RADIUS = (0.0001, 0.0003)
+elif SCENE == "stack":
+    DUST_COUNT = 30000
+    DUST_BOX = ((rig_x0 - 0.3, -0.5, -0.9), (rig_x1 + 0.3, 1.2, 0.7))
 DUST_LINT = 0.07  # fraction of motes that are lint: flattened, elongated, randomly turned
 DUST_BACKLIGHT = 110  # W, the dedicated dust backlight
 
@@ -2360,7 +2412,7 @@ def build_compositor():
 
 build_compositor()
 
-out = os.path.join(HERE, "scenes", "void.blend")
+out = os.path.join(HERE, "scenes", f"{SCENE}.blend")
 os.makedirs(os.path.dirname(out), exist_ok=True)
 bpy.ops.wm.save_as_mainfile(filepath=out)
 print(f"saved {out}")
@@ -2400,6 +2452,6 @@ def export_glb(path):
 
 
 try:
-    export_glb(os.path.join(HERE, "scenes", "void.glb"))
+    export_glb(os.path.join(HERE, "scenes", f"{SCENE}.glb"))
 except Exception as e:  # the preview falls back to its placeholder
     print(f"glb: export failed ({e})")

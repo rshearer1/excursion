@@ -18,7 +18,6 @@ export const LYRIC_STYLES: { value: LyricStyle; label: string; hint: string }[] 
 export const LYRIC_ANCHORS: Record<string, string[]> = {
   void: ["behind", "front-low", "wall"],
   concrete: ["wall-left", "wall-right", "wall-top"],
-  desk: ["window"],
   macro: [],
   stack: ["behind"],
 };
