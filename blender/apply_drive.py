@@ -268,11 +268,80 @@ if key_light is not None:
     base = key_light.data.energy
     fcurve_fill(key_light.data, "energy", [base * (0.35 + 0.65 * v) for v in slow])
 downbeat_pulse = beat_flash(0.0, 1.0, 0.8)
-for name in ("RimLeft", "RimRight", "TopBack"):
-    light = bpy.data.objects.get(name)
-    if light is not None:
-        base = light.data.energy
-        fcurve_fill(light.data, "energy", [base * (0.6 + 0.7 * p + 0.5 * drop_pulse(i, 3.0)) for i, p in enumerate(downbeat_pulse)])
+rim_level = [0.6 + 0.7 * p + 0.5 * drop_pulse(i, 3.0) for i, p in enumerate(downbeat_pulse)]
+
+# lighting cues: the look steps through LOOK_CUES, one every CUE_BARS bars, with a short
+# crossfade. Each cue sets the rim/back-light colour and gain, the dust backlight gain and the
+# LED wall's trace colour, so the whole room changes together.
+#   B  cool rims against the warm key, blue trace
+#   A  dark red rims, red trace
+#   F  warm only: rims off, backlight up, amber trace
+LOOK_CUES = [
+    {"rim": (0.4, 0.6, 1.0), "rim_gain": 1.0, "back_gain": 1.0, "trace": (0.55, 0.75, 1.0)},
+    {"rim": (0.55, 0.035, 0.02), "rim_gain": 1.0, "back_gain": 1.0, "trace": (1.0, 0.32, 0.18)},
+    {"rim": (1.0, 0.7, 0.4), "rim_gain": 0.0, "back_gain": 2.2, "trace": (1.0, 0.68, 0.38)},
+]
+CUE_BARS = 2
+CUE_FADE = 6  # frames
+downbeats_fr = sorted(round(t * fps) for t in data.get("downbeats", []))
+
+
+def cue_weights(i):
+    """Blend weights over LOOK_CUES at frame i (crossfading over CUE_FADE frames at each change)."""
+    bar = sum(1 for d in downbeats_fr if d <= i)
+    step = bar // CUE_BARS
+    cur = step % len(LOOK_CUES)
+    prev = (step - 1) % len(LOOK_CUES)
+    # frames since this step began
+    since = i - max([d for d in downbeats_fr if d <= i and ((sum(1 for e in downbeats_fr if e <= d)) // CUE_BARS) == step] or [i])
+    t = min(1.0, since / CUE_FADE) if step > 0 else 1.0
+    w = [0.0] * len(LOOK_CUES)
+    w[cur] += t
+    w[prev] += 1.0 - t
+    return w
+
+
+def cue_mix(key, i):
+    ws = cue_weights(i)
+    vals = [c[key] for c in LOOK_CUES]
+    if isinstance(vals[0], tuple):
+        return tuple(sum(w * v[k] for w, v in zip(ws, vals)) for k in range(3))
+    return sum(w * v for w, v in zip(ws, vals))
+
+
+if len(LOOK_CUES) > 1:
+    n_frames = len(frames)
+    rim_gain = [cue_mix("rim_gain", i) for i in range(n_frames)]
+    rim_col = [cue_mix("rim", i) for i in range(n_frames)]
+    for name in ("RimLeft", "RimRight", "TopBack"):
+        light = bpy.data.objects.get(name)
+        if light is not None:
+            base = light.data.energy
+            fcurve_fill(light.data, "energy", [base * lvl * g for lvl, g in zip(rim_level, rim_gain)])
+            for axis in range(3):
+                fcurve_fill(light.data, "color", [c[axis] for c in rim_col], index=axis)
+    for obj in scene.objects:
+        if obj.type == "LIGHT" and obj.name.startswith("WallUp_"):
+            base = obj.data.energy
+            fcurve_fill(obj.data, "energy", [base * g for g in rim_gain])
+            for axis in range(3):
+                fcurve_fill(obj.data, "color", [c[axis] for c in rim_col], index=axis)
+    back = bpy.data.objects.get("DustBack")
+    if back is not None:
+        base = back.data.energy
+        fcurve_fill(back.data, "energy", [base * cue_mix("back_gain", i) for i in range(n_frames)])
+    scope = bpy.data.materials.get("ScopeMat")
+    if scope is not None and scope.node_tree is not None:
+        trace = [cue_mix("trace", i) for i in range(n_frames)]
+        for axis in range(3):
+            fcurve_fill(scope.node_tree, 'nodes["Principled BSDF"].inputs["Emission Color"].default_value', [c[axis] for c in trace], index=axis)
+    print(f"cues: {len(LOOK_CUES)} looks, one every {CUE_BARS} bars, {CUE_FADE}-frame crossfade")
+else:
+    for name in ("RimLeft", "RimRight", "TopBack"):
+        light = bpy.data.objects.get(name)
+        if light is not None:
+            base = light.data.energy
+            fcurve_fill(light.data, "energy", [base * lvl for lvl in rim_level])
 print("lights: key follows the bass level, rims pulse on downbeats")
 
 # render range: drive.range (seconds) -> frame window --------------------
