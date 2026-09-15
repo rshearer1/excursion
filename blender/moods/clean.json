@@ -2,23 +2,59 @@
   "name": "clean",
   "description": "Product shot. Neutral key, soft white rims, no cue changes, no smoke, flat grade, faint vignette and grain.",
   "exposure": -0.2,
-  "key": { "color": [1.0, 0.97, 0.93], "gain": 1.15 },
+  "key": {
+    "color": [
+      1.0,
+      0.97,
+      0.93
+    ],
+    "gain": 1.15
+  },
   "graze_gain": 1.2,
   "dust_back_gain": 0.6,
   "cues": [
-    { "rim": [0.9, 0.93, 1.0], "rim_gain": 0.8, "back_gain": 1.0, "trace": [0.85, 0.9, 1.0] }
+    {
+      "rim": [
+        0.9,
+        0.93,
+        1.0
+      ],
+      "rim_gain": 0.8,
+      "back_gain": 1.0,
+      "trace": [
+        0.85,
+        0.9,
+        1.0
+      ]
+    }
   ],
   "cue_bars": 2,
   "cue_fade": 6,
-  "smoke": { "show": false, "density_gain": 1.0, "haze_gain": 1.0 },
+  "smoke": {
+    "show": false,
+    "density_gain": 1.0,
+    "haze_gain": 1.0
+  },
   "grade": {
     "bloom": 0.04,
     "chromatic": 0.008,
     "black_lift": 0.015,
-    "gain": [1.0, 1.0, 1.0],
-    "lift": [1.0, 1.0, 1.0],
+    "gain": [
+      1.0,
+      1.0,
+      1.0
+    ],
+    "lift": [
+      1.0,
+      1.0,
+      1.0
+    ],
     "saturation": 1.0,
     "vignette": 0.06,
     "grain": 0.008
+  },
+  "shells": {
+    "show": false,
+    "strength": 0.0
   }
 }

@@ -2,23 +2,59 @@
   "name": "ember",
   "description": "Look A held: warm key against dark red rims and a red trace, no cue changes. Thicker smoke, deeper vignette.",
   "exposure": -0.6,
-  "key": { "color": [1.0, 0.82, 0.62], "gain": 0.9 },
+  "key": {
+    "color": [
+      1.0,
+      0.82,
+      0.62
+    ],
+    "gain": 0.9
+  },
   "graze_gain": 1.0,
   "dust_back_gain": 1.2,
   "cues": [
-    { "rim": [0.55, 0.035, 0.02], "rim_gain": 1.1, "back_gain": 1.0, "trace": [1.0, 0.32, 0.18] }
+    {
+      "rim": [
+        0.55,
+        0.035,
+        0.02
+      ],
+      "rim_gain": 1.1,
+      "back_gain": 1.0,
+      "trace": [
+        1.0,
+        0.32,
+        0.18
+      ]
+    }
   ],
   "cue_bars": 2,
   "cue_fade": 6,
-  "smoke": { "show": true, "density_gain": 1.3, "haze_gain": 1.2 },
+  "smoke": {
+    "show": true,
+    "density_gain": 1.3,
+    "haze_gain": 1.2
+  },
   "grade": {
     "bloom": 0.1,
     "chromatic": 0.012,
     "black_lift": 0.02,
-    "gain": [1.08, 0.94, 0.82],
-    "lift": [1.0, 0.98, 0.965],
+    "gain": [
+      1.08,
+      0.94,
+      0.82
+    ],
+    "lift": [
+      1.0,
+      0.98,
+      0.965
+    ],
     "saturation": 1.05,
     "vignette": 0.22,
     "grain": 0.014
+  },
+  "shells": {
+    "show": true,
+    "strength": 0.5
   }
 }

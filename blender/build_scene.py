@@ -2055,6 +2055,65 @@ SMOKE_DENSITY = 0.35  # a big room now; beams need haze, not fog
 SMOKE_HAZE = 0.03 if MOODY else 0.16  # even haze under the clumps: what beams and lasers are drawn in
 SMOKE_FLOOR_FOG = 1.5  # extra haze pooling on the floor (times haze at the floor, fading up)
 build_smoke(front_y, woofer_x, woofer_z_mid, woofer_z_half)
+
+
+# pressure-wave shells (phase 04): a pool of spheres apply_drive expands from the woofers on
+# the beat. Not glass: a transparent shell whose rim glows (facing-weighted emission), so a
+# wave reads as an expanding ring in the haze and never refracts the frame when it passes the
+# camera. Camera rays only — no shadows, no bounce light. The mood JSON turns them on and off.
+SHELL_POOL = 6
+
+
+def build_shells(front, wx, wz):
+    shells = []
+    for k in range(SHELL_POOL):
+        bpy.ops.mesh.primitive_uv_sphere_add(segments=64, ring_count=32, radius=1.0, location=(wx, front - 0.02, wz))
+        shell = bpy.context.object
+        shell.name = f"Shell_{k}"
+        shell.scale = (0.001, 0.001, 0.001)
+        for p in shell.data.polygons:
+            p.use_smooth = True
+        shell.visible_shadow = False
+        shell.visible_diffuse = False
+        shell.visible_glossy = False
+        shell.visible_transmission = False
+        shell.visible_volume_scatter = False
+        m = bpy.data.materials.new(f"ShellMat_{k}")
+        m.use_nodes = True
+        nt = m.node_tree
+        N, L = nt.nodes, nt.links
+        N.remove(N["Principled BSDF"])
+        out = N["Material Output"]
+        trans = N.new("ShaderNodeBsdfTransparent")
+        emit = N.new("ShaderNodeEmission")
+        emit.inputs["Color"].default_value = (1.0, 0.8, 0.55, 1.0)
+        emit.inputs["Strength"].default_value = 3.0
+        facing = N.new("ShaderNodeLayerWeight")
+        facing.inputs["Blend"].default_value = 0.5
+        rim = N.new("ShaderNodeMath")
+        rim.operation = "POWER"
+        rim.inputs[1].default_value = 5.0  # a thin rim, not a tinted disc
+        L.new(facing.outputs["Facing"], rim.inputs[0])
+        alpha = N.new("ShaderNodeValue")
+        alpha.name = alpha.label = "Alpha"
+        alpha.outputs[0].default_value = 0.0
+        fac = N.new("ShaderNodeMath")
+        fac.operation = "MULTIPLY"
+        L.new(rim.outputs[0], fac.inputs[0])
+        L.new(alpha.outputs[0], fac.inputs[1])
+        mix = N.new("ShaderNodeMixShader")
+        L.new(fac.outputs[0], mix.inputs["Fac"])
+        L.new(trans.outputs[0], mix.inputs[1])
+        L.new(emit.outputs[0], mix.inputs[2])
+        L.new(mix.outputs[0], out.inputs["Surface"])
+        m.blend_method = "BLEND"
+        shell.data.materials.append(m)
+        shells.append(shell)
+    return shells
+
+
+build_shells(front_y, woofer_x, woofer_z_mid)
+
 ee = scene.eevee
 ee.use_volumetric_shadows = True
 ee.volumetric_tile_size = "4"

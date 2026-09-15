@@ -621,6 +621,59 @@ if lyric_lines:
     print(f"lyrics: {len(lyric_lines)} lines, {n_objects} text objects on {len(anchor_glow)} anchors")
 
 
+# pressure-wave shells: on each beat where the cone actually hits, a shell leaves the woofers
+# and expands at SHELL_SPEED_PER_BEAT metres per beat (so the wave keeps time with the grid),
+# its rim fading over SHELL_LIFE seconds. The pool of Shell_k objects is used round-robin.
+# mood.shells = { show, strength }; the trace colour of the mood's first cue tints the rim.
+SHELL_SPEED_PER_BEAT = 0.45  # metres per beat (a wave crosses the wide frame in about a beat)
+SHELL_LIFE = 1.0  # seconds
+SHELL_R0 = 0.07  # metres, starts at the woofer
+SHELL_MIN_HIT = 0.12  # cone swing below this on the beat: no wave
+shells = [o for o in scene.objects if o.name.startswith("Shell_") and o.type == "MESH"]
+shell_cfg = mood.get("shells", {"show": True, "strength": 0.6})
+if shells:
+    shell_on = shell_cfg.get("show", True) and shell_cfg.get("strength", 0.6) > 0
+    for s in shells:
+        s.hide_render = not shell_on
+        s.hide_viewport = not shell_on
+    if shell_on:
+        n = len(frames)
+        beat_dur = 60.0 / data["grid"]["bpm"]
+        speed = SHELL_SPEED_PER_BEAT / beat_dur
+        scale = [[0.001] * n for _ in shells]
+        alpha = [[0.0] * n for _ in shells]
+        emitted, k = 0, 0
+        for t in data.get("beats", []):
+            i0 = round(t * fps)
+            if not (0 <= i0 < n):
+                continue
+            # the kick's transient lands a few frames after the grid line: take the biggest cone
+            # swing in the beat's first five frames and start the wave there
+            window = [(abs(frames[i]["cone"][1] - frames[i]["cone"][0]) if "cone" in frames[i] else bass[i], i) for i in range(i0, min(n, i0 + 5))]
+            hit, i0 = max(window)
+            if hit < SHELL_MIN_HIT:
+                continue
+            life = int(SHELL_LIFE * fps)
+            for j in range(life):
+                i = i0 + j
+                if i >= n:
+                    break
+                u = j / life
+                scale[k][i] = SHELL_R0 + speed * (j / fps)
+                alpha[k][i] = max(alpha[k][i], shell_cfg.get("strength", 0.6) * min(1.0, hit * 2.0) * (1.0 - u) ** 1.5)
+            k = (k + 1) % len(shells)
+            emitted += 1
+        tint = tuple(mood["cues"][0]["trace"]) if mood.get("cues") else (1.0, 0.8, 0.55)
+        for s, sc, al in zip(shells, scale, alpha):
+            for axis in range(3):
+                fcurve_fill(s, "scale", sc, index=axis)
+            nt = s.data.materials[0].node_tree
+            fcurve_fill(nt, 'nodes["Alpha"].outputs[0].default_value', al)
+            emit_node = next(nd for nd in nt.nodes if nd.type == "EMISSION")
+            emit_node.inputs["Color"].default_value = (*tint, 1.0)
+        print(f"shells: {emitted} waves from {len(shells)} shells, {SHELL_SPEED_PER_BEAT} m per beat")
+
+
 # render range: drive.range (seconds) -> frame window --------------------
 rng = data.get("range")
 if rng:
