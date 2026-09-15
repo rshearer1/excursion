@@ -74,6 +74,7 @@ const fpsSel = $<HTMLSelectElement>("fps");
 const leadInput = $<HTMLInputElement>("lead");
 const exportBtn = $<HTMLButtonElement>("export");
 const bpmInput = $<HTMLInputElement>("bpm");
+const lockGridChk = $<HTMLInputElement>("lockGrid");
 const tapBtn = $<HTMLButtonElement>("tap");
 const offsetInput = $<HTMLInputElement>("offset");
 const offsetValEl = $<HTMLSpanElement>("offsetVal");
@@ -1202,6 +1203,18 @@ zoomCanvas.addEventListener("click", (e) => {
     status(`Deleted ${gone.kind} marker.`);
     return;
   }
+  // a plain click seeks; the downbeat moves only on a double-click (it was too easy to knock)
+  seek(t);
+});
+zoomCanvas.addEventListener("dblclick", (e) => {
+  if (!track) return;
+  if (lockGridChk.checked) {
+    status("Grid is locked — untick lock to move the downbeat.");
+    return;
+  }
+  const rect = zoomCanvas.getBoundingClientRect();
+  const { start, dur } = zoomWindow();
+  const t = start + ((e.clientX - rect.left) / rect.width) * dur;
   grid = { ...grid, offsetMs: Math.round(t * 1000) };
   gridChanged();
   status(`Downbeat set at ${grid.offsetMs} ms — nudge to fine-tune.`);
@@ -1294,6 +1307,10 @@ bpbInput.addEventListener("change", () => {
   }
 });
 function nudge(deltaMs: number): void {
+  if (lockGridChk.checked) {
+    status("Grid is locked — untick lock to nudge.");
+    return;
+  }
   grid = { ...grid, offsetMs: grid.offsetMs + deltaMs };
   gridChanged();
   status(`offset ${grid.offsetMs} ms`);
