@@ -68,6 +68,8 @@ const previewCanvas = $<HTMLCanvasElement>("preview");
 const previewWrap = $<HTMLDivElement>("previewWrap");
 const safeChk = $<HTMLInputElement>("safeChk");
 const safezone = $<HTMLDivElement>("safezone");
+const lyricOverlay = $<HTMLDivElement>("lyricOverlay");
+const lyricOverlayText = $<HTMLSpanElement>("lyricOverlayText");
 const cutsSel = $<HTMLSelectElement>("cuts");
 const cutMarkersChk = $<HTMLInputElement>("cutMarkers");
 const fpsSel = $<HTMLSelectElement>("fps");
@@ -634,6 +636,47 @@ function tickPreview(): void {
   const dt = playing && previewLastTs ? (now - previewLastTs) / 1000 : 0;
   previewLastTs = now;
   preview.render(rigStateAt(previewDrive, songTime()), dt);
+  tickLyricOverlay(songTime());
+}
+
+/** The live lyric line over the viewport: anchor picks the position, style picks the reveal. */
+function tickLyricOverlay(t: number): void {
+  const line = lineAt(lyrics.lines, t);
+  if (!line) {
+    lyricOverlay.hidden = true;
+    return;
+  }
+  const sec = lyrics.sections?.[[...markers].sort((a, b) => a.t - b.t).filter((m) => m.t <= line.t).pop()?.kind ?? ""] ?? {};
+  const style = line.style ?? sec.style ?? lyrics.defaults.style;
+  const anchor = line.anchor ?? sec.anchor ?? lyrics.defaults.anchor;
+  const color = line.color ?? sec.color ?? lyrics.defaults.color;
+  const size = line.size ?? sec.size ?? lyrics.defaults.size;
+  let text = line.text;
+  if (style === "karaoke" && line.words?.length) {
+    text = line.words.map((w) => (t >= w.t ? w.w : "\u2007".repeat(Math.max(1, w.w.length)))).join(" ");
+  } else if (style === "typewriter") {
+    const step = 60 / grid.bpm / 4;
+    const shown = Math.max(0, Math.floor((t - line.t) / step) + 1);
+    let k = 0;
+    text = [...line.text].map((ch) => (ch === " " ? ch : k++ < shown ? ch : "\u2007")).join("");
+  }
+  lyricOverlayText.textContent = text;
+  lyricOverlayText.style.fontSize = size === "L" ? "17px" : size === "S" ? "10px" : "13px";
+  let alpha = 1;
+  if (style === "fade") {
+    const a = lyrics.defaults.attackMs / 1000;
+    const r = lyrics.defaults.releaseMs / 1000;
+    alpha = Math.min(1, a > 0 ? (t - line.t + a) / a : 1, r > 0 ? (line.tEnd - t + r) / r : 1);
+  } else if (style === "pop") {
+    const onset = line.words?.length ? [...line.words].reverse().find((w) => t >= w.t)?.t ?? line.t : line.t;
+    alpha = 0.45 + 0.55 * Math.exp(-(t - onset) / 0.28);
+  } else if (style === "pulse") {
+    const i = Math.round(t * 30);
+    alpha = 0.35 + 0.65 * (previewDrive?.frames[i]?.bass ?? 0);
+  }
+  lyricOverlay.style.opacity = String(Math.max(0, Math.min(1, alpha)));
+  lyricOverlay.className = `lyricoverlay ${anchor} ${color}`;
+  lyricOverlay.hidden = false;
 }
 /** Bind the scene-kit glTF export when the linked folder has one; otherwise the placeholder stays. */
 async function loadPreviewRig(): Promise<void> {
