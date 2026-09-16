@@ -380,3 +380,15 @@ lyrics in the 3D preview, and the macro, stack and concrete scenes. Open from th
 grid-advected haze (04), Desk Set and Liquid, automation lanes as control signals. A `Mid` binding is free to add:
 `frames[].mid` is already in drive.json and the PMC55 waveguide sits at scene
 (x 0.045, z 0.0) on the Cabinet.
+
+## Sharing stills for review
+
+Renders never go in git (`out/`, `frames/` are ignored) — but a few small review stills can:
+
+```
+node scripts/publish-looks.mjs                                   # every PNG in out/looksheet/
+node scripts/publish-looks.mjs --video out/<track>.mp4 --label "handoff pass 2"
+```
+
+Writes ≤ 1080 px JPEGs plus a `notes.md` into `looks/<date>-<label>/`, commits and pushes.
+Then, from any machine: "assess looks/<date>-<label>" against `blender/PHOTOREAL-HANDOFF.md`.
