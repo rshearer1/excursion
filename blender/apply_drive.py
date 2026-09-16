@@ -148,6 +148,28 @@ if mid_objs:
     print(f"mid domes: {len(mid_objs)}, {dome_source}")
 
 
+# the smoke's controls: Push, Drift, Time, Density, Haze. Grid smoke (build_scene SMOKE_GRID)
+# keeps them as geometry-nodes modifier inputs; the old shader smoke as Value nodes on
+# SmokeMat. One helper hides the difference for keying and for the mood's gains.
+def smoke_control(name):
+    """(id_data, data_path, get, set) for a smoke control, or None when there is no smoke."""
+    smoke_obj = bpy.data.objects.get("Smoke")
+    if smoke_obj is None:
+        return None
+    mod = smoke_obj.modifiers.get("Smoke")
+    if mod is not None and mod.node_group is not None:
+        ident = next(item.identifier for item in mod.node_group.interface.items_tree if item.item_type == "SOCKET" and item.name == name)
+        if hasattr(mod, "properties"):
+            slot = getattr(mod.properties.inputs, ident)
+            return smoke_obj, f'modifiers["Smoke"].properties.inputs.{ident}.value', (lambda: slot.value), (lambda v: setattr(slot, "value", v))
+        return smoke_obj, f'modifiers["Smoke"]["{ident}"]', (lambda: mod[ident]), (lambda v: mod.__setitem__(ident, v))
+    mat = bpy.data.materials.get("SmokeMat")
+    if mat is None or mat.node_tree is None or mat.node_tree.nodes.get(name) is None:
+        return None
+    sock = mat.node_tree.nodes[name].outputs[0]
+    return mat.node_tree, f'nodes["{name}"].outputs[0].default_value', (lambda: sock.default_value), (lambda v: setattr(sock, "default_value", v))
+
+
 # mood: blender/moods/<name>.json re-grades the scene at apply time (no rebuild) -------------
 # A mood is a palette, a cue list, a smoke setting and a grade. Every knob here reads the
 # JSON; anything the file leaves out keeps the scene's built-in value. drive.mood names it,
@@ -188,12 +210,10 @@ if "key" in mood:
 mood_light("Graze", gain=mood.get("graze_gain"))
 mood_light("DustBack", gain=mood.get("dust_back_gain"))
 smoke_cfg = mood.get("smoke", {})
-_smoke_mat = bpy.data.materials.get("SmokeMat")
-if _smoke_mat is not None and _smoke_mat.node_tree is not None:
-    for node_name, key in (("Density", "density_gain"), ("Haze", "haze_gain")):
-        node = _smoke_mat.node_tree.nodes.get(node_name)
-        if node is not None and key in smoke_cfg:
-            node.outputs[0].default_value *= smoke_cfg[key]
+for ctrl_name, key in (("Density", "density_gain"), ("Haze", "haze_gain")):
+    ctrl = smoke_control(ctrl_name)
+    if ctrl is not None and key in smoke_cfg:
+        ctrl[3](ctrl[2]() * smoke_cfg[key])
 _scope = bpy.data.materials.get("ScopeMat")
 if _scope is not None and _scope.node_tree is not None and mood.get("cues"):
     _scope.node_tree.nodes["Principled BSDF"].inputs["Emission Color"].default_value = (*mood["cues"][0]["trace"], 1.0)
@@ -252,8 +272,7 @@ if routing and channels:
 
 # smoke: kicks shove it out of the woofers, bass keeps the cloud drifting ----
 smoke = bpy.data.objects.get("Smoke")
-smoke_mat = bpy.data.materials.get("SmokeMat")
-if smoke is not None and smoke_mat is not None:
+if smoke is not None and smoke_control("Density") is not None:
     smoke.hide_render = not smoke_cfg.get("show", True)
     if smoke.hide_render:
         print(f"smoke: hidden for mood {mood['name']!r}")
@@ -271,17 +290,13 @@ if smoke is not None and smoke_mat is not None:
             push.append(env)
             drift.append(total)
             prev = b
-        nt = smoke_mat.node_tree
         # breaks thin the smoke, a drop thickens it and it settles back over ~4 s
-        base_density = nt.nodes["Density"].outputs[0].default_value
-        fcurve_fill(
-            nt,
-            'nodes["Density"].outputs[0].default_value',
-            [base_density * (0.5 if in_break[i] else 1.0) * (1.0 + 0.8 * drop_pulse(i, 4.0)) for i in range(len(frames))],
-        )
-        fcurve_fill(nt, 'nodes["Push"].outputs[0].default_value', push)
-        fcurve_fill(nt, 'nodes["Drift"].outputs[0].default_value', drift)
-        fcurve_fill(nt, 'nodes["Time"].outputs[0].default_value', [i / fps for i in range(len(frames))])
+        dens = smoke_control("Density")
+        base_density = dens[2]()
+        fcurve_fill(dens[0], dens[1], [base_density * (0.5 if in_break[i] else 1.0) * (1.0 + 0.8 * drop_pulse(i, 4.0)) for i in range(len(frames))])
+        for ctrl_name, values in (("Push", push), ("Drift", drift), ("Time", [i / fps for i in range(len(frames))])):
+            ctrl = smoke_control(ctrl_name)
+            fcurve_fill(ctrl[0], ctrl[1], values)
         print(f"smoke: drifts {total:.2f} m over the track")
 
 # dust rides the smoke's drift, streams and puffs with the woofers' air, hides with it --

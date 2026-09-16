@@ -2155,10 +2155,147 @@ def build_smoke(front, wx, wz_mid, wz_half):
     return smoke
 
 
+
+
+# the smoke as a volume grid (Blender 5 geometry nodes), not a procedural shader ----------
+# Profiling on 16 Sep 2026: the shader version cost 12 of a frame's 17 s, because Cycles
+# evaluated the whole node graph at every ray-march step. The same field sampled once per
+# frame into a Volume Cube renders as a NanoVDB grid in a fraction of that. Same inputs
+# (Push, Drift, Time, Density, Haze), same look; apply_drive keys the modifier's inputs.
+SMOKE_GRID = True
+SMOKE_VOXEL = 0.022  # metres; 2.6 x 2.4 x 2.7 m at 2.2 cm is about 1.6 M voxels
+
+
+def build_smoke_grid(front, wx, wz_mid, wz_half):
+    lo = (rig_x0 - 1.3, -1.7, floor_z)
+    hi = (rig_x1 + 1.3, 0.7, top_z + 1.4)
+    size = tuple(h - l for l, h in zip(lo, hi))
+    mesh = bpy.data.meshes.new("Smoke")
+    smoke = new_object("Smoke", mesh)
+    smoke.location = (0, 0, 0)
+    ng = bpy.data.node_groups.new("SmokeGrid", "GeometryNodeTree")
+    ng.interface.new_socket("Geometry", in_out="OUTPUT", socket_type="NodeSocketGeometry")
+    for name, default in (("Push", 0.0), ("Drift", 0.0), ("Time", 0.0), ("Density", SMOKE_DENSITY), ("Haze", SMOKE_HAZE)):
+        sock = ng.interface.new_socket(name, in_out="INPUT", socket_type="NodeSocketFloat")
+        sock.default_value = default
+    N, L = ng.nodes, ng.links
+    gin = N.new("NodeGroupInput")
+    gout = N.new("NodeGroupOutput")
+
+    def math_node(op, a, b=None):
+        n = N.new("ShaderNodeMath")
+        n.operation = op
+        for i, v in enumerate((a, b)):
+            if v is None:
+                continue
+            if isinstance(v, (int, float)):
+                n.inputs[i].default_value = v
+            else:
+                L.new(v, n.inputs[i])
+        return n.outputs[0]
+
+    def map_range(v, fmin, fmax, tmin, tmax):
+        n = N.new("ShaderNodeMapRange")
+        n.interpolation_type = "SMOOTHSTEP"
+        n.clamp = True
+        L.new(v, n.inputs["Value"])
+        for key, val in (("From Min", fmin), ("From Max", fmax), ("To Min", tmin), ("To Max", tmax)):
+            n.inputs[key].default_value = val
+        return n.outputs["Result"]
+
+    push, drift, time = gin.outputs["Push"], gin.outputs["Drift"], gin.outputs["Time"]
+    base, haze = gin.outputs["Density"], gin.outputs["Haze"]
+    pos = N.new("GeometryNodeInputPosition").outputs["Position"]
+    sep = N.new("ShaderNodeSeparateXYZ")
+    L.new(pos, sep.inputs[0])
+    px, py, pz = sep.outputs[0], sep.outputs[1], sep.outputs[2]
+
+    # jet mask: 1 on the woofer axes just in front of the baffle, 0 away from them
+    dx = math_node("SUBTRACT", px, wx)
+    dz = math_node("SUBTRACT", math_node("ABSOLUTE", math_node("SUBTRACT", pz, wz_mid)), wz_half)
+    r = math_node("SQRT", math_node("ADD", math_node("MULTIPLY", dx, dx), math_node("MULTIPLY", dz, dz)))
+    radial = map_range(r, 0.03, 0.17, 1.0, 0.0)
+    ahead = math_node("SUBTRACT", front, py)
+    axial = math_node("MULTIPLY", map_range(ahead, -0.02, 0.01, 0.0, 1.0), map_range(ahead, 0.05, 0.75, 1.0, 0.0))
+    jet = math_node("MULTIPLY", radial, axial)
+    kick = math_node("MULTIPLY", push, jet)
+
+    # the noise is sampled at a shifted point: +y slides the pattern toward the camera (-y)
+    shove = math_node("ADD", drift, math_node("MULTIPLY", kick, 0.09))
+    comb = N.new("ShaderNodeCombineXYZ")
+    L.new(shove, comb.inputs["Y"])
+    coord = N.new("ShaderNodeVectorMath")
+    coord.operation = "ADD"
+    L.new(pos, coord.inputs[0])
+    L.new(comb.outputs[0], coord.inputs[1])
+
+    noise = N.new("ShaderNodeTexNoise")
+    noise.noise_dimensions = "4D"
+    noise.inputs["Scale"].default_value = 2.4
+    noise.inputs["Detail"].default_value = 6.0
+    noise.inputs["Roughness"].default_value = 0.58
+    noise.inputs["Distortion"].default_value = 0.35
+    L.new(coord.outputs[0], noise.inputs["Vector"])
+    L.new(math_node("MULTIPLY", time, 0.07), noise.inputs["W"])
+    wisps = map_range(noise.outputs["Fac"], 0.5, 0.85, 0.0, 1.0)
+    clumps = N.new("ShaderNodeTexNoise")
+    clumps.noise_dimensions = "4D"
+    clumps.inputs["Scale"].default_value = 0.9
+    clumps.inputs["Detail"].default_value = 1.0
+    L.new(coord.outputs[0], clumps.inputs["Vector"])
+    L.new(math_node("MULTIPLY", time, 0.03), clumps.inputs["W"])
+    wisps = math_node("MULTIPLY", wisps, map_range(clumps.outputs["Fac"], 0.42, 0.62, 0.0, 1.0))
+
+    # fade to nothing at the box walls so the domain never reads as a shape (generated coords)
+    gen_x = math_node("DIVIDE", math_node("SUBTRACT", px, lo[0]), size[0])
+    gen_y = math_node("DIVIDE", math_node("SUBTRACT", py, lo[1]), size[1])
+    gen_z = math_node("DIVIDE", math_node("SUBTRACT", pz, lo[2]), size[2])
+    wall = gen_x
+    for g in (gen_y, gen_z):
+        wall = math_node("MINIMUM", wall, g)
+    for g in (gen_x, gen_y, gen_z):
+        wall = math_node("MINIMUM", wall, math_node("SUBTRACT", 1.0, g))
+    fade = map_range(wall, 0.0, 0.2, 0.0, 1.0)
+
+    thickness = math_node("MULTIPLY", base, math_node("ADD", 1.0, math_node("MULTIPLY", kick, 2.0)))
+    floor_fog = math_node("ADD", 1.0, math_node("MULTIPLY", SMOKE_FLOOR_FOG, math_node("POWER", math_node("SUBTRACT", 1.0, gen_z), 3.0)))
+    density = math_node("ADD", math_node("MULTIPLY", math_node("MULTIPLY", wisps, fade), thickness), math_node("MULTIPLY", math_node("MULTIPLY", fade, haze), floor_fog))
+
+    cube = N.new("GeometryNodeVolumeCube")
+    L.new(density, cube.inputs["Density"])
+    cube.inputs["Background"].default_value = 0.0
+    cube.inputs["Min"].default_value = lo
+    cube.inputs["Max"].default_value = hi
+    for axis, key in enumerate(("Resolution X", "Resolution Y", "Resolution Z")):
+        cube.inputs[key].default_value = max(8, int(round(size[axis] / SMOKE_VOXEL)))
+    # the material goes on in the tree, so the volume it makes carries it
+    setmat = N.new("GeometryNodeSetMaterial")
+    m = bpy.data.materials.new("SmokeMat")
+    m.use_nodes = True
+    mn = m.node_tree.nodes
+    mn.remove(mn["Principled BSDF"])
+    vol = mn.new("ShaderNodeVolumePrincipled")
+    vol.inputs["Color"].default_value = (0.8, 0.8, 0.82, 1)
+    vol.inputs["Density"].default_value = 1.0  # times the grid's density attribute
+    vol.inputs["Anisotropy"].default_value = 0.45
+    m.node_tree.links.new(vol.outputs["Volume"], mn["Material Output"].inputs["Volume"])
+    setmat.inputs["Material"].default_value = m
+    L.new(cube.outputs["Volume"], setmat.inputs["Geometry"])
+    L.new(setmat.outputs["Geometry"], gout.inputs["Geometry"])
+    mod = smoke.modifiers.new("Smoke", "NODES")
+    mod.node_group = ng
+    res = tuple(cube.inputs[k].default_value for k in ("Resolution X", "Resolution Y", "Resolution Z"))
+    print(f"smoke: volume grid {res[0]}x{res[1]}x{res[2]} voxels at {SMOKE_VOXEL * 100:.1f} cm")
+    return smoke
+
+
 SMOKE_DENSITY = 0.35  # a big room now; beams need haze, not fog
 SMOKE_HAZE = 0.03 if MOODY else 0.16  # even haze under the clumps: what beams and lasers are drawn in
 SMOKE_FLOOR_FOG = 1.5  # extra haze pooling on the floor (times haze at the floor, fading up)
-build_smoke(front_y, woofer_x, woofer_z_mid, woofer_z_half)
+if SMOKE_GRID:
+    build_smoke_grid(front_y, woofer_x, woofer_z_mid, woofer_z_half)
+else:
+    build_smoke(front_y, woofer_x, woofer_z_mid, woofer_z_half)
 
 
 # pressure-wave shells (phase 04): a pool of spheres apply_drive expands from the woofers on

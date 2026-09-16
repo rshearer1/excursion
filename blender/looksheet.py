@@ -45,6 +45,13 @@ def set_light(name, energy=None, color=None, radius=None):
 
 
 def haze(mult):
+    smoke = bpy.data.objects.get("Smoke")
+    mod = smoke.modifiers.get("Smoke") if smoke else None
+    if mod is not None and mod.node_group is not None:  # grid smoke: a modifier input
+        ident = next(i.identifier for i in mod.node_group.interface.items_tree if i.item_type == "SOCKET" and i.name == "Haze")
+        slot = getattr(mod.properties.inputs, ident)
+        slot.value *= mult
+        return
     nt = bpy.data.materials["SmokeMat"].node_tree
     node = nt.nodes.get("Haze")
     if node is not None:
