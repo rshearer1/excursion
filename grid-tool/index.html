@@ -156,6 +156,21 @@
     .lyriclist button { padding: 4px 7px; font-size: 11px; }
     .lyriclist .live { outline: 1px solid var(--orange); }
 
+    /* the desk */
+    .desk { display: grid; gap: 6px; margin-top: 6px; }
+    .lane { display: grid; grid-template-columns: 78px 1fr; gap: 6px 10px; align-items: center; padding: 6px 8px; background: var(--panel2); border: 1px solid var(--line); border-radius: 4px; }
+    .lane .name { font: 10px var(--mono); letter-spacing: 0.16em; text-transform: uppercase; color: var(--muted); }
+    .lane .name b { display: block; width: 10px; height: 10px; border-radius: 2px; margin-bottom: 4px; }
+    .lane .faders { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+    .lane .faders label { text-transform: none; letter-spacing: 0; }
+    .lane input[type="range"] { width: 110px; accent-color: var(--orange); }
+    .lane input[type="color"] { width: 34px; height: 24px; padding: 0; border: 1px solid var(--line); background: var(--panel2); border-radius: 4px; }
+    .lane input[type="number"] { width: 62px; padding: 5px 8px; font-size: 11.5px; }
+    .lane .cues { grid-column: 2; display: flex; gap: 6px; flex-wrap: wrap; }
+    .lane .cue { font: 11px var(--mono); color: var(--text); background: var(--panel); border: 1px solid var(--line); border-radius: 999px; padding: 2px 8px; cursor: pointer; }
+    .lane .cue:hover { border-color: #e06c60; }
+    .lane .cue i { color: var(--muted); font-style: normal; margin-right: 6px; }
+
     #status { font: 11px var(--mono); color: var(--muted); min-height: 18px; margin-top: 10px; }
     #status.err { color: #e06c60; }
     .hints { color: var(--muted); font-size: 11.5px; margin-top: 10px; line-height: 1.8; }
@@ -286,6 +301,16 @@
       </div>
     </details>
 
+    <details class="adv" id="showBox">
+      <summary>show</summary>
+      <div class="lyricbar">
+        <button id="showFromMood" title="fill the lanes from the selected mood's cues, on this track's downbeats">Lanes from mood</button>
+        <button id="showClear">Clear lanes</button>
+        <span class="drophint" id="showHint">no cues — the mood runs the lights</span>
+      </div>
+      <div class="desk" id="desk"></div>
+    </details>
+
     <details class="adv" id="lyricsBox">
       <summary>lyrics</summary>
       <div class="lyricbar">
@@ -314,7 +339,8 @@
       Orange lines are downbeats, cyan are beats. The grid is right when the clicks disappear into the drums.<br />
       <b>3D</b> shows the scene live from the same drive data: cones pump on bass, the slate flashes on beats, cuts alternate cameras, dust drifts and gets shoved on each stroke.<br />
       <b>Render</b> sends the track and the drive to Blender on this machine and plays the reel here when it lands; <b>test</b> is the 10-second look check, <b>final</b> is the post.<br />
-      <b>Lyrics</b>: paste lines, then <kbd>enter</kbd> on each as it is sung (or import an .lrc). Lines show on the beat lane; in the render they are glowing text on the scene's anchors and light the room.
+      <b>Lyrics</b>: paste lines, then <kbd>enter</kbd> on each as it is sung (or import an .lrc). Lines show on the beat lane; in the render they are glowing text on the scene's anchors and light the room.<br />
+      <b>Show</b> is the lighting desk: a lane per thing (camera, key, rims, wall, dust back, smoke, shells). Set the faders, press <b>Cue</b> to write a cue at the playhead; cues hold and crossfade. A lane with cues overrides the mood; click a cue's dot on the beat lane or its chip to delete it. The 3D preview follows the key and rim gains.
     </div>
   </div>
   <script type="module" src="/src/main.ts"></script>

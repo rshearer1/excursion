@@ -13,6 +13,7 @@ import { computeCuts } from "./engine/cuts";
 import { detectHits, type Hits } from "./engine/hits";
 import { inflateAls, parseAls } from "./engine/ableton";
 import { stemChannel, stemNameOf, wooferStem } from "./engine/stems";
+import { LANE_DEFAULTS, LANE_INFO, cueCount, laneAt, lanesFromMood, setCue, type CueValue, type LaneName, type Rgb, type Show } from "./engine/show";
 import { envelopeFollow } from "./engine/envelope";
 import { autoGain } from "./engine/autogain";
 import type { FrameFeatures } from "./engine/features";
@@ -66,6 +67,11 @@ const hitsChk = $<HTMLInputElement>("hitsChk");
 const alsFile = $<HTMLInputElement>("alsFile");
 const stemBtn = $<HTMLButtonElement>("stemBtn");
 const stemsFiles = $<HTMLInputElement>("stemsFiles");
+const showBox = $<HTMLDetailsElement>("showBox");
+const showFromMoodBtn = $<HTMLButtonElement>("showFromMood");
+const showClearBtn = $<HTMLButtonElement>("showClear");
+const showHint = $<HTMLSpanElement>("showHint");
+const deskEl = $<HTMLDivElement>("desk");
 const previewChk = $<HTMLInputElement>("preview3d");
 const previewCanvas = $<HTMLCanvasElement>("preview");
 const previewWrap = $<HTMLDivElement>("previewWrap");
@@ -143,6 +149,8 @@ let markers: { t: number; kind: "drop" | "break" }[] = [];
 let lyrics: Lyrics = structuredClone(DEFAULT_LYRICS);
 let hits: Hits | null = null; // tracked kicks and snares, edited in the audit lane
 let stems = new Map<string, { mono: Float32Array; sampleRate: number }>(); // loaded stem files by channel name (this session only)
+let show: Show = { lanes: {} }; // the desk's cue lanes (phase 12)
+const faders: Partial<Record<LaneName, CueValue>> = {}; // the programmer: what Cue writes
 let driveCache: FrameFeatures | null = null; // 30fps features for the overlay
 let overlayBass: Float32Array | null = null;
 let overlayOnsets: number[] = [];
@@ -181,6 +189,7 @@ interface Saved {
   leadMs: number;
   lyrics?: Lyrics;
   hits?: Hits | null;
+  show?: Show;
 }
 const storeKey = (sha1: string): string => `excursion:grid:${sha1}`;
 function saveState(): void {
@@ -203,6 +212,7 @@ function saveState(): void {
     leadMs: Number(leadInput.value) || 0,
     lyrics,
     hits,
+    show,
   };
   try {
     localStorage.setItem(storeKey(track.sha1), JSON.stringify(saved));
@@ -228,6 +238,8 @@ function loadState(sha1: string): boolean {
     syncLyricControls();
     hits = s.hits ?? null;
     hitsChk.checked = hits !== null;
+    show = s.show ?? { lanes: {} };
+    renderDesk();
     if (s.fps) fpsSel.value = String(s.fps);
     if (s.leadMs !== undefined) leadInput.value = String(s.leadMs);
     syncControls();
@@ -294,6 +306,8 @@ function adoptTrack(name: string, sha1: string, buffer: AudioBuffer, file: File 
   hits = null;
   hitsChk.checked = false;
   stems = new Map();
+  show = { lanes: {} };
+  renderDesk();
   trackNameEl.textContent = `${name} — ${buffer.duration.toFixed(2)}s @ ${buffer.sampleRate}Hz`;
   playBtn.disabled = false;
   exportBtn.disabled = false;
@@ -560,6 +574,19 @@ function drawZoom(): void {
     zmCtx.fillText(m.kind === "drop" ? "D" : "B", x + 6, H - 20);
   }
 
+  // the desk's cues: a thin row per lane across the top, a dot per cue
+  LANE_INFO.forEach((info, row) => {
+    const cues = show.lanes[info.name];
+    if (!cues?.length) return;
+    const y = 14 + row * 9;
+    zmCtx.fillStyle = LANE_COLORS[info.name];
+    for (const c of cues) {
+      const x = xOf(c.t);
+      if (x < -6 || x > W + 6) continue;
+      zmCtx.fillRect(x - 3, y, 7, 7);
+    }
+  });
+
   // hit audit lane: kicks (orange) and snares (cyan), tick height = confidence
   if (hits) {
     const row = (list: Hits["kick"], color: string, y: number): void => {
@@ -641,8 +668,12 @@ function tickPreview(): void {
   const now = performance.now();
   const dt = playing && previewLastTs ? (now - previewLastTs) / 1000 : 0;
   previewLastTs = now;
-  preview.render(rigStateAt(previewDrive, songTime()), dt);
-  tickLyricOverlay(songTime());
+  const t = songTime();
+  const state = rigStateAt(previewDrive, t);
+  const keyV = laneAt(show.lanes.key, t, LANE_DEFAULTS.key) as { gain: number };
+  const rimV = laneAt(show.lanes.rims, t, LANE_DEFAULTS.rims) as { gain: number };
+  preview.render({ ...state, key: state.key * keyV.gain, rim: state.rim * rimV.gain }, dt);
+  tickLyricOverlay(t);
 }
 
 /** The live lyric line over the viewport: anchor picks the position, style picks the reveal. */
@@ -746,6 +777,7 @@ function buildCurrentDrive(
     lyrics: exportLyrics(lyrics),
     ...(hits ? { hits } : {}),
     ...(stems.size ? { channels: Object.fromEntries([...stems].map(([name, s]) => [name, stemChannel(s.mono, s.sampleRate, fps)])) } : {}),
+    show,
   });
 }
 
@@ -898,6 +930,168 @@ hitsChk.addEventListener("change", () => {
     draw();
   }
 });
+
+// ---------- the show (phase 12) ----------
+// A lighting desk over the drive: lanes of cues the render follows. The faders are the
+// programmer; Cue writes their values at the playhead. Colours are edited in sRGB and stored
+// linear, the way Blender wants them.
+const LANE_COLORS: Record<LaneName, string> = { camera: "#e8ebe6", key: "#f0c060", rims: "#e06c60", wall: "#86adea", dustback: "#c9a3ff", smoke: "#9198a0", shells: "#8fd9c0" };
+const SCENE_CAMERAS: Record<string, string[]> = {
+  void: ["Cam1_Wide", "Cam2_Woofers", "Cam7_Top", "Cam3_Macro", "Cam6_Side"],
+  macro: ["Cam8_Cone", "Cam2_Woofers", "Cam3_Macro"],
+  stack: ["Cam1_Wide", "Cam2_Woofers", "Cam7_Top", "Cam3_Macro", "Cam6_Side"],
+  concrete: ["Cam1_Wide", "Cam2_Woofers", "Cam7_Top", "Cam3_Macro", "Cam6_Side"],
+};
+const toHex = (c: Rgb): string => "#" + c.map((v) => Math.round(Math.pow(Math.max(0, Math.min(1, v)), 1 / 2.2) * 255).toString(16).padStart(2, "0")).join("");
+const fromHex = (h: string): Rgb => [1, 3, 5].map((i) => Math.pow(parseInt(h.slice(i, i + 2), 16) / 255, 2.2)) as Rgb;
+const cueSummary = (name: LaneName, v: CueValue): string => {
+  if ("camera" in v) return v.camera;
+  if ("trace" in v) return toHex(v.trace);
+  if ("density" in v) return `d${v.density.toFixed(2)} h${v.haze.toFixed(2)}`;
+  if ("strength" in v) return `${v.strength.toFixed(2)}`;
+  if ("color" in v) return `${v.gain.toFixed(2)} ${toHex(v.color)}`;
+  return `${(v as { gain: number }).gain.toFixed(2)}`;
+};
+
+function showChanged(): void {
+  saveState();
+  renderDesk();
+  draw();
+}
+
+function faderValue(name: LaneName): CueValue {
+  return faders[name] ?? structuredClone(LANE_DEFAULTS[name]);
+}
+
+function renderDesk(): void {
+  const n = cueCount(show.lanes);
+  showHint.textContent = n ? `${n} cues — lanes with cues override the mood` : "no cues — the mood runs the lights";
+  if (n) showBox.open = true;
+  deskEl.replaceChildren(
+    ...LANE_INFO.map((info) => {
+      const lane = document.createElement("div");
+      lane.className = "lane";
+      lane.title = info.hint;
+      const name = document.createElement("span");
+      name.className = "name";
+      const dot = document.createElement("b");
+      dot.style.background = LANE_COLORS[info.name];
+      name.append(dot, info.label);
+      const fadersEl = document.createElement("div");
+      fadersEl.className = "faders";
+      const v = faderValue(info.name) as Record<string, unknown>;
+      const num = (key: string, min: number, max: number, step: number): HTMLLabelElement => {
+        const l = document.createElement("label");
+        const r = document.createElement("input");
+        r.type = "range";
+        r.min = String(min);
+        r.max = String(max);
+        r.step = String(step);
+        r.value = String(v[key] ?? 1);
+        const out = document.createElement("span");
+        out.textContent = Number(r.value).toFixed(2);
+        r.addEventListener("input", () => {
+          (faders[info.name] = faderValue(info.name) as CueValue);
+          (faders[info.name] as unknown as Record<string, unknown>)[key] = Number(r.value);
+          out.textContent = Number(r.value).toFixed(2);
+        });
+        l.append(`${key} `, r, out);
+        return l;
+      };
+      const col = (key: string): HTMLLabelElement => {
+        const l = document.createElement("label");
+        const c = document.createElement("input");
+        c.type = "color";
+        c.value = toHex((v[key] as Rgb) ?? [1, 1, 1]);
+        c.addEventListener("input", () => {
+          faders[info.name] = faderValue(info.name);
+          (faders[info.name] as unknown as Record<string, unknown>)[key] = fromHex(c.value);
+        });
+        l.append(`${key} `, c);
+        return l;
+      };
+      if (info.name === "camera") {
+        const l = document.createElement("label");
+        const sel = document.createElement("select");
+        fillSelect(sel, (SCENE_CAMERAS[sceneSel.value] ?? SCENE_CAMERAS["void"]!).map((c) => ({ value: c, label: c })), (v["camera"] as string) ?? "Cam1_Wide");
+        sel.addEventListener("change", () => (faders.camera = { camera: sel.value }));
+        l.append("camera ", sel);
+        fadersEl.append(l);
+      } else if (info.name === "key" || info.name === "rims") {
+        fadersEl.append(num("gain", 0, 2.5, 0.05), col("color"));
+      } else if (info.name === "wall") {
+        fadersEl.append(col("trace"));
+      } else if (info.name === "dustback") {
+        fadersEl.append(num("gain", 0, 3, 0.05));
+      } else if (info.name === "smoke") {
+        fadersEl.append(num("density", 0, 3, 0.05), num("haze", 0, 3, 0.05));
+      } else {
+        fadersEl.append(num("strength", 0, 1, 0.05));
+      }
+      const fadeL = document.createElement("label");
+      const fade = document.createElement("input");
+      fade.type = "number";
+      fade.min = "0";
+      fade.max = "10";
+      fade.step = "0.05";
+      fade.value = info.name === "camera" ? "0" : "0.25";
+      fade.title = "crossfade in, seconds";
+      fadeL.append("fade ", fade);
+      const cueBtn = document.createElement("button");
+      cueBtn.textContent = "Cue";
+      cueBtn.title = "write these values as a cue at the playhead";
+      cueBtn.disabled = !track;
+      cueBtn.addEventListener("click", () => {
+        show.lanes[info.name] = setCue(show.lanes[info.name], { t: Math.round(songTime() * 1000) / 1000, value: structuredClone(faderValue(info.name)), fade: Number(fade.value) || 0 });
+        showChanged();
+        status(`${info.label} cue at ${fmtTime(songTime())}.`);
+      });
+      fadersEl.append(fadeL, cueBtn);
+      const cuesEl = document.createElement("div");
+      cuesEl.className = "cues";
+      for (const c of [...(show.lanes[info.name] ?? [])].sort((a, b) => a.t - b.t)) {
+        const chip = document.createElement("span");
+        chip.className = "cue";
+        chip.innerHTML = `<i>${fmtTime(c.t)}</i>${cueSummary(info.name, c.value)}`;
+        chip.title = "click: seek here · shift-click: delete";
+        chip.addEventListener("click", (e) => {
+          if (e.shiftKey) {
+            show.lanes[info.name] = (show.lanes[info.name] ?? []).filter((x) => x !== c);
+            showChanged();
+          } else seek(c.t);
+        });
+        cuesEl.append(chip);
+      }
+      lane.append(name, fadersEl, cuesEl);
+      return lane;
+    }),
+  );
+}
+
+showFromMoodBtn.addEventListener("click", async () => {
+  if (!track) return;
+  try {
+    const res = await fetch(`/api/moods/${encodeURIComponent(moodSel.value)}`);
+    if (!res.ok) throw new Error(`no mood file for ${moodSel.value} (is npm run dev running?)`);
+    const mood = (await res.json()) as Parameters<typeof lanesFromMood>[0];
+    const downbeats = beatTimes(grid, track.buffer.duration).filter((b) => b.downbeat).map((b) => b.t);
+    show = { lanes: lanesFromMood(mood, downbeats, Number(fpsSel.value) || 30) };
+    for (const info of LANE_INFO) {
+      const first = show.lanes[info.name]?.[0];
+      if (first) faders[info.name] = structuredClone(first.value);
+    }
+    showChanged();
+    status(`Lanes filled from the ${moodSel.value} mood: ${cueCount(show.lanes)} cues on the downbeats. Edit, then Render.`);
+  } catch (e) {
+    status(`Lanes from mood: ${e instanceof Error ? e.message : String(e)}`, true);
+  }
+});
+showClearBtn.addEventListener("click", () => {
+  show = { lanes: {} };
+  showChanged();
+});
+sceneSel.addEventListener("change", renderDesk);
+renderDesk();
 
 // ---------- lyrics (phase 10) ----------
 function fillSelect(sel: HTMLSelectElement, values: { value: string; label: string; title?: string }[], keep?: string): void {
@@ -1286,6 +1480,21 @@ zoomCanvas.addEventListener("click", (e) => {
   const { start, dur } = zoomWindow();
   const t = start + ((e.clientX - rect.left) / rect.width) * dur;
   const tolerance = (6 / rect.width) * dur; // ~6 css px
+  {
+    const rowY = ((e.clientY - rect.top) / rect.height) * zoomCanvas.height;
+    const row = Math.floor((rowY - 14) / 9);
+    const info = rowY >= 12 && row >= 0 ? LANE_INFO[row] : undefined;
+    const cues = info ? show.lanes[info.name] : undefined;
+    if (info && cues) {
+      const idx = cues.findIndex((c) => Math.abs(c.t - t) < tolerance);
+      if (idx >= 0) {
+        cues.splice(idx, 1);
+        showChanged();
+        status(`Deleted ${info.label} cue.`);
+        return;
+      }
+    }
+  }
   if (hits) {
     const y = e.clientY - rect.top;
     const rowY = (y / rect.height) * zoomCanvas.height;
@@ -1483,6 +1692,7 @@ status("Drop a track anywhere, or load the demo.");
 
 // deep link: ?demo loads the demo track, ?demo&3d also switches the preview on
 const params = new URLSearchParams(location.search);
+if (params.has("desk")) showBox.open = true; // deep link: open the desk
 if (params.has("demo")) {
   void loadDemo().then(() => {
     if (params.has("3d")) {

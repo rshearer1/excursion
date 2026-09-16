@@ -251,6 +251,63 @@ if comp_tree is not None and grade:
 print(f"mood: {mood['name']} — {mood.get('description', 'built-in look')}")
 
 
+
+# the show (phase 12): drive.show.lanes is the grid tool's lighting desk — cue lists per lane.
+# A cue's value holds until the next cue and crossfades in over its fade (seconds). A lane
+# that exists overrides the mood's own cues for that thing; a missing lane leaves the mood in
+# charge, so old drives render exactly as before.
+#   camera    {"camera": name}                 which camera from this cue on (replaces the cuts)
+#   key       {"gain", "color"}                the softbox
+#   rims      {"gain", "color"}                RimLeft/RimRight/TopBack and the uplights
+#   wall      {"trace": rgb}                   the LED wall's trace colour
+#   dustback  {"gain"}                         the dust backlight
+#   smoke     {"density", "haze"}              gains on the mood's smoke
+#   shells    {"strength"}                     pressure waves (0 = none)
+show_lanes = (data.get("show") or {}).get("lanes") or {}
+SHOW_DEFAULT_FADE = 0.25
+
+
+def _blend_cue(a, b, k):
+    out = dict(b)
+    for key, bv in b.items():
+        av = a.get(key) if isinstance(a, dict) else None
+        if isinstance(bv, (int, float)) and isinstance(av, (int, float)):
+            out[key] = av + (bv - av) * k
+        elif isinstance(bv, (list, tuple)) and isinstance(av, (list, tuple)) and len(av) == len(bv):
+            out[key] = [x + (y - x) * k for x, y in zip(av, bv)]
+    return out
+
+
+def lane_series(name, fallback):
+    """The lane's value for every frame (a list of dicts), or None when the show has no such lane."""
+    cues = show_lanes.get(name)
+    if not cues:
+        return None
+    cues = sorted(cues, key=lambda c: c["t"])
+    out = []
+    idx = -1
+    for i in range(len(frames)):
+        t = i / fps
+        while idx + 1 < len(cues) and cues[idx + 1]["t"] <= t:
+            idx += 1
+        if idx < 0:
+            out.append(dict(fallback))
+            continue
+        cur = cues[idx]
+        prev = cues[idx - 1]["value"] if idx > 0 else fallback
+        fade = cur.get("fade", SHOW_DEFAULT_FADE)
+        if "camera" in cur["value"] or fade <= 0:
+            out.append(dict(cur["value"]))
+            continue
+        k = min(1.0, (t - cur["t"]) / fade)
+        out.append(dict(cur["value"]) if k >= 1 else _blend_cue(prev, cur["value"], k))
+    return out
+
+
+if show_lanes:
+    print(f"show: lanes {', '.join(f'{k} ({len(v)})' for k, v in show_lanes.items() if v)}")
+
+
 # routing (phase 08): a mood names which drive.channels (per-stem envelopes) drive what;
 # without stems, or without a named channel, the mix's bass band does the job as before.
 channels = data.get("channels") or {}
@@ -293,7 +350,13 @@ if smoke is not None and smoke_control("Density") is not None:
         # breaks thin the smoke, a drop thickens it and it settles back over ~4 s
         dens = smoke_control("Density")
         base_density = dens[2]()
-        fcurve_fill(dens[0], dens[1], [base_density * (0.5 if in_break[i] else 1.0) * (1.0 + 0.8 * drop_pulse(i, 4.0)) for i in range(len(frames))])
+        smoke_lane = lane_series("smoke", {"density": 1.0, "haze": 1.0})
+        dgain = [v.get("density", 1.0) for v in smoke_lane] if smoke_lane else [1.0] * len(frames)
+        fcurve_fill(dens[0], dens[1], [base_density * dgain[i] * (0.5 if in_break[i] else 1.0) * (1.0 + 0.8 * drop_pulse(i, 4.0)) for i in range(len(frames))])
+        if smoke_lane:
+            hz = smoke_control("Haze")
+            base_haze = hz[2]()
+            fcurve_fill(hz[0], hz[1], [base_haze * v.get("haze", 1.0) for v in smoke_lane])
         for ctrl_name, values in (("Push", push), ("Drift", drift), ("Time", [i / fps for i in range(len(frames))])):
             ctrl = smoke_control(ctrl_name)
             fcurve_fill(ctrl[0], ctrl[1], values)
@@ -388,7 +451,12 @@ for i, level in enumerate(routed("key", bass)):
 key_light = bpy.data.objects.get("KeyLight")
 if key_light is not None:
     base = key_light.data.energy
-    fcurve_fill(key_light.data, "energy", [base * (0.35 + 0.65 * v) for v in slow])
+    key_lane = lane_series("key", {"gain": 1.0, "color": list(key_light.data.color)})
+    kgain = [v.get("gain", 1.0) for v in key_lane] if key_lane else [1.0] * len(frames)
+    fcurve_fill(key_light.data, "energy", [base * kgain[i] * (0.35 + 0.65 * v) for i, v in enumerate(slow)])
+    if key_lane:
+        for axis in range(3):
+            fcurve_fill(key_light.data, "color", [v.get("color", list(key_light.data.color))[axis] for v in key_lane], index=axis)
 downbeat_pulse = beat_flash(0.0, 1.0, 0.8)
 rim_level = [0.6 + 0.7 * p + 0.5 * drop_pulse(i, 3.0) for i, p in enumerate(downbeat_pulse)]
 
@@ -439,8 +507,11 @@ def cue_mix(key, i):
 
 if True:  # one cue is still a cue: the rims take its colour and gain
     n_frames = len(frames)
-    rim_gain = [cue_mix("rim_gain", i) for i in range(n_frames)]
-    rim_col = [cue_mix("rim", i) for i in range(n_frames)]
+    rims_lane = lane_series("rims", {"gain": cue_mix("rim_gain", 0), "color": list(cue_mix("rim", 0))})
+    rim_gain = [v.get("gain", 1.0) for v in rims_lane] if rims_lane else [cue_mix("rim_gain", i) for i in range(n_frames)]
+    rim_col = [tuple(v.get("color", (1, 1, 1))) for v in rims_lane] if rims_lane else [cue_mix("rim", i) for i in range(n_frames)]
+    wall_lane = lane_series("wall", {"trace": list(cue_mix("trace", 0))})
+    back_lane = lane_series("dustback", {"gain": cue_mix("back_gain", 0)})
     for name in ("RimLeft", "RimRight", "TopBack"):
         light = bpy.data.objects.get(name)
         if light is not None:
@@ -457,10 +528,10 @@ if True:  # one cue is still a cue: the rims take its colour and gain
     back = bpy.data.objects.get("DustBack")
     if back is not None:
         base = back.data.energy
-        fcurve_fill(back.data, "energy", [base * cue_mix("back_gain", i) for i in range(n_frames)])
+        fcurve_fill(back.data, "energy", [base * (back_lane[i].get("gain", 1.0) if back_lane else cue_mix("back_gain", i)) for i in range(n_frames)])
     scope = bpy.data.materials.get("ScopeMat")
     if scope is not None and scope.node_tree is not None:
-        trace = [cue_mix("trace", i) for i in range(n_frames)]
+        trace = [tuple(wall_lane[i].get("trace", (1, 1, 1))) if wall_lane else cue_mix("trace", i) for i in range(n_frames)]
         for axis in range(3):
             fcurve_fill(scope.node_tree, 'nodes["Principled BSDF"].inputs["Emission Color"].default_value', [c[axis] for c in trace], index=axis)
     print(f"cues: {len(LOOK_CUES)} looks, one every {CUE_BARS} bars, {CUE_FADE}-frame crossfade")
@@ -667,6 +738,9 @@ SHELL_MIN_HIT = 0.12  # cone swing below this on the beat: no wave
 shells = [o for o in scene.objects if o.name.startswith("Shell_") and o.type == "MESH"]
 shell_cfg = mood.get("shells", {"show": True, "strength": 0.6})
 if shells:
+    shells_lane = lane_series("shells", {"strength": shell_cfg.get("strength", 0.6)})
+    if shells_lane:
+        shell_cfg = dict(shell_cfg, show=True, strength=max(v.get("strength", 0.0) for v in shells_lane))
     shell_on = shell_cfg.get("show", True) and shell_cfg.get("strength", 0.6) > 0
     for s in shells:
         s.hide_render = not shell_on
@@ -700,7 +774,8 @@ if shells:
                     break
                 u = j / life
                 scale[k][i] = SHELL_R0 + speed * (j / fps)
-                alpha[k][i] = max(alpha[k][i], shell_cfg.get("strength", 0.6) * min(1.0, hit * 2.0) * (1.0 - u) ** 1.5)
+                strength = shells_lane[i0].get("strength", 0.0) if shells_lane else shell_cfg.get("strength", 0.6)
+                alpha[k][i] = max(alpha[k][i], strength * min(1.0, hit * 2.0) * (1.0 - u) ** 1.5)
             k = (k + 1) % len(shells)
             emitted += 1
             last_wave = t
@@ -875,7 +950,27 @@ cameras = sorted((o for o in scene.objects if o.type == "CAMERA" and not o.get("
 # wide views, so no two similar shots sit next to each other
 SHOT_ORDER = ["Cam1_Wide", "Cam2_Woofers", "Cam8_Cone", "Cam7_Top", "Cam3_Macro", "Cam6_Side", "Cam4_Rig", "Cam5_Low"]
 shot_cams = [bpy.data.objects[n] for n in SHOT_ORDER if n in bpy.data.objects and not bpy.data.objects[n].get("unused")] or cameras
-if cuts and len(cameras) > 1:
+camera_cues = [c for c in sorted(show_lanes.get("camera") or [], key=lambda c: c["t"]) if c["value"].get("camera") in bpy.data.objects]
+if camera_cues and len(cameras) > 1:
+    # the desk's camera lane: each cue names the camera from its time on
+    n = 0
+    first = True
+    for c in camera_cues:
+        fr = max(scene.frame_start, round(c["t"] * fps) + 1)
+        if fr > scene.frame_end:
+            break
+        if first and fr > scene.frame_start:
+            # before the first cue the last camera named before the range holds, else the first cue's
+            before = [k for k in camera_cues if round(k["t"] * fps) + 1 < scene.frame_start]
+            opener = bpy.data.objects[(before[-1] if before else c)["value"]["camera"]]
+            scene.timeline_markers.new("cut_open", frame=scene.frame_start).camera = opener
+            n += 1
+        first = False
+        marker = scene.timeline_markers.new(f"cue{n}", frame=fr)
+        marker.camera = bpy.data.objects[c["value"]["camera"]]
+        n += 1
+    print(f"show: camera lane, {n} shots")
+elif cuts and len(cameras) > 1:
     cut_frames = sorted(fr for fr in ({scene.frame_start} | {round(t * fps) + 1 for t in cuts}) if scene.frame_start <= fr <= scene.frame_end)
     if len(cut_frames) > 1 and cut_frames[1] - cut_frames[0] < fps:
         cut_frames.pop(1)  # a cut within a second of the start would make the opening shot a flash

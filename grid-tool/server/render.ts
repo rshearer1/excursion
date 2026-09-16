@@ -318,6 +318,12 @@ export function renderHelper(): Plugin {
         if (!url.pathname.startsWith("/api/")) return next();
         try {
           if (req.method === "GET" && url.pathname === "/api/moods") return json(res, 200, listMoods());
+          if (req.method === "GET" && url.pathname.startsWith("/api/moods/")) {
+            const name = safeName(decodeURIComponent(url.pathname.slice("/api/moods/".length)));
+            const file = name ? path.join(moodsDir, `${name}.json`) : "";
+            if (!name || !existsSync(file)) return json(res, 404, { error: "no such mood" });
+            return json(res, 200, JSON.parse(readFileSync(file, "utf8")));
+          }
           if (req.method === "GET" && url.pathname === "/api/render") return json(res, 200, { ...state, blender: findBlender() });
           if (req.method === "POST" && url.pathname === "/api/render/stop") {
             if (child) {

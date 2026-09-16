@@ -4,6 +4,7 @@ import { envelopeFollow } from "./envelope";
 import { autoGain } from "./autogain";
 import type { Lyrics } from "./lyrics";
 import type { Hits } from "./hits";
+import type { Show } from "./show";
 
 export interface DriveFrame {
   bass: number;
@@ -37,6 +38,8 @@ export interface DriveJson {
   events?: { kick: number[]; snare: number[] };
   /** Per-stem envelopes (phase 08), one value per frame, 0..1; a mood's routing picks targets. */
   channels?: Record<string, number[]>;
+  /** The desk's cue lanes (phase 12), lead-shifted; a lane present here overrides the mood's cues. */
+  show?: Show;
   frames: DriveFrame[];
 }
 
@@ -77,6 +80,7 @@ export interface BuildDriveInput {
   hits?: Hits;
   minConf?: number;
   channels?: Record<string, number[]>;
+  show?: Show;
 }
 
 const round6 = (x: number): number => Math.round(x * 1e6) / 1e6;
@@ -104,6 +108,7 @@ export function buildDrive(input: BuildDriveInput): DriveJson {
     hits,
     minConf = 0.5,
     channels,
+    show,
   } = input;
   const {
     attack = 0.6,
@@ -154,6 +159,9 @@ export function buildDrive(input: BuildDriveInput): DriveJson {
     sections: sections.map((s) => ({ t: shift(s.t), kind: s.kind })),
     ...(range ? { range } : {}),
     ...(channels && Object.keys(channels).length ? { channels } : {}),
+    ...(show && Object.values(show.lanes).some((l) => l?.length)
+      ? { show: { lanes: Object.fromEntries(Object.entries(show.lanes).filter(([, l]) => l?.length).map(([k, l]) => [k, l!.map((c) => ({ ...c, t: shift(c.t) }))])) } }
+      : {}),
     ...(hits
       ? {
           events: {
