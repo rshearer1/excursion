@@ -167,6 +167,24 @@ instead of the mix — the cone ignores everything but the kick. Stems are not p
 reload them with the track. A mood's `routing` names the channel for `key` (the key light's
 breathing) and `smoke` (the drift); the mix's bass band stands in when the channel is absent.
 
+### Automation lanes as control signals (2026-09-16, work box)
+
+Loading an `.als` also reads its **arrangement automation** — any device or mixer parameter you
+drew over time (a filter cutoff, a send, a macro). Each lane that actually moves becomes a
+channel `auto:<parameter>` (the parameter word lower-cased, e.g. `auto:cutoff`), sampled one
+0..1 value per frame, normalised over the lane's own span so a sweep that only travels part of
+the parameter's range still drives its target fully. The status line lists the channel names
+after an `.als` load. Route them from a mood exactly like a stem — any source to any target:
+
+```json
+"routing": { "wash": "channels.auto:cutoff", "smoke": "channels.auto:macro-1" }
+```
+
+No Blender change: `apply_drive`'s `routed()` already resolves any `channels.*`. Lanes with a
+single point (never moved) are dropped. Tempo automation is still not followed — a fixed grid
+is what the visuals ride. Parsing is unit-tested (`ableton.test.ts`); the sampler is
+`automationChannel()`.
+
 ## The AI env (2026-09-16)
 
 `.venv-ai/` (gitignored) is a Python 3.13 venv with CUDA torch 2.8 (cu128), WhisperX and

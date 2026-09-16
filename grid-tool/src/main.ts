@@ -11,7 +11,7 @@ import { coneMotion, MID_DOME } from "./engine/cone";
 import { synthTestTrack } from "./engine/synth";
 import { computeCuts } from "./engine/cuts";
 import { detectHits, type Hits } from "./engine/hits";
-import { inflateAls, parseAls } from "./engine/ableton";
+import { automationChannel, inflateAls, parseAls, type AlsAutomation } from "./engine/ableton";
 import { stemChannel, stemNameOf, wooferStem } from "./engine/stems";
 import { LANE_DEFAULTS, LANE_INFO, cueCount, laneAt, lanesFromMood, setCue, type CueValue, type LaneName, type Rgb, type Show } from "./engine/show";
 import { envelopeFollow } from "./engine/envelope";
@@ -150,6 +150,7 @@ let markers: { t: number; kind: "drop" | "break" }[] = [];
 let lyrics: Lyrics = structuredClone(DEFAULT_LYRICS);
 let hits: Hits | null = null; // tracked kicks and snares, edited in the audit lane
 let stems = new Map<string, { mono: Float32Array; sampleRate: number }>(); // loaded stem files by channel name (this session only)
+let automation: AlsAutomation[] = []; // automation lanes from the loaded .als, sampled into channels at export
 let show: Show = { lanes: {} }; // the desk's cue lanes (phase 12)
 const faders: Partial<Record<LaneName, CueValue>> = {}; // the programmer: what Cue writes
 let driveCache: FrameFeatures | null = null; // 30fps features for the overlay
@@ -307,6 +308,7 @@ function adoptTrack(name: string, sha1: string, buffer: AudioBuffer, file: File 
   hits = null;
   hitsChk.checked = false;
   stems = new Map();
+  automation = [];
   show = { lanes: {} };
   renderDesk();
   trackNameEl.textContent = `${name} — ${buffer.duration.toFixed(2)}s @ ${buffer.sampleRate}Hz`;
@@ -746,6 +748,11 @@ async function ensureOverlay(): Promise<void> {
 }
 
 // ---------- export ----------
+/** A channel key for an automation lane: the parameter word, lower-cased. "Bass/Cutoff" -> "cutoff". */
+function autoSlug(name: string): string {
+  return (name.split("/").pop() ?? name).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
+}
+
 /** drive.json for the loaded track from the current controls — the export and the 3D preview share it. */
 function buildCurrentDrive(
   fps: number,
@@ -778,7 +785,12 @@ function buildCurrentDrive(
     tuning: { trim: Number(trimInput.value) || 1 },
     lyrics: exportLyrics(lyrics),
     ...(hits ? { hits } : {}),
-    ...(stems.size ? { channels: Object.fromEntries([...stems].map(([name, s]) => [name, stemChannel(s.mono, s.sampleRate, fps)])) } : {}),
+    ...(() => {
+      const channels: Record<string, number[]> = {};
+      for (const [name, s] of stems) channels[name] = stemChannel(s.mono, s.sampleRate, fps);
+      for (const lane of automation) channels[`auto:${autoSlug(lane.name)}`] = automationChannel(lane, grid.bpm, fps, features.frameCount);
+      return Object.keys(channels).length ? { channels } : {};
+    })(),
     show,
   });
 }
@@ -845,6 +857,7 @@ alsFile.addEventListener("change", async () => {
     const project = parseAls(await inflateAls(await f.arrayBuffer()));
     grid = { ...grid, bpm: project.bpm, offsetMs: 0 };
     markers = project.locators.filter((l) => l.kind !== "section").map((l) => ({ t: l.t, kind: l.kind as "drop" | "break" }));
+    automation = project.automation;
     if (project.kicks.length || project.snares.length) {
       hits = {
         kick: project.kicks.map((t) => ({ t, conf: 1, onGrid: true })),
@@ -856,7 +869,10 @@ alsFile.addEventListener("change", async () => {
     saveState();
     status(
       `Ableton project: ${project.bpm} BPM, downbeat at 0 (nudge if the export was trimmed), ${markers.length} markers, ` +
-        `${project.kicks.length} kicks and ${project.snares.length} snares from MIDI (${project.tracks.join(", ") || "no MIDI tracks"}).`,
+        `${project.kicks.length} kicks and ${project.snares.length} snares from MIDI. ` +
+        (project.automation.length
+          ? `Automation → ${project.automation.map((a) => "auto:" + autoSlug(a.name)).join(", ")} (route from a mood).`
+          : "No automation lanes."),
     );
   } catch (e) {
     status(`Could not read that project: ${e instanceof Error ? e.message : String(e)}`, true);
