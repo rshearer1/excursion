@@ -96,7 +96,7 @@ if (await exists(audio)) {
 }
 if (opt("--lut")) {
   // a display-referred .cube LUT applied at mux time: a look without a re-render
-  ffmpegArgs.push("-vf", `lut3d=${path.resolve(opt("--lut")).replace(/\/g, "/").replace(/:/g, "\:")}`);
+  ffmpegArgs.push("-vf", `lut3d=${path.resolve(opt("--lut")).split(String.fromCharCode(92)).join("/").split(":").join(String.fromCharCode(92) + ":")}`);
 }
 ffmpegArgs.push("-c:v", "libx264", "-crf", opt("--crf", "20"), "-pix_fmt", "yuv420p", reel);
 await run("ffmpeg", ffmpegArgs, "mux reel");

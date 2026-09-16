@@ -1,0 +1,27 @@
+{
+  "name": "crimson",
+  "description": "Dark red and deep purple: warm key, rims stepping crimson > purple every two bars with the LED trace to match, thick smoke, deep blacks.",
+  "exposure": -0.6,
+  "key": { "color": [1.0, 0.8, 0.62], "gain": 0.95 },
+  "graze_gain": 0.9,
+  "dust_back_gain": 1.2,
+  "cues": [
+    { "rim": [0.6, 0.03, 0.03], "rim_gain": 1.15, "back_gain": 1.0, "trace": [1.0, 0.22, 0.16] },
+    { "rim": [0.42, 0.04, 0.62], "rim_gain": 1.15, "back_gain": 1.2, "trace": [0.7, 0.3, 1.0] }
+  ],
+  "cue_bars": 2,
+  "cue_fade": 8,
+  "smoke": { "show": true, "density_gain": 1.25, "haze_gain": 1.15 },
+  "shells": { "show": true, "strength": 0.3 },
+  "routing": { "key": "channels.bass", "smoke": "channels.bass", "wash": "channels.bass" },
+  "grade": {
+    "bloom": 0.1,
+    "chromatic": 0.006,
+    "black_lift": 0.02,
+    "gain": [1.06, 0.94, 0.9],
+    "lift": [1.0, 0.98, 0.99],
+    "saturation": 1.08,
+    "vignette": 0.1,
+    "grain": 0.006
+  }
+}
