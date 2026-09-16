@@ -115,6 +115,34 @@ Shipped: **moody** (the default; old drives that say `smoke` mean this), **ember
 held), **neon** (cyan / magenta / blue chase), **clean** (product shot, no smoke). Add a mood
 by copying a file; the grid tool lists whatever is in the folder.
 
+## The show (phase 12, 2026-09-16)
+
+The **show** box under the console is a lighting desk over the drive. One lane per thing —
+camera, key, rims, wall, dust back, smoke, shells — each a list of cues: set the faders
+(gain, colour, camera, density...), press **Cue** and the values are written at the playhead
+with the lane's fade; a cue holds until the next one and crossfades in. **Lanes from mood**
+fills the lanes from the selected mood on the track's downbeats, so the desk starts where the
+mood is; a lane with cues then overrides the mood in the render, a lane without leaves the
+mood in charge (old drives render unchanged). Cues show as dots across the top of the beat
+lane (click to delete; shift-click a chip). The 3D preview follows the key and rim gains.
+`drive.show.lanes` is the file; `apply_drive.py` evaluates it (`lane_series`).
+
+**live** (in the show box) keeps one Blender open through the dev server
+(`blender/live_server.py`, `/api/live`) and renders a quarter-size EEVEE frame of the
+playhead whenever you seek or change a cue: a few seconds when the drive changed (the scene
+is reopened and re-bound), about a second when only the playhead moved. It shows in the
+preview column. `blender/live_server.log` has Blender's own output.
+
+## Why a frame costs what it costs (2026-09-16)
+
+Measured on one full-size 64-sample frame, features switched off one at a time: without the
+smoke volume the frame was 5 s; with the old procedural smoke shader, 17 s — Cycles evaluated
+the whole node graph at every ray-march step. The smoke is now a geometry-nodes **Volume
+Cube** (2.2 cm voxels, `SMOKE_GRID` in build_scene.py): the same field sampled once per frame,
+rendered as a NanoVDB grid, and the frame is 10–12 s. Bevel, depth of field, motion blur,
+shells and the dust pass cost a second or two each. Finals also run the i9 alongside the
+card, at adaptive threshold 0.02, with the bevel node at 2 samples.
+
 ## Scenes (2026-09-16)
 
 One builder, one switch: `EXCURSION_SCENE=void|macro|stack|concrete blender -b -P

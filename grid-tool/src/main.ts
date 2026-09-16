@@ -72,6 +72,7 @@ const showFromMoodBtn = $<HTMLButtonElement>("showFromMood");
 const showClearBtn = $<HTMLButtonElement>("showClear");
 const showHint = $<HTMLSpanElement>("showHint");
 const deskEl = $<HTMLDivElement>("desk");
+const liveChk = $<HTMLInputElement>("liveChk");
 const previewChk = $<HTMLInputElement>("preview3d");
 const previewCanvas = $<HTMLCanvasElement>("preview");
 const previewWrap = $<HTMLDivElement>("previewWrap");
@@ -388,6 +389,7 @@ function stop(): void {
   pauseAt(0);
 }
 function seek(t: number): void {
+  requestLive();
   const wasPlaying = playing;
   pauseAt(Math.max(0, t));
   if (wasPlaying) play();
@@ -957,7 +959,54 @@ function showChanged(): void {
   saveState();
   renderDesk();
   draw();
+  requestLive();
 }
+
+// live: the persistent Blender renders the playhead whenever it moves or the show changes
+let liveTimer: number | null = null;
+let liveBusy = false;
+let liveAgain = false;
+function requestLive(): void {
+  if (!liveChk.checked || !track || !helperOnline) return;
+  if (liveTimer !== null) clearTimeout(liveTimer);
+  liveTimer = window.setTimeout(() => void liveFrame(), 350);
+}
+async function liveFrame(): Promise<void> {
+  if (!track) return;
+  if (liveBusy) {
+    liveAgain = true;
+    return;
+  }
+  liveBusy = true;
+  try {
+    const fps = Number(fpsSel.value) || 30;
+    const { features, cone, dome } = analyseForDrive(fps);
+    const drive = buildCurrentDrive(fps, features, { cone, dome });
+    const t = songTime();
+    const res = await fetch("/api/live", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ slug: slugify(track.name), time: t, drive, percent: 25 }) });
+    const body = (await res.json()) as { url?: string; error?: string; ms?: number; rebound?: boolean };
+    if (!res.ok || !body.url) throw new Error(body.error ?? `live refused (${res.status})`);
+    previewFrameImg.src = body.url;
+    previewFrameImg.hidden = false;
+    previewWrap.hidden = false;
+    status(`Live ${fmtTime(t)} — ${((body.ms ?? 0) / 1000).toFixed(1)} s${body.rebound ? " (drive re-applied)" : ""}.`);
+  } catch (e) {
+    status(`Live: ${e instanceof Error ? e.message : String(e)}`, true);
+  } finally {
+    liveBusy = false;
+    if (liveAgain) {
+      liveAgain = false;
+      requestLive();
+    }
+  }
+}
+liveChk.addEventListener("change", () => {
+  if (liveChk.checked) {
+    previewWrap.hidden = false;
+    status("Live on — the first frame opens the scene (a few seconds), then about a second a frame.");
+    requestLive();
+  }
+});
 
 function faderValue(name: LaneName): CueValue {
   return faders[name] ?? structuredClone(LANE_DEFAULTS[name]);

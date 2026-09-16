@@ -12,6 +12,9 @@
 //   GET  /api/reels/<slug>.mp4       the finished reel, with Range support for <video>
 //   POST /api/preview                { slug, drive, time } -> one EEVEE draft frame at that time,
 //                                    the true look; answers { url } (served under /api/previews/)
+//   POST /api/live                   { slug, drive, time, percent? } -> one small EEVEE frame from a
+//                                    Blender that stays open (blender/live_server.py); about a second
+//                                    when only the playhead moved, a few when the drive changed
 //   POST /api/separate               { file } -> Demucs drums stem of an audio file in blender/jobs/
 //                                    (501 with a hint when demucs is not installed); GET /api/stems/<slug>/drums.wav
 //   POST /api/transcribe             { file } -> WhisperX word-level lines for an audio file
@@ -272,6 +275,54 @@ function previewFrame(slug: string, drive: RenderRequest["drive"], time: number)
   });
 }
 
+// the live frame server: one Blender kept open, one request at a time, answers on stdout
+let live: { proc: ChildProcess; queue: (() => void)[]; busy: boolean; pending: ((line: string) => void) | null; buf: string } | null = null;
+
+function liveProcess(): NonNullable<typeof live> {
+  if (live && live.proc.exitCode === null) return live;
+  const proc = spawn(findBlender(), ["-b", "-P", path.join(root, "blender", "live_server.py")], { cwd: root, stdio: ["pipe", "pipe", "pipe"] });
+  const l: NonNullable<typeof live> = { proc, queue: [], busy: false, pending: null, buf: "" };
+  proc.stdout?.on("data", (c: Buffer) => {
+    l.buf += c.toString("utf8");
+    const lines = l.buf.split(/\r?\n/);
+    l.buf = lines.pop() ?? "";
+    for (const line of lines) if (line.startsWith("{") && !line.includes('"ready"') && l.pending) l.pending(line); // the ready line is not an answer
+  });
+  proc.stderr?.on("data", () => undefined);
+  proc.on("exit", () => {
+    if (l.pending) l.pending(JSON.stringify({ ok: false, error: "live server exited" }));
+    live = null;
+  });
+  live = l;
+  return l;
+}
+
+function liveRequest(req: Record<string, unknown>): Promise<{ ok: boolean; error?: string; ms?: number; rebound?: boolean }> {
+  const l = liveProcess();
+  return new Promise((resolve) => {
+    const run = (): void => {
+      l.busy = true;
+      const timer = setTimeout(() => finish(JSON.stringify({ ok: false, error: "live frame timed out" })), 120_000);
+      const finish = (line: string): void => {
+        clearTimeout(timer);
+        l.pending = null;
+        l.busy = false;
+        try {
+          resolve(JSON.parse(line));
+        } catch {
+          resolve({ ok: false, error: line });
+        }
+        const next = l.queue.shift();
+        if (next) next();
+      };
+      l.pending = finish;
+      l.proc.stdin?.write(JSON.stringify(req) + "\n");
+    };
+    if (l.busy) l.queue.push(run);
+    else run();
+  });
+}
+
 function servePreview(res: ServerResponse, file: string): void {
   const name = safeName(file);
   if (!name || !name.endsWith(".png")) return json(res, 404, { error: "no such preview" });
@@ -354,6 +405,26 @@ export function renderHelper(): Plugin {
             if (!audio || !existsSync(path.join(jobsDir, audio))) return json(res, 400, { error: `audio not stored: ${audio}` });
             startRender(body);
             return json(res, 200, state);
+          }
+          if (req.method === "POST" && url.pathname === "/api/live") {
+            const body = JSON.parse((await readBody(req)).toString("utf8")) as { slug: string; time: number; percent?: number; drive: RenderRequest["drive"] & { scene?: string; mood?: string } };
+            if (!safeName(body.slug) || !body.drive?.frames?.length) return json(res, 400, { error: "bad request" });
+            mkdirSync(jobsDir, { recursive: true });
+            mkdirSync(previewDir, { recursive: true });
+            const drivePath = path.join(jobsDir, `${body.slug}.live.drive.json`);
+            const text = JSON.stringify(body.drive);
+            if (!existsSync(drivePath) || readFileSync(drivePath, "utf8") !== text) writeFileSync(drivePath, text);
+            const png = path.join(previewDir, `${body.slug}.live.png`);
+            const answer = await liveRequest({
+              drive: drivePath,
+              frame: Math.max(1, Math.round((Number(body.time) || 0) * body.drive.fps) + 1),
+              out: png,
+              scene: body.drive.scene || "void",
+              mood: body.drive.mood || "",
+              percent: Math.max(10, Math.min(100, Number(body.percent) || 25)),
+            });
+            if (!answer.ok) return json(res, 500, { error: answer.error ?? "live frame failed" });
+            return json(res, 200, { url: `/api/previews/${body.slug}.live.png?t=${Date.now()}`, ms: answer.ms, rebound: answer.rebound });
           }
           if (req.method === "POST" && url.pathname === "/api/preview") {
             const body = JSON.parse((await readBody(req)).toString("utf8")) as { slug: string; time: number; drive: RenderRequest["drive"] };
