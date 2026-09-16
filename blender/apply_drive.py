@@ -987,9 +987,9 @@ def use_gpu_for_cycles():
         gpus = [d for d in prefs.devices if d.type == backend]
         if gpus:
             for d in prefs.devices:
-                d.use = d.type == backend
+                d.use = d.type == backend or d.type == "CPU"  # hybrid: the i9 renders tiles alongside the card
             scene.cycles.device = "GPU"
-            print(f"cycles: {backend} on {', '.join(d.name for d in gpus)}")
+            print(f"cycles: {backend} on {', '.join(d.name for d in gpus)} + CPU")
             return
     print("cycles: no GPU backend found — rendering on CPU")
 
@@ -1002,7 +1002,7 @@ if args.engine == "cycles":
     # scene kept in memory between frames instead of being rebuilt for each one
     cy.samples = 16 if args.draft else (min(args.samples, 32) if args.test else args.samples)
     cy.use_adaptive_sampling = True
-    cy.adaptive_threshold = 0.05 if (args.draft or args.test) else 0.01  # finals keep the cone grain the denoiser would smear (handoff item 4)
+    cy.adaptive_threshold = 0.05 if (args.draft or args.test) else 0.02  # finals: 0.01 doubled the frame time for grain the phone never shows
     cy.use_denoising = True
     cy.use_animated_seed = False  # a fixed seed: the animated one flickered in smooth gradients through the denoiser; the compositor grain moves instead
     try:

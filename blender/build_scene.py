@@ -175,7 +175,7 @@ def plastic_material(name, scale=22.0, texture=None, albedo=None):
     # rounded edges in the shader: the STL has razor edges, and a 1.5 mm bevel is what makes
     # a highlight run along a rim instead of a hairline (handoff item 3; Cycles only)
     bevel = nt.nodes.new("ShaderNodeBevel")
-    bevel.samples = 4
+    bevel.samples = 2  # each sample is a ray per shading point; 2 reads the same at 1080p
     bevel.inputs["Radius"].default_value = 0.0015
     if shading_normal is not None:
         nt.links.new(shading_normal, bevel.inputs["Normal"])
