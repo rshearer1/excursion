@@ -9,10 +9,16 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 import { makeDust, stepDust, type DustCloud, type RigState } from "./rig";
 import type { Rig } from "./rigTypes";
 
-const DUST_COUNT = 20000;
-const DUST_BOX = { min: [-0.45, -0.55, -0.25] as const, max: [0.45, 0.65, 0.95] as const };
-/** cone m/s -> air m/s at the mouth */
-const JET_GAIN = 8;
+const DUST_COUNT = 12000;
+/** Mirrors build_scene's DUST_BOX: the wide frame's width and height, from well behind the
+ *  speaker (-z) to just short of the close-up lens (+z). Motes are born anywhere in it except
+ *  inside the cabinet, drift toward the camera, wrap round to the back, and flow around the box. */
+const DUST_BOX = { min: [-0.45, -0.6, -1.2] as const, max: [0.45, 0.6, 0.5] as const };
+/** slow room drift toward the camera, m/s (apply_drive's Drift) */
+const DUST_DRIFT = 0.03;
+/** cone m/s -> air m/s just in front of the cone (apply_drive's Push: the hit, signed —
+ *  outward stroke shoves, return stroke sucks). No conveyor stream: DUST_STREAM is 0 at home. */
+const PUSH_GAIN = 4;
 
 function softDot(): THREE.Texture {
   const c = document.createElement("canvas");
@@ -34,7 +40,7 @@ export class PreviewViewport {
   private readonly scene = new THREE.Scene();
   private readonly composer: EffectComposer;
   private readonly renderPass: RenderPass;
-  private readonly dust: DustCloud;
+  private dust: DustCloud;
   private readonly dustGeo: THREE.BufferGeometry;
   private rig: Rig;
   private time = 0;
@@ -48,7 +54,7 @@ export class PreviewViewport {
     this.scene.background = new THREE.Color(0x04060a);
     this.scene.fog = new THREE.FogExp2(0x04060a, 0.55);
 
-    this.dust = makeDust(DUST_COUNT, 2026, DUST_BOX);
+    this.dust = makeDust(DUST_COUNT, 2026, DUST_BOX, rig.solid);
     this.dustGeo = new THREE.BufferGeometry();
     this.dustGeo.setAttribute("position", new THREE.BufferAttribute(this.dust.pos, 3));
     const dustMat = new THREE.PointsMaterial({
@@ -82,6 +88,9 @@ export class PreviewViewport {
     this.scene.remove(this.rig.root);
     this.rig = rig;
     this.scene.add(rig.root);
+    // the cabinet moved or changed shape: reseed the cloud outside it
+    this.dust = makeDust(DUST_COUNT, 2026, DUST_BOX, rig.solid);
+    this.dustGeo.setAttribute("position", new THREE.BufferAttribute(this.dust.pos, 3));
   }
 
   resize(): void {
@@ -104,8 +113,15 @@ export class PreviewViewport {
 
     const step = Math.min(Math.max(dt, 0), 0.1);
     this.time += step;
-    for (const j of rig.jets) j.speed = state.coneVelocity * JET_GAIN;
-    stepDust(this.dust, step, rig.jets, { drag: 0.9, turbulence: 0.03, time: this.time, box: DUST_BOX });
+    for (const j of rig.jets) j.speed = state.coneVelocity * PUSH_GAIN;
+    stepDust(this.dust, step, rig.jets, {
+      drag: 0.9,
+      turbulence: 0.03,
+      time: this.time,
+      box: DUST_BOX,
+      drift: [0, 0, DUST_DRIFT],
+      ...(rig.solid ? { solid: rig.solid } : {}),
+    });
     (this.dustGeo.getAttribute("position") as THREE.BufferAttribute).needsUpdate = true;
 
     const cam = rig.cameras[state.cameraIndex % rig.cameras.length] ?? rig.cameras[0]!;

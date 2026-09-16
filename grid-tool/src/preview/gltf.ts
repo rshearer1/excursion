@@ -53,16 +53,22 @@ export async function loadSceneGltf(dir: FileSystemDirectoryHandle, scene: strin
     return {
       origin: [p.x, p.y, p.z] as const,
       axis: [axis.x, axis.y, axis.z] as const,
-      halfAngleDeg: 22,
-      reach: 0.35,
+      radius: 0.16,
+      reach: 0.6,
       speed: 0,
     };
   });
+  const cabinet = root.getObjectByName("Cabinet") ?? root.getObjectByName("Hero") ?? null;
+  let solid: Rig["solid"];
+  if (cabinet) {
+    const b = new THREE.Box3().setFromObject(cabinet);
+    solid = { min: [b.min.x, b.min.y, b.min.z], max: [b.max.x, b.max.y, b.max.z] };
+  }
 
   return {
     root,
     setExcursion(mm) {
-      const v = Math.min(1, Math.max(0, mm / FULL_TRAVEL_MM));
+      const v = Math.min(1, Math.max(-1, mm / FULL_TRAVEL_MM)); // the shape key's slider runs -1..1
       for (const w of woofers) {
         const idx = w.morphTargetDictionary?.["Excursion"];
         if (idx !== undefined && w.morphTargetInfluences) w.morphTargetInfluences[idx] = v;
@@ -80,5 +86,6 @@ export async function loadSceneGltf(dir: FileSystemDirectoryHandle, scene: strin
     },
     cameras,
     jets,
+    ...(solid ? { solid } : {}),
   };
 }

@@ -81,7 +81,7 @@ export function buildPlaceholder(): Rig {
   return {
     root,
     setExcursion(mm) {
-      const dz = (Math.min(FULL_TRAVEL_MM, Math.max(0, mm)) / 1000);
+      const dz = Math.min(FULL_TRAVEL_MM, Math.max(-FULL_TRAVEL_MM, mm)) / 1000; // signed: the cone travels in too
       for (const w of woofers) w.position.z = wooferRest + dz;
     },
     setTweeter(x) {
@@ -95,12 +95,15 @@ export function buildPlaceholder(): Rig {
       rim.intensity = 9 * r;
     },
     cameras: [wide, close],
+    // the wind column in front of each woofer (the Blender DustField): the woofers push the
+    // field but never emit it — motes are born behind and beside the cabinet and drift forward
     jets: woofers.map((w) => ({
       origin: [w.position.x, w.position.y, w.position.z + 0.012],
       axis: [0, 0, 1],
-      halfAngleDeg: 22,
-      reach: 0.35,
+      radius: 0.16,
+      reach: 0.6,
       speed: 0,
     })),
+    solid: { min: [-0.15, -0.275, -0.12], max: [0.15, 0.275, 0.12] },
   };
 }

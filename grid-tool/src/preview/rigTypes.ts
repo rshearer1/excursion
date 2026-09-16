@@ -1,5 +1,5 @@
 import type * as THREE from "three";
-import type { Jet } from "./rig";
+import type { Box, Jet } from "./rig";
 
 /**
  * What the viewport drives. Both the placeholder speaker and a glTF export of the
@@ -17,4 +17,6 @@ export interface Rig {
   cameras: THREE.PerspectiveCamera[];
   /** air jets in scene space, speed filled per frame from cone velocity */
   jets: Jet[];
+  /** the cabinet's bounds in scene space: dust is born outside it and flows around it */
+  solid?: Box;
 }

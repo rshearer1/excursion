@@ -12,10 +12,12 @@ export interface DriveLike {
 }
 
 export interface RigState {
-  /** Woofer cone travel in mm (0 .. FULL_TRAVEL_MM). */
+  /** Woofer cone position in mm, signed: + out toward the camera, - in (±FULL_TRAVEL_MM). */
   excursionMm: number;
   /** Cone velocity in m/s along the throw axis: + outward, - return stroke. */
   coneVelocity: number;
+  /** How much air the cones are moving this frame, 0..1 — drives the dust stream (apply_drive's Gust). */
+  gust: number;
   /** Tweeter emission 0..1. */
   tweeter: number;
   /** Sync-slate flash 0..1, 1 on a beat, exponential decay. */
@@ -31,6 +33,8 @@ export interface RigState {
 export const FULL_TRAVEL_MM = 6;
 /** Slate flash time constant (seconds). */
 const SLATE_TAU = 0.06;
+/** frames[].cone extremes are measured over a 180-degree shutter: half the frame. */
+const SHUTTER = 0.5;
 
 const clamp01 = (x: number): number => Math.min(1, Math.max(0, x));
 
@@ -41,10 +45,22 @@ function frameIndex(d: DriveLike, t: number): number {
 export function rigStateAt(d: DriveLike, t: number): RigState {
   const i = frameIndex(d, t);
   const f = d.frames[i]!;
-  const prev = d.frames[Math.max(0, i - 1)]!;
-  const excursionMm = clamp01(f.bass) * FULL_TRAVEL_MM;
-  const prevMm = clamp01(prev.bass) * FULL_TRAVEL_MM;
-  const coneVelocity = ((excursionMm - prevMm) / 1000) * d.fps;
+  let excursionMm: number;
+  let coneVelocity: number;
+  let gust: number;
+  if (f.cone) {
+    // the driver model: [first, second] extreme during the exposure, -1..1, time-ordered
+    const [a, b] = f.cone;
+    excursionMm = Math.max(-1, Math.min(1, b)) * FULL_TRAVEL_MM;
+    coneVelocity = (((b - a) * FULL_TRAVEL_MM) / 1000) * (d.fps / SHUTTER);
+    gust = Math.min(1, Math.abs(b - a) / 2);
+  } else {
+    const prev = d.frames[Math.max(0, i - 1)]!;
+    excursionMm = clamp01(f.bass) * FULL_TRAVEL_MM;
+    const prevMm = clamp01(prev.bass) * FULL_TRAVEL_MM;
+    coneVelocity = ((excursionMm - prevMm) / 1000) * d.fps;
+    gust = clamp01(f.bass);
+  }
 
   let slate = 0;
   let lastBeat = -Infinity;
@@ -59,6 +75,7 @@ export function rigStateAt(d: DriveLike, t: number): RigState {
   return {
     excursionMm,
     coneVelocity,
+    gust,
     tweeter: clamp01(f.high),
     slate,
     key: 0.55 + 0.45 * clamp01(f.mid),
@@ -90,7 +107,13 @@ export interface Jet {
   origin: Vec3;
   /** unit vector the air moves along at positive speed. */
   axis: Vec3;
-  halfAngleDeg: number;
+  /** cone jet: half-angle in degrees (ignored when `radius` is set). */
+  halfAngleDeg?: number;
+  /**
+   * column jet (the Blender DustField's wind column): full strength within 5 cm of the axis,
+   * fading to nothing at this radius, all the way along `reach`.
+   */
+  radius?: number;
   /** metres the jet reaches before fading to nothing. */
   reach: number;
   /** m/s at the mouth; negative sucks back toward the origin. */
@@ -106,6 +129,10 @@ export interface DustParams {
   time: number;
   /** wrap volume; points that leave it re-enter from the far side. */
   box?: Box;
+  /** constant room drift, m/s (the Blender field drifts toward the camera). */
+  drift?: Vec3;
+  /** the cabinet: no mote may sit inside it; one that does is moved out through the nearest side face. */
+  solid?: Box;
 }
 
 /** Deterministic LCG in [0, 1). */
@@ -117,13 +144,28 @@ function rng(seed: number): () => number {
   };
 }
 
-export function makeDust(count: number, seed: number, box: Box): DustCloud {
+function inside(b: Box, x: number, y: number, z: number): boolean {
+  return x > b.min[0] && x < b.max[0] && y > b.min[1] && y < b.max[1] && z > b.min[2] && z < b.max[2];
+}
+
+/** @param avoid a box no mote is born in (the cabinet); samples inside it are redrawn. */
+export function makeDust(count: number, seed: number, box: Box, avoid?: Box): DustCloud {
   const r = rng(seed);
   const pos = new Float32Array(count * 3);
   const vel = new Float32Array(count * 3);
   const phase = new Float32Array(count);
   for (let i = 0; i < count; i++) {
-    for (let k = 0; k < 3; k++) pos[i * 3 + k] = box.min[k]! + r() * (box.max[k]! - box.min[k]!);
+    let x = 0, y = 0, z = 0;
+    for (let tries = 0; tries < 32; tries++) {
+      x = box.min[0] + r() * (box.max[0] - box.min[0]);
+      y = box.min[1] + r() * (box.max[1] - box.min[1]);
+      z = box.min[2] + r() * (box.max[2] - box.min[2]);
+      if (!avoid || !inside(avoid, x, y, z)) break;
+    }
+    if (avoid && inside(avoid, x, y, z)) x = avoid.max[0] + 0.001; // the box is nearly all cabinet: park it beside
+    pos[i * 3] = x;
+    pos[i * 3 + 1] = y;
+    pos[i * 3 + 2] = z;
     phase[i] = r() * Math.PI * 2;
   }
   return { count, pos, vel, phase };
@@ -133,7 +175,8 @@ const FRAME = 1 / 30;
 
 export function stepDust(c: DustCloud, dt: number, jets: readonly Jet[], p: DustParams): void {
   const dragStep = Math.pow(p.drag, dt / FRAME);
-  const cones = jets.map((j) => ({ ...j, cosHalf: Math.cos((j.halfAngleDeg * Math.PI) / 180) }));
+  const cones = jets.map((j) => ({ ...j, cosHalf: Math.cos(((j.halfAngleDeg ?? 20) * Math.PI) / 180) }));
+  const COLUMN_CORE = 0.05; // metres: full strength this close to the axis, fading out at j.radius
   for (let i = 0; i < c.count; i++) {
     const o = i * 3;
     let vx = c.vel[o]!, vy = c.vel[o + 1]!, vz = c.vel[o + 2]!;
@@ -144,8 +187,15 @@ export function stepDust(c: DustCloud, dt: number, jets: readonly Jet[], p: Dust
       const along = dx * j.axis[0] + dy * j.axis[1] + dz * j.axis[2];
       if (along <= 0 || along >= j.reach) continue;
       const dist = Math.hypot(dx, dy, dz);
-      if (dist === 0 || along / dist < j.cosHalf) continue;
-      const falloff = 1 - along / j.reach;
+      let falloff: number;
+      if (j.radius !== undefined) {
+        const radial = Math.sqrt(Math.max(0, dist * dist - along * along));
+        if (radial >= j.radius) continue;
+        falloff = radial <= COLUMN_CORE ? 1 : 1 - (radial - COLUMN_CORE) / (j.radius - COLUMN_CORE);
+      } else {
+        if (dist === 0 || along / dist < j.cosHalf) continue;
+        falloff = 1 - along / j.reach;
+      }
       const push = j.speed * falloff * dt * 30; // reach full jet speed in ~1 frame at the mouth
       vx += j.axis[0] * push;
       vy += j.axis[1] * push;
@@ -160,13 +210,27 @@ export function stepDust(c: DustCloud, dt: number, jets: readonly Jet[], p: Dust
     }
 
     vx *= dragStep; vy *= dragStep; vz *= dragStep;
-    let nx = px + vx * dt, ny = py + vy * dt, nz = pz + vz * dt;
+    const drift = p.drift ?? [0, 0, 0];
+    let nx = px + (vx + drift[0]) * dt, ny = py + (vy + drift[1]) * dt, nz = pz + (vz + drift[2]) * dt;
     if (p.box) {
       const b = p.box;
       const sx = b.max[0] - b.min[0], sy = b.max[1] - b.min[1], sz = b.max[2] - b.min[2];
       if (nx < b.min[0]) nx += sx; else if (nx > b.max[0]) nx -= sx;
       if (ny < b.min[1]) ny += sy; else if (ny > b.max[1]) ny -= sy;
       if (nz < b.min[2]) nz += sz; else if (nz > b.max[2]) nz -= sz;
+    }
+    if (p.solid && inside(p.solid, nx, ny, nz)) {
+      // the room's air goes around the cabinet, not through it: out through the nearest side face
+      const s = p.solid;
+      const faces: [number, 0 | 1, number][] = [
+        [nx - s.min[0], 0, s.min[0] - 0.001],
+        [s.max[0] - nx, 0, s.max[0] + 0.001],
+        [ny - s.min[1], 1, s.min[1] - 0.001],
+        [s.max[1] - ny, 1, s.max[1] + 0.001],
+      ];
+      faces.sort((a, b) => a[0] - b[0]);
+      const [, axisIdx, at] = faces[0]!;
+      if (axisIdx === 0) { nx = at; vx = 0; } else { ny = at; vy = 0; }
     }
     c.vel[o] = vx; c.vel[o + 1] = vy; c.vel[o + 2] = vz;
     c.pos[o] = nx; c.pos[o + 1] = ny; c.pos[o + 2] = nz;
