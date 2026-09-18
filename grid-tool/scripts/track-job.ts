@@ -3,6 +3,7 @@
 //   npm run track-job -- <track.wav> [--start s --end s] [--bpm n] [--offset ms]
 //                        [--cuts bars] [--mood smoke|neon|clean] [--name slug]
 //                        [--drop s[,s]] [--break s[,s]] [--auto seconds] [--hits]
+//                        [--template name]
 //
 // --auto 20 picks the reel window for you: it finds the first drop (where the bass level
 // first climbs to 70 % of the track's peak), starts a bar before it on a downbeat, runs for
@@ -15,8 +16,13 @@
 // onset envelope (spectral flux + bass/mid/high attacks, each normalised — the kick band alone
 // is unreliable when sub-bass swamps it), downbeat from where the claps/snares land (beats 2
 // and 4). Always check the result — the draft render's slate should flash on the beat.
+//
+// --template <name> applies presets/templates/<name>.json exactly as the grid tool's Apply
+// button does: its scene preset (scene, cut cadence, lead, fps), mood, show preset (cue lanes
+// laid onto this track's bars) and lyric styling. --mood and --cuts on the command line win
+// over the template's.
 
-import { copyFileSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { createHash } from "node:crypto";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -26,6 +32,8 @@ import { coneMotion, MID_DOME } from "../src/engine/cone";
 import { computeCuts } from "../src/engine/cuts";
 import { detectHits } from "../src/engine/hits";
 import type { Grid } from "../src/engine/grid";
+import { DEFAULT_LYRICS } from "../src/engine/lyrics";
+import { PRESET_DIRS, applyTemplate, parsePreset, resolveTemplate, type Library, type Preset, type ReelState, type Template } from "../src/engine/presets";
 
 const argv = process.argv.slice(2);
 const input = argv.find((a, i) => !a.startsWith("--") && !argv[i - 1]?.startsWith("--"));
@@ -252,20 +260,73 @@ const range =
     ? { start, end: Math.min(end, durationSec) }
     : undefined;
 
+// --template: the same resolution the grid tool runs, from presets/ next to blender/
+const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
+function readPresets(): Library & { templates: Record<string, Template> } {
+  const lib: Library & { templates: Record<string, Template> } = { scenes: {}, shows: {}, lyrics: {}, moods: [], templates: {} };
+  const moodsDir = path.join(ROOT, "blender", "moods");
+  if (existsSync(moodsDir)) lib.moods = readdirSync(moodsDir).filter((f) => f.endsWith(".json")).map((f) => f.replace(/\.json$/, ""));
+  for (const dir of Object.values(PRESET_DIRS)) {
+    const full = path.join(ROOT, "presets", dir);
+    if (!existsSync(full)) continue;
+    for (const f of readdirSync(full).filter((x) => x.endsWith(".json"))) {
+      let p: Preset;
+      try {
+        p = parsePreset(readFileSync(path.join(full, f), "utf8"));
+      } catch (e) {
+        console.warn(`presets/${dir}/${f}: ${e instanceof Error ? e.message : String(e)}`);
+        continue;
+      }
+      if (p.kind === "scene") lib.scenes[p.name] = p;
+      else if (p.kind === "show") lib.shows[p.name] = p;
+      else if (p.kind === "lyrics") lib.lyrics[p.name] = p;
+      else lib.templates[p.name] = p;
+    }
+  }
+  return lib;
+}
+let reel: ReelState = {
+  scene: "void",
+  mood: opt("--mood") ?? "smoke",
+  cutsEveryBars: num("--cuts") ?? 2,
+  cutMarkers: true,
+  leadMs: 0,
+  fps: FPS,
+  show: { lanes: {} },
+  lyrics: structuredClone(DEFAULT_LYRICS),
+};
+const templateName = opt("--template");
+if (templateName) {
+  const lib = readPresets();
+  const t = lib.templates[templateName];
+  if (!t) {
+    console.error(`no template presets/templates/${templateName}.json (have: ${Object.keys(lib.templates).join(", ") || "none"})`);
+    process.exit(1);
+  }
+  const { resolved, missing } = resolveTemplate(t, lib);
+  if (missing.length) console.warn(`template ${templateName}: missing ${missing.join(", ")} — applying the rest`);
+  reel = applyTemplate(resolved, reel, grid);
+  if (opt("--mood")) reel.mood = opt("--mood")!; // the command line wins
+  if (num("--cuts") !== undefined) reel.cutsEveryBars = num("--cuts")!;
+  console.log(`template ${templateName}: scene ${reel.scene}, mood ${reel.mood}, cuts every ${reel.cutsEveryBars} bars, ${Object.keys(reel.show.lanes).length} show lanes`);
+}
+
 const drive = buildDrive({
   fileName: `${slug}.wav`,
   sha1: createHash("sha1").update(bytes).digest("hex"),
   durationSec,
   grid,
   fps: FPS,
-  scene: "void",
-  mood: opt("--mood") ?? "smoke",
+  scene: reel.scene,
+  mood: reel.mood,
   features,
   cone: coneMotion(mono, sampleRate, { fps: FPS }),
   dome: coneMotion(mono, sampleRate, { fps: FPS, ...MID_DOME }),
   sections,
   range,
-  cuts: computeCuts(grid, durationSec, { everyBars: num("--cuts") ?? 2 }),
+  cuts: computeCuts(grid, durationSec, { everyBars: reel.cutsEveryBars, markerTimes: reel.cutMarkers ? sections.map((s) => s.t) : [] }),
+  leadMs: reel.leadMs,
+  show: reel.show,
   // --hits: track kicks and snares (phase 09); shells and the logo then ride the kicks
   ...(process.argv.includes("--hits") ? { hits: detectHits(mono, sampleRate, { grid }) } : {}),
 });

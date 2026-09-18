@@ -1,0 +1,6 @@
+{
+  "kind": "lyrics",
+  "name": "behind-fade",
+  "defaults": { "anchor": "behind", "style": "fade", "color": "accent", "size": "M", "attackMs": 80, "releaseMs": 400, "lightRoom": true },
+  "sections": { "drop": { "style": "pop", "color": "white", "size": "L" } }
+}

@@ -410,3 +410,18 @@ node scripts/publish-looks.mjs --video out/<track>.mp4 --label "handoff pass 2"
 
 Writes ≤ 1080 px JPEGs plus a `notes.md` into `looks/<date>-<label>/`, commits and pushes.
 Then, from any machine: "assess looks/<date>-<label>" against `blender/PHOTOREAL-HANDOFF.md`.
+
+## Templates and presets (2026-09-18, work box)
+
+The webview's looks are reusable. Fixed recipes — applying reproduces what was saved.
+
+- **Link folder** first: the pickers fill from `presets/{scenes,shows,lyrics,templates}/` (JSON, in git).
+- **Save preset** on the export strip (scene, cuts, lead, fps), the show desk (cue lanes, times in
+  bars from the downbeat) and the lyrics panel (defaults and section styles, never the lines).
+  Pick a preset from the same picker to apply it to the current track.
+- **Templates → Save as…** writes one preset of each kind plus a template naming them and the mood;
+  **Apply** lays a template onto any track: scene, mood, cuts, show cues on that track's bars,
+  lyric styling. The grid, markers, hits, stems and lyric lines stay.
+- Without a linked folder the same JSON downloads; the **preset file** input loads any of them.
+- Headless: `npm run track-job -- track.wav --template club-night` (`--mood`/`--cuts` on the
+  command line win). `club-night` is the starter template in `presets/`.

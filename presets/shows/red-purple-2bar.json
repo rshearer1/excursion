@@ -1,0 +1,20 @@
+{
+  "kind": "show",
+  "name": "red-purple-2bar",
+  "lanes": {
+    "key": [{ "bar": 0, "value": { "gain": 1, "color": [1, 0.84, 0.66] } }],
+    "rims": [
+      { "bar": 0, "value": { "gain": 1, "color": [0.6, 0.03, 0.03] }, "fade": 0.2 },
+      { "bar": 2, "value": { "gain": 1.1, "color": [0.45, 0.05, 0.6] }, "fade": 0.2 },
+      { "bar": 4, "value": { "gain": 1, "color": [0.6, 0.03, 0.03] }, "fade": 0.2 },
+      { "bar": 6, "value": { "gain": 1.1, "color": [0.45, 0.05, 0.6] }, "fade": 0.2 }
+    ],
+    "wall": [
+      { "bar": 0, "value": { "trace": [1, 0.22, 0.16] }, "fade": 0.2 },
+      { "bar": 2, "value": { "trace": [0.7, 0.3, 1] }, "fade": 0.2 },
+      { "bar": 4, "value": { "trace": [1, 0.22, 0.16] }, "fade": 0.2 },
+      { "bar": 6, "value": { "trace": [0.7, 0.3, 1] }, "fade": 0.2 }
+    ],
+    "shells": [{ "bar": 0, "value": { "strength": 0.3 } }]
+  }
+}

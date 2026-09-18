@@ -1,6 +1,6 @@
 # Templates and presets — design
 
-Date: 2026-09-18. Status: approved in chat (Rob), building on the work box.
+Date: 2026-09-18. Status: approved in chat (Rob); built the same day on the work box (engine + UI + track-job --template + starter presets/club-night).
 
 ## Goal
 

@@ -1,0 +1,9 @@
+{
+  "kind": "scene",
+  "name": "void-8bar",
+  "scene": "void",
+  "cutsEveryBars": 8,
+  "cutMarkers": true,
+  "leadMs": 0,
+  "fps": 30
+}

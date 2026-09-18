@@ -34,6 +34,10 @@ npm run track-job -- track.wav --start 20 --end 40 [--bpm 140 --offset 0]   # re
   `Excursion` shape key → morph target); `viewport.ts` is the renderer glue
   (portrait camera on a 36 mm vertical sensor, fog haze, 20k-point dust, bloom).
   three.js is only fetched when the **3D** checkbox is first switched on.
+- `src/engine/presets.ts` — templates and blocks (spec 2026-09-18): show cues in bars,
+  lyric styling without lines, scene settings, and a template naming one of each plus a mood;
+  `resolveTemplate` / `applyTemplate` are pure and shared by the UI and `track-job --template`.
+  Files live in `../presets/` (see its README).
 - `src/main.ts` + `index.html` — the thin UI over the engine.
 
 Deep link: `?demo` loads the demo track, `?demo&3d` also turns the preview on

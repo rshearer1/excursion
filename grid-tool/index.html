@@ -255,8 +255,18 @@
             <option value="clean">clean</option>
           </select>
         </label>
+        <select id="scenePresetSel" title="scene presets: scene, cut cadence, lead and fps — pick one to apply it"><option value="">scene presets…</option></select>
+        <button id="scenePresetSave" title="save the scene, cuts, lead and fps as a named preset in presets/scenes/">Save preset</button>
         <button id="linkdir" title="Choose your excursion project folder — exports then write straight into blender/jobs/">Link folder</button>
         <button id="export" class="export" disabled>Export drive.json</button>
+      </fieldset>
+
+      <fieldset class="strip" style="border:1px solid var(--line)">
+        <legend>Templates</legend>
+        <label>template <select id="templateSel" title="a reel template names a scene preset, a mood, a show preset and a lyric preset"><option value="">none loaded</option></select></label>
+        <button id="templateApply" disabled title="apply the template to this track: scene, mood, cuts, show cues (by bar) and lyric styling; the grid, markers, hits and lyric lines stay">Apply</button>
+        <button id="templateSave" class="export" disabled title="save this reel's look as a template: one preset per kind plus the template file, in presets/">Save as…</button>
+        <input type="file" id="presetFile" accept=".json" title="load a preset or template file from anywhere (no linked folder needed)" style="max-width:170px" />
       </fieldset>
 
       <fieldset class="strip" style="border:1px solid var(--line)">
@@ -307,6 +317,8 @@
         <label title="a Blender stays open and renders a small EEVEE frame of the playhead whenever you seek or change a cue; about a second a frame"><input type="checkbox" id="liveChk" /> live</label>
         <button id="showFromMood" title="fill the lanes from the selected mood's cues, on this track's downbeats">Lanes from mood</button>
         <button id="showClear">Clear lanes</button>
+        <select id="showPresetSel" title="show presets: cue lanes stored in bars — pick one to lay it onto this track's grid"><option value="">show presets…</option></select>
+        <button id="showPresetSave" title="save these lanes as a named preset in presets/shows/ (cue times in bars)">Save preset</button>
         <span class="drophint" id="showHint">no cues — the mood runs the lights</span>
       </div>
       <div class="desk" id="desk"></div>
@@ -319,6 +331,8 @@
         <button id="lyricTranscribe" title="run WhisperX on this machine through the dev server">Transcribe</button>
         <button id="lyricQuantise" title="snap line starts and word onsets to the 16th grid">Quantise</button>
         <button id="lyricClear">Clear</button>
+        <select id="lyricPresetSel" title="lyric presets: defaults and section styles, never the lines — pick one to apply it"><option value="">lyric presets…</option></select>
+        <button id="lyricPresetSave" title="save the styling (defaults + section styles) as a named preset in presets/lyrics/">Save preset</button>
         <label>style <select id="lyricStyle"></select></label>
         <label>anchor <select id="lyricAnchor"></select></label>
         <label>colour <select id="lyricColor"></select></label>

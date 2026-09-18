@@ -50,6 +50,16 @@ export function beatTimes(grid: Grid, durationSec: number): Beat[] {
   return beats;
 }
 
+/** Bars from the downbeat at tSec (fractional; negative before it). The unit presets are stored in. */
+export function barOf(grid: Grid, tSec: number): number {
+  return beatPosition(grid, tSec) / grid.beatsPerBar;
+}
+
+/** Seconds of a bar position on this grid — the inverse of barOf. */
+export function secOf(grid: Grid, bar: number): number {
+  return grid.offsetMs / 1000 + bar * grid.beatsPerBar * beatDurationSec(grid);
+}
+
 export function nudged(grid: Grid, deltaMs: number): Grid {
   return { ...grid, offsetMs: grid.offsetMs + deltaMs };
 }

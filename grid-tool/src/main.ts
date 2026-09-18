@@ -14,6 +14,21 @@ import { detectHits, type Hits } from "./engine/hits";
 import { automationChannel, inflateAls, parseAls, type AlsAutomation } from "./engine/ableton";
 import { stemChannel, stemNameOf, wooferStem } from "./engine/stems";
 import { LANE_DEFAULTS, LANE_INFO, cueCount, laneAt, lanesFromMood, setCue, type CueValue, type LaneName, type Rgb, type Show } from "./engine/show";
+import {
+  PRESET_DIRS,
+  applyTemplate,
+  blockToShow,
+  lyricBlock,
+  parsePreset,
+  resolveTemplate,
+  sceneBlock,
+  showToBlock,
+  slugName,
+  type Library,
+  type Preset,
+  type ReelState,
+  type Template,
+} from "./engine/presets";
 import { envelopeFollow } from "./engine/envelope";
 import { autoGain } from "./engine/autogain";
 import type { FrameFeatures } from "./engine/features";
@@ -60,6 +75,16 @@ const playBtn = $<HTMLButtonElement>("play");
 const timeEl = $<HTMLSpanElement>("time");
 const metroChk = $<HTMLInputElement>("metro");
 const moodSel = $<HTMLSelectElement>("mood");
+const scenePresetSel = $<HTMLSelectElement>("scenePresetSel");
+const scenePresetSaveBtn = $<HTMLButtonElement>("scenePresetSave");
+const showPresetSel = $<HTMLSelectElement>("showPresetSel");
+const showPresetSaveBtn = $<HTMLButtonElement>("showPresetSave");
+const lyricPresetSel = $<HTMLSelectElement>("lyricPresetSel");
+const lyricPresetSaveBtn = $<HTMLButtonElement>("lyricPresetSave");
+const templateSel = $<HTMLSelectElement>("templateSel");
+const templateApplyBtn = $<HTMLButtonElement>("templateApply");
+const templateSaveBtn = $<HTMLButtonElement>("templateSave");
+const presetFile = $<HTMLInputElement>("presetFile");
 const sceneSel = $<HTMLSelectElement>("scene");
 const linkBtn = $<HTMLButtonElement>("linkdir");
 const driveChk = $<HTMLInputElement>("driveOverlay");
@@ -152,6 +177,8 @@ let hits: Hits | null = null; // tracked kicks and snares, edited in the audit l
 let stems = new Map<string, { mono: Float32Array; sampleRate: number }>(); // loaded stem files by channel name (this session only)
 let automation: AlsAutomation[] = []; // automation lanes from the loaded .als, sampled into channels at export
 let show: Show = { lanes: {} }; // the desk's cue lanes (phase 12)
+// presets and templates (spec 2026-09-18): blocks read from <linked folder>/presets/*, moods from the mood picker
+const library: Library & { templates: Record<string, Template> } = { scenes: {}, shows: {}, lyrics: {}, moods: [], templates: {} };
 const faders: Partial<Record<LaneName, CueValue>> = {}; // the programmer: what Cue writes
 let driveCache: FrameFeatures | null = null; // 30fps features for the overlay
 let overlayBass: Float32Array | null = null;
@@ -314,6 +341,8 @@ function adoptTrack(name: string, sha1: string, buffer: AudioBuffer, file: File 
   trackNameEl.textContent = `${name} — ${buffer.duration.toFixed(2)}s @ ${buffer.sampleRate}Hz`;
   playBtn.disabled = false;
   exportBtn.disabled = false;
+  templateSaveBtn.disabled = false;
+  templateApplyBtn.disabled = !templateSel.value;
   renderBtn.disabled = !(file && helperOnline);
   previewBtn.disabled = !helperOnline;
   stemBtn.disabled = !(file && helperOnline);
@@ -1657,6 +1686,7 @@ linkBtn.addEventListener("click", async () => {
     linkBtn.textContent = `→ ${projectDir.name}/blender/jobs`;
     status(`Linked. Exports now write straight into ${projectDir.name}/blender/jobs/.`);
     void loadPreviewRig();
+    void loadLibrary();
   } catch {
     /* picker cancelled */
   }
@@ -1754,6 +1784,249 @@ document.addEventListener("keydown", (e) => {
 syncControls();
 draw();
 status("Drop a track anywhere, or load the demo.");
+
+// ---------- presets and templates ----------
+// Blocks are JSON files under presets/{scenes,shows,lyrics,templates}/ in the linked folder; a
+// reel template names one block of each kind plus a mood. Fixed recipes: applying reproduces
+// what was saved. Without a linked folder the same JSON downloads, and any file can be loaded
+// through the preset file input.
+
+/** The template-able slice of the current per-track state. */
+function currentReelState(): ReelState {
+  return {
+    scene: sceneSel.value,
+    mood: moodSel.value,
+    cutsEveryBars: Number(cutsSel.value) || 0,
+    cutMarkers: cutMarkersChk.checked,
+    leadMs: Number(leadInput.value) || 0,
+    fps: Number(fpsSel.value) || 30,
+    show,
+    lyrics,
+  };
+}
+
+/** Push a reel state into the controls and the managers; the grid, markers, hits and lines are not part of it. */
+function applyReelState(next: ReelState): void {
+  if ([...sceneSel.options].some((o) => o.value === next.scene)) sceneSel.value = next.scene;
+  if ([...moodSel.options].some((o) => o.value === next.mood)) moodSel.value = next.mood;
+  cutsSel.value = String(next.cutsEveryBars);
+  if (!cutsSel.value) cutsSel.value = "0";
+  cutMarkersChk.checked = next.cutMarkers;
+  leadInput.value = String(next.leadMs);
+  fpsSel.value = String(next.fps);
+  show = next.show;
+  lyrics = next.lyrics;
+  for (const info of LANE_INFO) {
+    const first = show.lanes[info.name]?.[0];
+    if (first) faders[info.name] = structuredClone(first.value);
+  }
+  syncLyricControls();
+  showChanged();
+  lyricsChanged();
+  void loadPreviewRig();
+}
+
+function moodNames(): string[] {
+  return [...moodSel.options].map((o) => o.value).filter(Boolean);
+}
+
+function refreshPresetPickers(): void {
+  const opts = (names: string[], head: string) => [{ value: "", label: head }, ...names.sort().map((n) => ({ value: n, label: n }))];
+  fillSelect(scenePresetSel, opts(Object.keys(library.scenes), "scene presets…"));
+  fillSelect(showPresetSel, opts(Object.keys(library.shows), "show presets…"));
+  fillSelect(lyricPresetSel, opts(Object.keys(library.lyrics), "lyric presets…"));
+  const templates = Object.keys(library.templates);
+  fillSelect(templateSel, templates.length ? opts(templates, "pick a template…") : [{ value: "", label: projectDir ? "no templates yet" : "link a folder first" }]);
+  templateApplyBtn.disabled = !track || !templateSel.value;
+  templateSaveBtn.disabled = !track;
+}
+
+function addToLibrary(p: Preset): void {
+  if (p.kind === "scene") library.scenes[p.name] = p;
+  else if (p.kind === "show") library.shows[p.name] = p;
+  else if (p.kind === "lyrics") library.lyrics[p.name] = p;
+  else library.templates[p.name] = p;
+}
+
+async function loadLibrary(): Promise<void> {
+  if (!projectDir) return;
+  library.scenes = {};
+  library.shows = {};
+  library.lyrics = {};
+  library.templates = {};
+  let n = 0;
+  try {
+    const root = await projectDir.getDirectoryHandle("presets", { create: true });
+    for (const dir of Object.values(PRESET_DIRS)) {
+      let sub: FileSystemDirectoryHandle;
+      try {
+        sub = await root.getDirectoryHandle(dir);
+      } catch {
+        continue;
+      }
+      for await (const [name, handle] of sub as unknown as AsyncIterable<[string, FileSystemHandle]>) {
+        if (handle.kind !== "file" || !name.endsWith(".json")) continue;
+        try {
+          addToLibrary(parsePreset(await (await (handle as FileSystemFileHandle).getFile()).text()));
+          n++;
+        } catch (e) {
+          console.warn(`presets/${dir}/${name}: ${e instanceof Error ? e.message : String(e)}`);
+        }
+      }
+    }
+  } catch (e) {
+    status(`Could not read presets/: ${e instanceof Error ? e.message : String(e)}`, true);
+  }
+  library.moods = moodNames();
+  refreshPresetPickers();
+  if (n) status(`${n} preset${n === 1 ? "" : "s"} loaded from ${projectDir.name}/presets/.`);
+}
+
+/** Write a preset to presets/<dir>/<name>.json in the linked folder, or download it. */
+async function writePreset(p: Preset): Promise<string> {
+  const json = JSON.stringify(p, null, 2);
+  const fname = `${p.name}.json`;
+  if (projectDir) {
+    const root = await projectDir.getDirectoryHandle("presets", { create: true });
+    const sub = await root.getDirectoryHandle(PRESET_DIRS[p.kind], { create: true });
+    const fh = await sub.getFileHandle(fname, { create: true });
+    const w = await fh.createWritable();
+    await w.write(json);
+    await w.close();
+    addToLibrary(p);
+    refreshPresetPickers();
+    return `presets/${PRESET_DIRS[p.kind]}/${fname}`;
+  }
+  const blob = new Blob([json], { type: "application/json" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = `${p.name}.${p.kind}.json`;
+  a.click();
+  URL.revokeObjectURL(a.href);
+  addToLibrary(p);
+  refreshPresetPickers();
+  return `download ${a.download}`;
+}
+
+function askName(what: string, suggestion: string): string | null {
+  const raw = window.prompt(`Name for this ${what} (letters, digits, dashes):`, suggestion);
+  if (raw === null) return null;
+  const name = slugName(raw);
+  if (!name) {
+    status("A preset needs a name.", true);
+    return null;
+  }
+  return name;
+}
+
+function applyPreset(p: Preset): void {
+  const state = currentReelState();
+  if (p.kind === "template") {
+    library.moods = moodNames();
+    const { resolved, missing } = resolveTemplate(p, library);
+    applyReelState(applyTemplate(resolved, state, grid));
+    status(
+      missing.length
+        ? `Template ${p.name} applied without ${missing.join(", ")} — those presets are not in the linked folder.`
+        : `Template ${p.name} applied: scene, mood, cuts, show cues and lyric styling. Grid, markers, hits and lines kept.`,
+    );
+    return;
+  }
+  if (p.kind === "scene") applyReelState(applyTemplate({ scene: p }, state, grid));
+  else if (p.kind === "show") applyReelState(applyTemplate({ show: p }, state, grid));
+  else applyReelState(applyTemplate({ lyrics: p }, state, grid));
+  status(`${p.kind} preset ${p.name} applied.`);
+}
+
+scenePresetSel.addEventListener("change", () => {
+  const p = library.scenes[scenePresetSel.value];
+  scenePresetSel.value = "";
+  if (p) applyPreset(p);
+});
+showPresetSel.addEventListener("change", () => {
+  const p = library.shows[showPresetSel.value];
+  showPresetSel.value = "";
+  if (p) applyPreset(p);
+});
+lyricPresetSel.addEventListener("change", () => {
+  const p = library.lyrics[lyricPresetSel.value];
+  lyricPresetSel.value = "";
+  if (p) applyPreset(p);
+});
+templateSel.addEventListener("change", () => {
+  templateApplyBtn.disabled = !track || !templateSel.value;
+});
+templateApplyBtn.addEventListener("click", () => {
+  const p = library.templates[templateSel.value];
+  if (p) applyPreset(p);
+});
+
+scenePresetSaveBtn.addEventListener("click", async () => {
+  const name = askName("scene preset", `${sceneSel.value}-${cutsSel.value || "0"}bar`);
+  if (!name) return;
+  try {
+    status(`Saved ${await writePreset(sceneBlock(currentReelState(), name))}.`);
+  } catch (e) {
+    status(`Save failed: ${e instanceof Error ? e.message : String(e)}`, true);
+  }
+});
+showPresetSaveBtn.addEventListener("click", async () => {
+  if (!cueCount(show.lanes)) {
+    status("No cues to save — set faders and press Cue first, or Lanes from mood.", true);
+    return;
+  }
+  const name = askName("show preset", `${moodSel.value}-cues`);
+  if (!name) return;
+  try {
+    status(`Saved ${await writePreset(showToBlock(show, grid, name))} — cue times in bars.`);
+  } catch (e) {
+    status(`Save failed: ${e instanceof Error ? e.message : String(e)}`, true);
+  }
+});
+lyricPresetSaveBtn.addEventListener("click", async () => {
+  const name = askName("lyric preset", `${lyrics.defaults.anchor}-${lyrics.defaults.style}`);
+  if (!name) return;
+  try {
+    status(`Saved ${await writePreset(lyricBlock(lyrics, name))} — styling only, no lines.`);
+  } catch (e) {
+    status(`Save failed: ${e instanceof Error ? e.message : String(e)}`, true);
+  }
+});
+templateSaveBtn.addEventListener("click", async () => {
+  if (!track) return;
+  const name = askName("template", `${sceneSel.value}-${moodSel.value}`);
+  if (!name) return;
+  const state = currentReelState();
+  const t: Template = { kind: "template", name, scene: name, mood: moodSel.value, lyrics: name };
+  try {
+    const written = [await writePreset(sceneBlock(state, name)), await writePreset(lyricBlock(lyrics, name))];
+    if (cueCount(show.lanes)) {
+      t.show = name;
+      written.push(await writePreset(showToBlock(show, grid, name)));
+    }
+    written.push(await writePreset(t));
+    templateSel.value = name;
+    templateApplyBtn.disabled = false;
+    status(`Template ${name} saved: ${written.length} files under presets/. Apply it to any track.`);
+  } catch (e) {
+    status(`Save failed: ${e instanceof Error ? e.message : String(e)}`, true);
+  }
+});
+presetFile.addEventListener("change", async () => {
+  const f = presetFile.files?.[0];
+  presetFile.value = "";
+  if (!f) return;
+  try {
+    const p = parsePreset(await f.text());
+    addToLibrary(p);
+    refreshPresetPickers();
+    if (track) applyPreset(p);
+    else status(`${p.kind} ${p.name} loaded — load a track to apply it.`);
+  } catch (e) {
+    status(`Not a preset: ${e instanceof Error ? e.message : String(e)}`, true);
+  }
+});
+refreshPresetPickers();
 
 // deep link: ?demo loads the demo track, ?demo&3d also switches the preview on
 const params = new URLSearchParams(location.search);
