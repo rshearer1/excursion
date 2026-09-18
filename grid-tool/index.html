@@ -267,6 +267,7 @@
         <button id="templateApply" disabled title="apply the template to this track: scene, mood, cuts, show cues (by bar) and lyric styling; the grid, markers, hits and lyric lines stay">Apply</button>
         <button id="templateSave" class="export" disabled title="save this reel's look as a template: one preset per kind plus the template file, in presets/">Save as…</button>
         <input type="file" id="presetFile" accept=".json" title="load a preset or template file from anywhere (no linked folder needed)" style="max-width:170px" />
+        <span class="drophint" id="reelHint" title="every Render and Export is remembered per track; a look that matches an earlier reel is flagged"></span>
       </fieldset>
 
       <fieldset class="strip" style="border:1px solid var(--line)">
@@ -342,6 +343,18 @@
       <textarea id="lyricText" placeholder="Type or paste the lyrics, one line per row, then press Use lines. Play the track and hit Enter on each line as it is sung to time it."></textarea>
       <div class="lyricbar"><button id="lyricUse" class="export">Use lines</button><span class="drophint" id="lyricHint">no lines</span></div>
       <div class="lyriclist" id="lyricList"></div>
+    </details>
+
+    <details class="adv" id="moodBox">
+      <summary>mood</summary>
+      <div class="lyricbar">
+        <button id="moodLoad" title="fill the panel from the selected mood (blender/moods/<name>.json)">Load mood</button>
+        <button id="moodSave" disabled title="write the panel back to blender/moods/<name>.json in the linked folder">Save</button>
+        <button id="moodSaveAs" disabled title="write the panel as a new mood and select it">Save as…</button>
+        <button id="moodCueAdd" disabled title="add a cue step: rim colour and gain, dust-back gain, LED trace colour">+ cue</button>
+        <span class="drophint" id="moodHint">not loaded — Load fills the panel from the selected mood; Save writes the file Blender reads</span>
+      </div>
+      <div class="desk" id="moodForm"></div>
     </details>
 
     <div id="status"></div>

@@ -425,3 +425,20 @@ The webview's looks are reusable. Fixed recipes — applying reproduces what was
 - Without a linked folder the same JSON downloads; the **preset file** input loads any of them.
 - Headless: `npm run track-job -- track.wav --template club-night` (`--mood`/`--cuts` on the
   command line win). `club-night` is the starter template in `presets/`.
+
+## The mood panel and the reel history (2026-09-18, work box)
+
+**mood** (a box under the console) edits the mood file itself, so moods are no longer hand-written.
+**Load mood** fills the panel from the selected mood (through the dev server, or the linked
+folder's `blender/moods/`): description, exposure, key colour and gain, graze and dust-back
+gains, the cue steps (rim colour and gain, dust-back gain, LED trace colour; **+ cue** adds one,
+× removes), cue bars and fade, smoke, shells, the grade (bloom, chromatic, black lift, split-tone
+gain and lift colours, saturation, vignette, grain) and the routing selects — any stem or
+`auto:` automation channel the track has. **Save** writes `blender/moods/<name>.json` in the
+linked folder (the file Blender reads on the next render); **Save as…** makes a new mood and
+selects it. Alt+N with nothing loaded starts a fresh mood from the defaults.
+
+**Reel history**: every Render and Export remembers this track's look (scene, mood, cuts, show
+cues in bars, lyric styling). The line in the Templates strip reads "3 reels · new look", or
+warns "this look matches reel #2" when the current settings would reproduce an earlier reel —
+hover it for the list. Per track, saved with the grid.

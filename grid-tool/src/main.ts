@@ -29,6 +29,8 @@ import {
   type ReelState,
   type Template,
 } from "./engine/presets";
+import { DEFAULT_CUE, MOOD_FIELDS, getPath, moodToJson, parseMood, setPath, withMoodDefaults, type Mood } from "./engine/mood";
+import { addHistory, describeLook, lookSignature, matchingReel, type ReelRecord } from "./engine/history";
 import { envelopeFollow } from "./engine/envelope";
 import { autoGain } from "./engine/autogain";
 import type { FrameFeatures } from "./engine/features";
@@ -85,6 +87,13 @@ const templateSel = $<HTMLSelectElement>("templateSel");
 const templateApplyBtn = $<HTMLButtonElement>("templateApply");
 const templateSaveBtn = $<HTMLButtonElement>("templateSave");
 const presetFile = $<HTMLInputElement>("presetFile");
+const reelHint = $<HTMLSpanElement>("reelHint");
+const moodLoadBtn = $<HTMLButtonElement>("moodLoad");
+const moodSaveBtn = $<HTMLButtonElement>("moodSave");
+const moodSaveAsBtn = $<HTMLButtonElement>("moodSaveAs");
+const moodCueAddBtn = $<HTMLButtonElement>("moodCueAdd");
+const moodHint = $<HTMLSpanElement>("moodHint");
+const moodForm = $<HTMLDivElement>("moodForm");
 const sceneSel = $<HTMLSelectElement>("scene");
 const linkBtn = $<HTMLButtonElement>("linkdir");
 const driveChk = $<HTMLInputElement>("driveOverlay");
@@ -176,6 +185,9 @@ let lyrics: Lyrics = structuredClone(DEFAULT_LYRICS);
 let hits: Hits | null = null; // tracked kicks and snares, edited in the audit lane
 let stems = new Map<string, { mono: Float32Array; sampleRate: number }>(); // loaded stem files by channel name (this session only)
 let automation: AlsAutomation[] = []; // automation lanes from the loaded .als, sampled into channels at export
+let history: ReelRecord[] = []; // what this track's reels looked like (per track, persisted)
+let moodEdit: Mood | null = null; // the mood panel's working copy
+let moodDirty = false;
 let show: Show = { lanes: {} }; // the desk's cue lanes (phase 12)
 // presets and templates (spec 2026-09-18): blocks read from <linked folder>/presets/*, moods from the mood picker
 const library: Library & { templates: Record<string, Template> } = { scenes: {}, shows: {}, lyrics: {}, moods: [], templates: {} };
@@ -219,6 +231,7 @@ interface Saved {
   lyrics?: Lyrics;
   hits?: Hits | null;
   show?: Show;
+  history?: ReelRecord[];
 }
 const storeKey = (sha1: string): string => `excursion:grid:${sha1}`;
 function saveState(): void {
@@ -242,7 +255,9 @@ function saveState(): void {
     lyrics,
     hits,
     show,
+    history,
   };
+  updateReelHint();
   try {
     localStorage.setItem(storeKey(track.sha1), JSON.stringify(saved));
   } catch {
@@ -268,6 +283,7 @@ function loadState(sha1: string): boolean {
     hits = s.hits ?? null;
     hitsChk.checked = hits !== null;
     show = s.show ?? { lanes: {} };
+    history = s.history ?? [];
     renderDesk();
     if (s.fps) fpsSel.value = String(s.fps);
     if (s.leadMs !== undefined) leadInput.value = String(s.leadMs);
@@ -336,6 +352,7 @@ function adoptTrack(name: string, sha1: string, buffer: AudioBuffer, file: File 
   hitsChk.checked = false;
   stems = new Map();
   automation = [];
+  history = [];
   show = { lanes: {} };
   renderDesk();
   trackNameEl.textContent = `${name} — ${buffer.duration.toFixed(2)}s @ ${buffer.sampleRate}Hz`;
@@ -343,6 +360,7 @@ function adoptTrack(name: string, sha1: string, buffer: AudioBuffer, file: File 
   exportBtn.disabled = false;
   templateSaveBtn.disabled = false;
   templateApplyBtn.disabled = !templateSel.value;
+  updateReelHint();
   renderBtn.disabled = !(file && helperOnline);
   previewBtn.disabled = !helperOnline;
   stemBtn.disabled = !(file && helperOnline);
@@ -854,6 +872,7 @@ async function exportDrive(): Promise<void> {
       const writable = await fileHandle.createWritable();
       await writable.write(json);
       await writable.close();
+      recordReel("export", "-");
       status(`Wrote blender/jobs/${fname} — ${drive.frames.length} frames, ${drive.beats.length} beats.`);
     } else {
       const blob = new Blob([json], { type: "application/json" });
@@ -1496,7 +1515,7 @@ async function renderReel(): Promise<void> {
     });
     const st = (await res.json()) as RenderState & { error?: string };
     if (!res.ok) throw new Error(st.error ?? `render refused (${res.status})`);
-    saveState();
+    recordReel(profileSel.value, engineSel.value);
     showRender(st);
     startPolling();
     status(`Rendering ${st.total} frames — ${profileSel.value} profile on ${engineSel.value}. You can keep gridding.`);
@@ -2028,6 +2047,269 @@ presetFile.addEventListener("change", async () => {
 });
 refreshPresetPickers();
 
+// ---------- reel history ----------
+// Every Render and Export remembers the look (scene, mood, cuts, show cues in bars, lyric
+// styling) so the next reel can be checked against the old ones: uniqueness by record, not hope.
+function recordReel(profile: string, engine: string): void {
+  if (!track) return;
+  const state = currentReelState();
+  history = addHistory(history, { when: Date.now(), profile, engine, signature: lookSignature(state, grid), summary: describeLook(state) });
+  saveState();
+}
+function updateReelHint(): void {
+  if (!track) {
+    reelHint.textContent = "";
+    return;
+  }
+  const n = history.length;
+  if (!n) {
+    reelHint.textContent = "no reels yet for this track";
+    return;
+  }
+  const match = matchingReel(history, lookSignature(currentReelState(), grid));
+  reelHint.textContent = match
+    ? `${n} reel${n === 1 ? "" : "s"} · this look matches reel #${match.index} (${new Date(match.record.when).toLocaleDateString()}, ${match.record.profile}) — change something to keep it unique`
+    : `${n} reel${n === 1 ? "" : "s"} · new look`;
+  reelHint.title = history.map((r, i) => `#${n - i} ${new Date(r.when).toLocaleString()} ${r.profile}: ${r.summary}`).join("\n");
+}
+
+// ---------- mood panel ----------
+// The mood file is the baseline under the show desk plus the grade and the routing. The panel
+// is generated from MOOD_FIELDS; Save writes blender/moods/<name>.json through the linked
+// folder (the file Blender reads), Save as… makes a new mood and selects it.
+
+async function readMood(name: string): Promise<Mood> {
+  if (helperOnline) {
+    const res = await fetch(`/api/moods/${encodeURIComponent(name)}`);
+    if (res.ok) return parseMood(await res.text());
+  }
+  if (projectDir) {
+    const dir = await (await projectDir.getDirectoryHandle("blender")).getDirectoryHandle("moods");
+    const file = await dir.getFileHandle(`${name}.json`);
+    return parseMood(await (await file.getFile()).text());
+  }
+  throw new Error("no dev server and no linked folder — link the excursion folder to read blender/moods/");
+}
+
+async function writeMood(m: Mood): Promise<string> {
+  const text = moodToJson(m);
+  if (projectDir) {
+    const dir = await (await projectDir.getDirectoryHandle("blender", { create: true })).getDirectoryHandle("moods", { create: true });
+    const fh = await dir.getFileHandle(`${m.name}.json`, { create: true });
+    const w = await fh.createWritable();
+    await w.write(text);
+    await w.close();
+    return `blender/moods/${m.name}.json`;
+  }
+  const blob = new Blob([text], { type: "application/json" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = `${m.name}.json`;
+  a.click();
+  URL.revokeObjectURL(a.href);
+  return `download ${a.download} (put it in blender/moods/)`;
+}
+
+function routeOptions(current: string): { value: string; label: string }[] {
+  const names = new Set<string>(["bass", "kick", "snare", "hats", "drums", "vocal", "synth", "fx"]);
+  for (const k of stems.keys()) names.add(k);
+  for (const a of automation) names.add(`auto:${autoSlug(a.name)}`);
+  const opts = [{ value: "", label: "mix bass (default)" }, ...[...names].map((n) => ({ value: `channels.${n}`, label: n }))];
+  if (current && !opts.some((o) => o.value === current)) opts.push({ value: current, label: current });
+  return opts;
+}
+
+function moodChanged(path: string, value: unknown): void {
+  if (!moodEdit) return;
+  moodEdit = setPath(moodEdit, path, value);
+  moodDirty = true;
+  moodHint.textContent = `${moodEdit.name} — edited, not saved`;
+}
+
+function renderMoodForm(): void {
+  moodForm.replaceChildren();
+  const m = moodEdit;
+  moodSaveBtn.disabled = !m;
+  moodSaveAsBtn.disabled = !m;
+  moodCueAddBtn.disabled = !m;
+  if (!m) return;
+  const groups = new Map<string, HTMLDivElement>();
+  const groupEl = (name: string): HTMLDivElement => {
+    let g = groups.get(name);
+    if (!g) {
+      g = document.createElement("div");
+      g.className = "lane";
+      const title = document.createElement("div");
+      title.className = "lanename";
+      title.textContent = name;
+      const body = document.createElement("div");
+      body.className = "faders";
+      g.append(title, body);
+      groups.set(name, g);
+      moodForm.append(g);
+    }
+    return g.lastElementChild as HTMLDivElement;
+  };
+  for (const f of MOOD_FIELDS) {
+    const body = groupEl(f.group);
+    const l = document.createElement("label");
+    if (f.hint) l.title = f.hint;
+    const v = getPath(m, f.path);
+    if (f.kind === "number") {
+      const r = document.createElement("input");
+      r.type = "range";
+      r.min = String(f.min);
+      r.max = String(f.max);
+      r.step = String(f.step);
+      r.value = String(v ?? 0);
+      const out = document.createElement("span");
+      out.textContent = Number(r.value).toFixed(f.step! < 0.01 ? 3 : 2);
+      r.addEventListener("input", () => {
+        out.textContent = Number(r.value).toFixed(f.step! < 0.01 ? 3 : 2);
+        moodChanged(f.path, Number(r.value));
+      });
+      l.append(`${f.label} `, r, out);
+    } else if (f.kind === "color") {
+      const c = document.createElement("input");
+      c.type = "color";
+      c.value = toHex((v as Rgb) ?? [1, 1, 1]);
+      c.addEventListener("input", () => moodChanged(f.path, fromHex(c.value)));
+      l.append(`${f.label} `, c);
+    } else if (f.kind === "bool") {
+      const c = document.createElement("input");
+      c.type = "checkbox";
+      c.checked = Boolean(v);
+      c.addEventListener("change", () => moodChanged(f.path, c.checked));
+      l.append(c, ` ${f.label}`);
+    } else if (f.kind === "route") {
+      const sel = document.createElement("select");
+      fillSelect(sel, routeOptions(String(v ?? "")), String(v ?? ""));
+      sel.addEventListener("change", () => {
+        const next = { ...m.routing } as Record<string, string>;
+        const target = f.path.split(".")[1]!;
+        if (sel.value) next[target] = sel.value;
+        else delete next[target];
+        moodChanged("routing", next);
+      });
+      l.append(`${f.label} `, sel);
+    } else {
+      const t = document.createElement("input");
+      t.type = "text";
+      t.value = String(v ?? "");
+      t.style.width = "26em";
+      t.addEventListener("change", () => moodChanged(f.path, t.value));
+      l.append(`${f.label} `, t);
+    }
+    body.append(l);
+  }
+  // the cue list: each step the mood cycles through on the downbeats
+  const cuesBody = groupEl("cues");
+  m.cues.forEach((cue, i) => {
+    const row = document.createElement("div");
+    row.className = "cues";
+    const rim = document.createElement("input");
+    rim.type = "color";
+    rim.value = toHex(cue.rim);
+    rim.title = "rim colour";
+    rim.addEventListener("input", () => moodChanged(`cues.${i}.rim`, fromHex(rim.value)));
+    const rimGain = document.createElement("input");
+    rimGain.type = "number";
+    rimGain.min = "0";
+    rimGain.max = "3";
+    rimGain.step = "0.05";
+    rimGain.value = String(cue.rim_gain);
+    rimGain.title = "rim gain";
+    rimGain.style.width = "62px";
+    rimGain.addEventListener("change", () => moodChanged(`cues.${i}.rim_gain`, Number(rimGain.value) || 0));
+    const back = document.createElement("input");
+    back.type = "number";
+    back.min = "0";
+    back.max = "4";
+    back.step = "0.1";
+    back.value = String(cue.back_gain);
+    back.title = "dust-back gain";
+    back.style.width = "62px";
+    back.addEventListener("change", () => moodChanged(`cues.${i}.back_gain`, Number(back.value) || 0));
+    const trace = document.createElement("input");
+    trace.type = "color";
+    trace.value = toHex(cue.trace);
+    trace.title = "LED trace colour";
+    trace.addEventListener("input", () => moodChanged(`cues.${i}.trace`, fromHex(trace.value)));
+    const del = document.createElement("button");
+    del.textContent = "×";
+    del.title = "remove this cue";
+    del.addEventListener("click", () => {
+      moodChanged("cues", m.cues.filter((_, j) => j !== i));
+      renderMoodForm();
+    });
+    row.append(`cue ${i + 1}: rim `, rim, rimGain, ` back `, back, ` trace `, trace, del);
+    cuesBody.append(row);
+  });
+  if (!m.cues.length) {
+    const none = document.createElement("span");
+    none.className = "drophint";
+    none.textContent = "no cue steps — the rims hold the mood's key; + cue adds a step";
+    cuesBody.append(none);
+  }
+}
+
+moodLoadBtn.addEventListener("click", async () => {
+  try {
+    moodEdit = await readMood(moodSel.value);
+    moodDirty = false;
+    moodHint.textContent = `${moodEdit.name} loaded — ${moodEdit.description || "no description"}`;
+    renderMoodForm();
+  } catch (e) {
+    status(`Load mood: ${e instanceof Error ? e.message : String(e)}`, true);
+  }
+});
+moodCueAddBtn.addEventListener("click", () => {
+  if (!moodEdit) return;
+  moodChanged("cues", [...moodEdit.cues, structuredClone(DEFAULT_CUE)]);
+  renderMoodForm();
+});
+async function saveMoodAs(name: string): Promise<void> {
+  if (!moodEdit) return;
+  const m: Mood = { ...moodEdit, name };
+  try {
+    const where = await writeMood(m);
+    moodEdit = m;
+    moodDirty = false;
+    if (![...moodSel.options].some((o) => o.value === name)) {
+      const o = document.createElement("option");
+      o.value = name;
+      o.textContent = name;
+      moodSel.append(o);
+    }
+    moodSel.value = name;
+    saveState();
+    moodHint.textContent = `${name} saved`;
+    status(`Mood ${name} written to ${where}. Render uses it on the next job.`);
+  } catch (e) {
+    status(`Save mood: ${e instanceof Error ? e.message : String(e)}`, true);
+  }
+}
+moodSaveBtn.addEventListener("click", () => moodEdit && void saveMoodAs(moodEdit.name));
+moodSaveAsBtn.addEventListener("click", () => {
+  if (!moodEdit) return;
+  const name = askName("mood", `${moodEdit.name}-2`);
+  if (name) void saveMoodAs(name);
+});
+moodSel.addEventListener("change", () => {
+  if (moodEdit && moodEdit.name !== moodSel.value) {
+    moodHint.textContent = moodDirty ? `${moodEdit.name} has unsaved edits — Load replaces them with ${moodSel.value}` : `Load to edit ${moodSel.value}`;
+  }
+});
+// a brand-new mood from scratch: Load with nothing on disk offers the defaults
+window.addEventListener("keydown", (e) => {
+  if (e.key === "n" && e.altKey && !moodEdit) {
+    moodEdit = withMoodDefaults({ name: "new-mood" });
+    moodDirty = true;
+    moodHint.textContent = "new mood from the defaults — Save as… to name it";
+    renderMoodForm();
+  }
+});
+
 // deep link: ?demo loads the demo track, ?demo&3d also switches the preview on
 const params = new URLSearchParams(location.search);
 if (params.has("desk")) showBox.open = true; // deep link: open the desk
@@ -2036,6 +2318,14 @@ if (params.has("demo")) {
     if (params.has("3d")) {
       previewChk.checked = true;
       previewChk.dispatchEvent(new Event("change"));
+    }
+    if (params.has("mood")) {
+      // ?demo&mood opens the mood panel on a fresh mood from the defaults (a smoke test without a helper)
+      moodEdit = withMoodDefaults({ name: "new-mood" });
+      moodDirty = true;
+      moodHint.textContent = "new mood from the defaults — Save as… to name it";
+      renderMoodForm();
+      (document.getElementById("moodBox") as HTMLDetailsElement).open = true;
     }
   });
 }
