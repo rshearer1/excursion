@@ -565,9 +565,12 @@ else:
     kick_times = (data.get("events") or {}).get("kick") or []
     signals = {
         "bass": slow,
-        "beat": [v / 1.0 for v in beat_flash(0.6, 1.0, 0.8)],
+        "beat": beat_flash(0.6, 1.0, 0.8),
         "kick": rigkit.flash_series(kick_times, fps, n_frames) if kick_times else None,
     }
+    if not kick_times and any(o["rig_react"] == "kick" for o in fixtures):
+        signals["kick"] = signals["beat"]  # no tracked hits in this drive: kick fixtures flash on the beats instead
+        print("rig: no tracked kicks (track hits in the grid tool) — kick fixtures follow the beats")
     for obj in fixtures:
         base = obj.data.energy
         role = obj["rig_role"]

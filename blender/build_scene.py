@@ -2582,6 +2582,7 @@ build_compositor()
 # the room travels with the scene: apply_drive falls back to the room's rig, the add-on's
 # Save room starts from it
 scene["excursion_room"] = json.dumps(ROOM or {"kind": "room", "name": SCENE, "description": "", "base": BASE})
+scene["excursion_built_speakers"] = json.dumps(globals().get("rig_built", []))  # a speaker skipped for a missing STL is not "deleted" when the add-on saves the room
 if ROOM.get("rig"):
     scene["room_rig"] = ROOM["rig"]
 

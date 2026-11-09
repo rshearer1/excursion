@@ -244,6 +244,12 @@ def rig_objects(scene):
     return [o for o in col.objects if o.type == "LIGHT"] if col is not None else []
 
 
+def _refresh(scene):
+    """World matrices are only current after a depsgraph update (a moved light reads its old place otherwise)."""
+    for layer in scene.view_layers:
+        layer.update()
+
+
 def capture_fixture(obj):
     """A fixture dict from a light object as it sits in the scene now."""
     data = obj.data
@@ -281,6 +287,7 @@ def capture_fixture(obj):
 
 def capture_rig(scene, name, description="", replace_built_in=False, objects=None):
     """The scene's rig (or the given light objects) as a rig dict, ready to write."""
+    _refresh(scene)
     objs = objects if objects is not None else rig_objects(scene)
     fixtures, seen = [], set()
     for obj in sorted(objs, key=lambda o: o.name):
@@ -322,6 +329,7 @@ def flash_series(times, fps, n, decay=0.8):
 def capture_room(scene, room):
     """The room dict with its speakers, extra cameras and lyric anchors read back from the scene.
     Speakers carry their model and mount on the cabinet (build_scene tags them); the hero stays."""
+    _refresh(scene)
     room = dict(room)
     speakers = []
     for obj in scene.objects:
@@ -336,6 +344,10 @@ def capture_room(scene, room):
             "yaw": r4(math.degrees(obj.rotation_euler.z)),
             "mount": info["mount"],
         })
+    # a speaker the room lists but the build skipped (its STL was not cached) is kept as it was
+    built = set(json.loads(scene.get("excursion_built_speakers", "[]")))
+    found = {s["id"] for s in speakers}
+    speakers += [s for s in room.get("speakers") or [] if s["id"] not in found and s["id"] not in built]
     if speakers or room.get("speakers") is not None:
         room["speakers"] = sorted(speakers, key=lambda s: s["id"])
     cams = []
