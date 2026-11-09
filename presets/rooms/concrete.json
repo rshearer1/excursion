@@ -1,0 +1,6 @@
+{
+  "kind": "room",
+  "name": "concrete",
+  "description": "The hero in a concrete room corner, lyric anchors on the back wall.",
+  "base": "concrete"
+}

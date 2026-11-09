@@ -1,0 +1,116 @@
+{
+  "kind": "rig",
+  "name": "kick-floor",
+  "description": "Adds to the room's own lights: two amber floor cans behind the hero firing up through the haze on every kick, and two cool side washes that take the desk's rim colour.",
+  "replaceBuiltIn": false,
+  "fixtures": [
+    {
+      "id": "floor-left",
+      "type": "spot",
+      "pos": [
+        -0.45,
+        0.35,
+        -0.95
+      ],
+      "aim": [
+        -0.2,
+        0.6,
+        1.2
+      ],
+      "power": 420,
+      "color": [
+        1.0,
+        0.55,
+        0.2
+      ],
+      "cone": 18,
+      "blend": 0.4,
+      "size": 0.03,
+      "volume": 0.8,
+      "role": "static",
+      "react": "kick",
+      "amount": 0.9
+    },
+    {
+      "id": "floor-right",
+      "type": "spot",
+      "pos": [
+        0.45,
+        0.35,
+        -0.95
+      ],
+      "aim": [
+        0.2,
+        0.6,
+        1.2
+      ],
+      "power": 420,
+      "color": [
+        1.0,
+        0.55,
+        0.2
+      ],
+      "cone": 18,
+      "blend": 0.4,
+      "size": 0.03,
+      "volume": 0.8,
+      "role": "static",
+      "react": "kick",
+      "amount": 0.9
+    },
+    {
+      "id": "side-left",
+      "type": "spot",
+      "pos": [
+        -1.6,
+        -0.4,
+        0.6
+      ],
+      "aim": [
+        0.0,
+        -0.1,
+        0.0
+      ],
+      "power": 260,
+      "color": [
+        0.4,
+        0.6,
+        1.0
+      ],
+      "cone": 35,
+      "blend": 0.7,
+      "size": 0.15,
+      "volume": 0.2,
+      "role": "wash",
+      "react": "beat",
+      "amount": 0.3
+    },
+    {
+      "id": "side-right",
+      "type": "spot",
+      "pos": [
+        1.6,
+        -0.4,
+        0.6
+      ],
+      "aim": [
+        0.0,
+        -0.1,
+        0.0
+      ],
+      "power": 260,
+      "color": [
+        0.4,
+        0.6,
+        1.0
+      ],
+      "cone": 35,
+      "blend": 0.7,
+      "size": 0.15,
+      "volume": 0.2,
+      "role": "wash",
+      "react": "beat",
+      "amount": 0.3
+    }
+  ]
+}

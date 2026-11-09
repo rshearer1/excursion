@@ -8,9 +8,11 @@
 
 import { type Grid, barOf, secOf } from "./grid";
 import type { Lyrics } from "./lyrics";
+import { type Rig, parseRig } from "./rig";
+import { type Room, parseRoom } from "./room";
 import type { CueValue, LaneName, Lanes, Show } from "./show";
 
-export type PresetKind = "show" | "lyrics" | "scene" | "template";
+export type PresetKind = "show" | "lyrics" | "scene" | "template" | "room" | "rig";
 
 export interface BarCue {
   /** bars from the downbeat, fractional */
@@ -51,9 +53,11 @@ export interface Template {
   mood?: string;
   show?: string;
   lyrics?: string;
+  /** a rig in presets/rigs/ */
+  rig?: string;
 }
 
-export type Preset = ShowBlock | LyricBlock | SceneBlock | Template;
+export type Preset = ShowBlock | LyricBlock | SceneBlock | Template | Room | Rig;
 
 /** The slice of per-track state a template sets. Everything else (grid, markers, hits, stems, lines) stays with the track. */
 export interface ReelState {
@@ -65,6 +69,8 @@ export interface ReelState {
   fps: number;
   show: Show;
   lyrics: Lyrics;
+  /** the rig the reel lights with (absent or "" = the room's own default) */
+  rig?: string;
 }
 
 export interface Library {
@@ -73,6 +79,8 @@ export interface Library {
   lyrics: Record<string, LyricBlock>;
   /** mood names known to the Blender side (blender/moods/*.json) */
   moods: string[];
+  /** rigs in presets/rigs/ (optional: older callers leave it out) */
+  rigs?: Record<string, Rig>;
 }
 
 export interface ResolvedTemplate {
@@ -80,10 +88,11 @@ export interface ResolvedTemplate {
   mood?: string;
   show?: ShowBlock;
   lyrics?: LyricBlock;
+  rig?: string;
 }
 
 const NAME_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
-const KINDS: PresetKind[] = ["show", "lyrics", "scene", "template"];
+const KINDS: PresetKind[] = ["show", "lyrics", "scene", "template", "room", "rig"];
 
 /** A file-safe preset name from anything typed: lower-case, dashes. */
 export function slugName(raw: string): string {
@@ -139,6 +148,10 @@ export function parsePreset(json: string): Preset {
       return raw as unknown as SceneBlock;
     case "template":
       return raw as unknown as Template;
+    case "room":
+      return parseRoom(raw);
+    case "rig":
+      return parseRig(raw);
   }
 }
 
@@ -165,6 +178,10 @@ export function resolveTemplate(t: Template, lib: Library): { resolved: Resolved
     if (b) resolved.lyrics = b;
     else missing.push(`lyrics:${t.lyrics}`);
   }
+  if (t.rig !== undefined) {
+    if (lib.rigs?.[t.rig]) resolved.rig = t.rig;
+    else missing.push(`rig:${t.rig}`);
+  }
   return { resolved, missing };
 }
 
@@ -179,6 +196,7 @@ export function applyTemplate(r: ResolvedTemplate, state: ReelState, grid: Grid)
     next.fps = r.scene.fps;
   }
   if (r.mood !== undefined) next.mood = r.mood;
+  if (r.rig !== undefined) next.rig = r.rig;
   if (r.show) next.show = blockToShow(r.show, grid);
   if (r.lyrics) {
     next.lyrics = { ...state.lyrics, defaults: { ...r.lyrics.defaults }, lines: state.lyrics.lines };
@@ -194,4 +212,6 @@ export const PRESET_DIRS: Record<Exclude<PresetKind, never>, string> = {
   lyrics: "lyrics",
   scene: "scenes",
   template: "templates",
+  room: "rooms",
+  rig: "rigs",
 };

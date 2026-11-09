@@ -54,6 +54,9 @@ import {
   type Lyrics,
 } from "./engine/lyrics";
 import type { PreviewViewport } from "./preview/viewport";
+import type { Rig } from "./engine/rig";
+import type { Room } from "./engine/room";
+import { initStudio } from "./studio";
 
 declare global {
   interface Window {
@@ -95,6 +98,7 @@ const moodCueAddBtn = $<HTMLButtonElement>("moodCueAdd");
 const moodHint = $<HTMLSpanElement>("moodHint");
 const moodForm = $<HTMLDivElement>("moodForm");
 const sceneSel = $<HTMLSelectElement>("scene");
+const rigSel = $<HTMLSelectElement>("rigSel");
 const linkBtn = $<HTMLButtonElement>("linkdir");
 const driveChk = $<HTMLInputElement>("driveOverlay");
 const hitsChk = $<HTMLInputElement>("hitsChk");
@@ -190,7 +194,7 @@ let moodEdit: Mood | null = null; // the mood panel's working copy
 let moodDirty = false;
 let show: Show = { lanes: {} }; // the desk's cue lanes (phase 12)
 // presets and templates (spec 2026-09-18): blocks read from <linked folder>/presets/*, moods from the mood picker
-const library: Library & { templates: Record<string, Template> } = { scenes: {}, shows: {}, lyrics: {}, moods: [], templates: {} };
+const library: Library & { templates: Record<string, Template>; rooms: Record<string, Room>; rigs: Record<string, Rig> } = { scenes: {}, shows: {}, lyrics: {}, moods: [], templates: {}, rooms: {}, rigs: {} };
 const faders: Partial<Record<LaneName, CueValue>> = {}; // the programmer: what Cue writes
 let driveCache: FrameFeatures | null = null; // 30fps features for the overlay
 let overlayBass: Float32Array | null = null;
@@ -220,6 +224,7 @@ interface Saved {
   halftime: boolean;
   scene: string;
   mood: string;
+  rig?: string;
   trim: number;
   rangeIn: number | null;
   rangeOut: number | null;
@@ -244,6 +249,7 @@ function saveState(): void {
     halftime: grid.halftime,
     scene: sceneSel.value,
     mood: moodSel.value,
+    rig: rigSel.value,
     trim: Number(trimInput.value) || 1,
     rangeIn,
     rangeOut,
@@ -271,7 +277,8 @@ function loadState(sha1: string): boolean {
     const s = JSON.parse(raw) as Saved;
     grid = { bpm: s.bpm, offsetMs: s.offsetMs, beatsPerBar: s.beatsPerBar, halftime: s.halftime };
     moodSel.value = s.mood;
-    if (s.scene) sceneSel.value = s.scene;
+    if (s.scene) sceneSel.value = ensureOption(sceneSel, s.scene);
+    rigSel.value = s.rig ? ensureOption(rigSel, s.rig) : "";
     trimInput.value = String(s.trim);
     rangeIn = s.rangeIn ?? null;
     rangeOut = s.rangeOut ?? null;
@@ -292,6 +299,16 @@ function loadState(sha1: string): boolean {
   } catch {
     return false;
   }
+}
+/** A picker option for a value the library has not listed yet (a room or rig saved before the folder was linked). */
+function ensureOption(sel: HTMLSelectElement, value: string): string {
+  if (![...sel.options].some((o) => o.value === value)) {
+    const o = document.createElement("option");
+    o.value = value;
+    o.textContent = value;
+    sel.append(o);
+  }
+  return value;
 }
 function syncControls(): void {
   bpmInput.value = String(grid.bpm);
@@ -820,6 +837,7 @@ function buildCurrentDrive(
     fps,
     scene: sceneSel.value,
     mood: moodSel.value,
+    rig: studio.currentRig(),
     features,
     ...motion,
     range,
@@ -1804,6 +1822,23 @@ syncControls();
 draw();
 status("Drop a track anywhere, or load the demo.");
 
+// ---------- room and rig panels (studio.ts) ----------
+const studio = initStudio({
+  status,
+  writePreset: (p) => writePreset(p),
+  rooms: () => library.rooms,
+  rigs: () => library.rigs,
+  sceneSel,
+  rigSel,
+  fillSelect,
+  toHex,
+  fromHex,
+  changed: () => {
+    saveState();
+    requestLive();
+  },
+});
+
 // ---------- presets and templates ----------
 // Blocks are JSON files under presets/{scenes,shows,lyrics,templates}/ in the linked folder; a
 // reel template names one block of each kind plus a mood. Fixed recipes: applying reproduces
@@ -1821,6 +1856,7 @@ function currentReelState(): ReelState {
     fps: Number(fpsSel.value) || 30,
     show,
     lyrics,
+    rig: rigSel.value,
   };
 }
 
@@ -1828,6 +1864,7 @@ function currentReelState(): ReelState {
 function applyReelState(next: ReelState): void {
   if ([...sceneSel.options].some((o) => o.value === next.scene)) sceneSel.value = next.scene;
   if ([...moodSel.options].some((o) => o.value === next.mood)) moodSel.value = next.mood;
+  if (next.rig !== undefined) rigSel.value = next.rig ? ensureOption(rigSel, next.rig) : "";
   cutsSel.value = String(next.cutsEveryBars);
   if (!cutsSel.value) cutsSel.value = "0";
   cutMarkersChk.checked = next.cutMarkers;
@@ -1858,12 +1895,15 @@ function refreshPresetPickers(): void {
   fillSelect(templateSel, templates.length ? opts(templates, "pick a template…") : [{ value: "", label: projectDir ? "no templates yet" : "link a folder first" }]);
   templateApplyBtn.disabled = !track || !templateSel.value;
   templateSaveBtn.disabled = !track;
+  studio.refresh();
 }
 
 function addToLibrary(p: Preset): void {
   if (p.kind === "scene") library.scenes[p.name] = p;
   else if (p.kind === "show") library.shows[p.name] = p;
   else if (p.kind === "lyrics") library.lyrics[p.name] = p;
+  else if (p.kind === "room") library.rooms[p.name] = p;
+  else if (p.kind === "rig") library.rigs[p.name] = p;
   else library.templates[p.name] = p;
 }
 
@@ -1873,6 +1913,8 @@ async function loadLibrary(): Promise<void> {
   library.shows = {};
   library.lyrics = {};
   library.templates = {};
+  library.rooms = {};
+  library.rigs = {};
   let n = 0;
   try {
     const root = await projectDir.getDirectoryHandle("presets", { create: true });
@@ -1953,7 +1995,14 @@ function applyPreset(p: Preset): void {
   }
   if (p.kind === "scene") applyReelState(applyTemplate({ scene: p }, state, grid));
   else if (p.kind === "show") applyReelState(applyTemplate({ show: p }, state, grid));
-  else applyReelState(applyTemplate({ lyrics: p }, state, grid));
+  else if (p.kind === "lyrics") applyReelState(applyTemplate({ lyrics: p }, state, grid));
+  else if (p.kind === "room") {
+    sceneSel.value = ensureOption(sceneSel, p.name);
+    sceneSel.dispatchEvent(new Event("change"));
+  } else {
+    rigSel.value = ensureOption(rigSel, p.name);
+    rigSel.dispatchEvent(new Event("change"));
+  }
   status(`${p.kind} preset ${p.name} applied.`);
 }
 
@@ -2016,7 +2065,7 @@ templateSaveBtn.addEventListener("click", async () => {
   const name = askName("template", `${sceneSel.value}-${moodSel.value}`);
   if (!name) return;
   const state = currentReelState();
-  const t: Template = { kind: "template", name, scene: name, mood: moodSel.value, lyrics: name };
+  const t: Template = { kind: "template", name, scene: name, mood: moodSel.value, lyrics: name, ...(rigSel.value ? { rig: rigSel.value } : {}) };
   try {
     const written = [await writePreset(sceneBlock(state, name)), await writePreset(lyricBlock(lyrics, name))];
     if (cueCount(show.lanes)) {

@@ -4,6 +4,7 @@ import { envelopeFollow } from "./envelope";
 import { autoGain } from "./autogain";
 import type { Lyrics } from "./lyrics";
 import type { Hits } from "./hits";
+import type { Rig } from "./rig";
 import type { Show } from "./show";
 
 export interface DriveFrame {
@@ -40,6 +41,8 @@ export interface DriveJson {
   channels?: Record<string, number[]>;
   /** The desk's cue lanes (phase 12), lead-shifted; a lane present here overrides the mood's cues. */
   show?: Show;
+  /** The light rig (presets/rigs/), inline so unsaved edits render; absent = the room's default rig, if any. */
+  rig?: Rig;
   frames: DriveFrame[];
 }
 
@@ -81,6 +84,7 @@ export interface BuildDriveInput {
   minConf?: number;
   channels?: Record<string, number[]>;
   show?: Show;
+  rig?: Rig;
 }
 
 const round6 = (x: number): number => Math.round(x * 1e6) / 1e6;
@@ -109,6 +113,7 @@ export function buildDrive(input: BuildDriveInput): DriveJson {
     minConf = 0.5,
     channels,
     show,
+    rig,
   } = input;
   const {
     attack = 0.6,
@@ -162,6 +167,7 @@ export function buildDrive(input: BuildDriveInput): DriveJson {
     ...(show && Object.values(show.lanes).some((l) => l?.length)
       ? { show: { lanes: Object.fromEntries(Object.entries(show.lanes).filter(([, l]) => l?.length).map(([k, l]) => [k, l!.map((c) => ({ ...c, t: shift(c.t) }))])) } }
       : {}),
+    ...(rig ? { rig } : {}),
     ...(hits
       ? {
           events: {

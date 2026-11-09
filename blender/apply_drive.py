@@ -42,6 +42,7 @@ ap.add_argument("--slate", action="store_true", help="show the orange sync slate
 ap.add_argument("--shutter", type=float, default=0.5, help="motion blur shutter as a fraction of the frame (0.5 = 180 degrees)")
 ap.add_argument("--samples", type=int, default=48, help="cycles samples per pixel (denoised; 48 is clean for this scene)")
 ap.add_argument("--mood", default=None, help="override drive.mood: a name in blender/moods/")
+ap.add_argument("--rig", default=None, help="override drive.rig: a name in presets/rigs/ ('none' = no rig)")
 ap.add_argument("--frame", type=int, default=None, help="render this one frame to --out (a file path) and stop: the Preview-frame button")
 args = ap.parse_args(argv)
 
@@ -537,6 +538,61 @@ if True:  # one cue is still a cue: the rims take its colour and gain
     print(f"cues: {len(LOOK_CUES)} looks, one every {CUE_BARS} bars, {CUE_FADE}-frame crossfade")
 print("lights: key follows the bass level, rims pulse on downbeats")
 
+# the light rig (presets/rigs/, rigkit.py): fixtures added for this render, each driven by its
+# role (the desk lane it follows) and its react (extra motion from the track). The drive
+# carries the rig inline (the grid tool's unsaved edits render too); --rig picks one by name;
+# with neither, the room's default rig, if the room names one.
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import rigkit  # noqa: E402
+
+rig_spec = args.rig if args.rig is not None else data.get("rig") or scene.get("room_rig")
+rig = None
+try:
+    if isinstance(rig_spec, dict):
+        rig = rigkit.parse_rig(rig_spec)
+    elif isinstance(rig_spec, str) and rig_spec and rig_spec != "none":
+        rig = rigkit.load_rig(rig_spec)
+        if rig is None:
+            print(f"rig: no presets/rigs/{rig_spec}.json — the room's own lights only")
+except ValueError as e:
+    print(f"rig: {e} — the room's own lights only")
+if rig is None:
+    rigkit.clear_rig(scene)
+else:
+    n_frames = len(frames)
+    fixtures = rigkit.build_rig(rig, scene)
+    key_lane_r = lane_series("key", {"gain": 1.0, "color": [1.0, 0.84, 0.66]})
+    kick_times = (data.get("events") or {}).get("kick") or []
+    signals = {
+        "bass": slow,
+        "beat": [v / 1.0 for v in beat_flash(0.6, 1.0, 0.8)],
+        "kick": rigkit.flash_series(kick_times, fps, n_frames) if kick_times else None,
+    }
+    for obj in fixtures:
+        base = obj.data.energy
+        role = obj["rig_role"]
+        if role == "key":
+            kg = [v.get("gain", 1.0) for v in key_lane_r] if key_lane_r else [1.0] * n_frames
+            level = [kg[i] * (0.35 + 0.65 * slow[i]) for i in range(n_frames)]
+            colors = [tuple(v.get("color", list(obj.data.color))) for v in key_lane_r] if key_lane_r else None
+        elif role == "rim":
+            level = [lvl * g for lvl, g in zip(rim_level, rim_gain)]
+            colors = rim_col
+        elif role == "wash":
+            level = list(rim_gain)
+            colors = rim_col
+        elif role == "back":
+            level = [back_lane[i].get("gain", 1.0) if back_lane else cue_mix("back_gain", i) for i in range(n_frames)]
+            colors = None
+        else:
+            level, colors = [1.0] * n_frames, None
+        react = rigkit.react_series(obj["rig_react"], float(obj["rig_amount"]), n_frames, **signals)
+        fcurve_fill(obj.data, "energy", [base * level[i] * react[i] for i in range(n_frames)])
+        if colors:
+            for axis in range(3):
+                fcurve_fill(obj.data, "color", [c[axis] for c in colors], index=axis)
+    print(f"rig {rig['name']}: {len(fixtures)} fixtures" + (", built-in lights off" if rig["replaceBuiltIn"] else ""))
+
 # lyrics (phase 10): emissive text on the scene's anchors, keyed per style ----------------
 # drive.lyrics = { defaults, sections?, lines[] }; each line has t, tEnd, text, optional
 # words [{t, w}], anchor, style, color, size. The text is real geometry: in Cycles the words
@@ -950,6 +1006,7 @@ cameras = sorted((o for o in scene.objects if o.type == "CAMERA" and not o.get("
 # wide views, so no two similar shots sit next to each other
 SHOT_ORDER = ["Cam1_Wide", "Cam2_Woofers", "Cam8_Cone", "Cam7_Top", "Cam3_Macro", "Cam6_Side", "Cam4_Rig", "Cam5_Low"]
 shot_cams = [bpy.data.objects[n] for n in SHOT_ORDER if n in bpy.data.objects and not bpy.data.objects[n].get("unused")] or cameras
+shot_cams += [c for c in cameras if c.get("custom_shot") and c not in shot_cams]  # the room's own cameras, after the built-in shots
 camera_cues = [c for c in sorted(show_lanes.get("camera") or [], key=lambda c: c["t"]) if c["value"].get("camera") in bpy.data.objects]
 if camera_cues and len(cameras) > 1:
     # the desk's camera lane: each cue names the camera from its time on

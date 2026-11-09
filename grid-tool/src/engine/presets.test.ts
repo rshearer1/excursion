@@ -139,6 +139,23 @@ describe("templates", () => {
     expect(next.show.lanes.key?.length).toBe(1);
   });
 
+  it("a template can name a rig; a missing rig is reported, a present one sets the reel's rig", () => {
+    const rig = parsePreset(JSON.stringify({ kind: "rig", name: "kick-floor", fixtures: [{ id: "a" }] }));
+    expect(rig.kind).toBe("rig");
+    const withRig = { ...library, rigs: { "kick-floor": rig as Extract<typeof rig, { kind: "rig" }> } };
+    const ok = resolveTemplate({ kind: "template", name: "t", rig: "kick-floor" }, withRig);
+    expect(ok.missing).toEqual([]);
+    expect(applyTemplate(ok.resolved, state, grid).rig).toBe("kick-floor");
+    expect(resolveTemplate({ kind: "template", name: "t", rig: "gone" }, library).missing).toEqual(["rig:gone"]);
+    expect(applyTemplate({}, { ...state, rig: "old" }, grid).rig).toBe("old");
+  });
+
+  it("parsePreset reads rooms and rigs through their own validators", () => {
+    expect(parsePreset(JSON.stringify({ kind: "room", name: "void", base: "void" })).kind).toBe("room");
+    expect(() => parsePreset(JSON.stringify({ kind: "room", name: "void", base: "moon" }))).toThrow(/base/);
+    expect(() => parsePreset(JSON.stringify({ kind: "rig", name: "r" }))).toThrow(/fixtures/);
+  });
+
   it("sceneBlock captures the reel's scene settings", () => {
     const b = sceneBlock(state, "concrete-16");
     expect(b).toEqual({ kind: "scene", name: "concrete-16", scene: "concrete", cutsEveryBars: 16, cutMarkers: false, leadMs: 20, fps: 60 });

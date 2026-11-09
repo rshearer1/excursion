@@ -50,7 +50,9 @@ def handle(req):
     t0 = time.time()
     with open(req["drive"], "rb") as fh:
         digest = hashlib.sha1(fh.read()).hexdigest()
-    key = (digest, req.get("scene") or "void", req.get("mood") or "")
+    blend = os.path.join(HERE, "scenes", f"{req.get('scene') or 'void'}.blend")
+    built = os.path.getmtime(blend) if os.path.exists(blend) else 0  # a rebuilt room reopens
+    key = (digest, req.get("scene") or "void", req.get("mood") or "", built)
     rebound = key != state["key"]
     if rebound:
         bind(req)

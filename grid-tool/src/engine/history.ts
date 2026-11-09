@@ -24,7 +24,7 @@ export function lookSignature(s: ReelState, grid: Grid): string {
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([lane, cues]) => `${lane}=` + cues!.map((c) => `${r3(barOf(grid, c.t))}:${JSON.stringify(c.value)}${c.fade !== undefined ? `~${r3(c.fade)}` : ""}`).join(","));
   const lyrics = JSON.stringify({ d: s.lyrics.defaults, s: s.lyrics.sections ?? {} });
-  const parts = [s.scene, s.mood, `cuts${s.cutsEveryBars}${s.cutMarkers ? "+m" : ""}`, `lead${s.leadMs}`, `fps${s.fps}`, ...lanes, lyrics];
+  const parts = [s.scene, s.mood, `cuts${s.cutsEveryBars}${s.cutMarkers ? "+m" : ""}`, `lead${s.leadMs}`, `fps${s.fps}`, ...lanes, lyrics, ...(s.rig ? [`rig:${s.rig}`] : [])];
   // FNV-1a over the joined parts: short, stable, no dependency
   let h = 0x811c9dc5;
   const text = parts.join("|");
