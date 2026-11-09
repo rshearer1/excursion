@@ -13,7 +13,7 @@ import { fileURLToPath } from "node:url";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const args = process.argv.slice(2);
-const valueFlags = new Set(["--engine", "--audio", "--sweep", "--shutter", "--crf", "--samples", "--mood", "--lut"]);
+const valueFlags = new Set(["--engine", "--audio", "--sweep", "--shutter", "--crf", "--samples", "--mood", "--lut", "--rig"]);
 const drivePaths = args.filter((a, i) => !a.startsWith("--") && !valueFlags.has(args[i - 1] ?? ""));
 if (drivePaths.length > 1) {
   // batch: one reel after another, same flags; a failure stops the batch
