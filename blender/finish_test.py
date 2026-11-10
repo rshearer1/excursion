@@ -24,6 +24,9 @@ if os.environ.get("FINISH", "1") != "0":
 if os.environ.get("WEAR", "1") != "0":
     import speaker_wear as sw  # noqa: E402
 
+    if os.environ.get("SURFACE", "1") != "0":
+        sw.surface(bpy.data.materials.get("CabinetMat"), **sw.SURFACE)
+        sw.surface(bpy.data.materials.get("PlateMat"), **sw.PLATE_SURFACE)
     for name in ("CabinetMat", "PlateMat", "WooferMat", "DomeMat"):
         sw.wear(bpy.data.materials.get(name), **sw.WEAR)
     for name in ("WooferMat",):

@@ -263,3 +263,83 @@ def cone_detail(material, mottle=0.35, fibre_bump=0.22, rings=0.05, settled=0.35
     L.new(bmp.outputs["Normal"], bsdf.inputs["Normal"])
     material[TAG + "_cone"] = True
     return material
+
+
+# surface(): the base finish itself. PMC cabinets are a textured satin paint: a fine orange-peel
+# stipple that breaks every highlight into grain, and a finish that is never one flat tone
+# (spray build-up, slight sheen differences panel to panel). The scanned Plastic012A map alone
+# is too fine and too even to survive 1080p and the denoiser, so this adds the stipple at a
+# scale that reads, broad tonal drift, and patchy sheen.
+SURFACE = {"stipple": 0.6, "tone": 0.35, "sheen": 0.2, "lift": 1.6}
+PLATE_SURFACE = {"stipple": 0.25, "tone": 0.15, "sheen": 0.08, "lift": 1.2}
+
+
+def surface(material, stipple=0.45, tone=0.22, sheen=0.12, lift=1.35):
+    bsdf = _bsdf(material, "_surface")
+    if bsdf is None:
+        return material
+    nt = material.node_tree
+    N, L = nt.nodes, nt.links
+    math, ramp, mix_rgb, mix_f = _kit(nt)
+    coord = N.new("ShaderNodeTexCoord").outputs["Object"]
+
+    # tone: big soft drift plus mid-size blotches, multiplied into the colour; lift > 1 raises the
+    # albedo a touch so the texture has something to show (the paint is charcoal, not black)
+    drift = N.new("ShaderNodeTexNoise")
+    drift.inputs["Scale"].default_value = 6.0
+    drift.inputs["Detail"].default_value = 3.0
+    L.new(coord, drift.inputs["Vector"])
+    blot = N.new("ShaderNodeTexNoise")
+    blot.inputs["Scale"].default_value = 55.0
+    blot.inputs["Detail"].default_value = 6.0
+    blot.inputs["Roughness"].default_value = 0.6
+    L.new(coord, blot.inputs["Vector"])
+    t = math("ADD", math("MULTIPLY", drift.outputs["Fac"], 0.6), math("MULTIPLY", blot.outputs["Fac"], 0.4))
+    shade = N.new("ShaderNodeMapRange")
+    L.new(t, shade.inputs["Value"])
+    shade.inputs["From Min"].default_value = 0.3
+    shade.inputs["From Max"].default_value = 0.7
+    shade.inputs["To Min"].default_value = lift * (1.0 - tone)
+    shade.inputs["To Max"].default_value = lift * (1.0 + tone)
+    tint = N.new("ShaderNodeCombineColor")
+    for i in range(3):
+        L.new(shade.outputs["Result"], tint.inputs[i])
+    one = N.new("ShaderNodeValue")
+    one.outputs[0].default_value = 1.0
+    _rewire(nt, bsdf.inputs["Base Color"], lambda s, d: mix_rgb(s, d, one.outputs[0], tint.outputs[0], blend="MULTIPLY"))
+
+    # sheen: patchy roughness, independent of the tone
+    patch = N.new("ShaderNodeTexNoise")
+    patch.inputs["Scale"].default_value = 18.0
+    patch.inputs["Detail"].default_value = 5.0
+    L.new(coord, patch.inputs["Vector"])
+
+    def rough(src, default):
+        base = src if src is not None else default
+        return math("ADD", base, math("MULTIPLY", math("SUBTRACT", patch.outputs["Fac"], 0.5), 2 * sheen), clamp=True)
+
+    _rewire(nt, bsdf.inputs["Roughness"], rough)
+
+    # stipple: orange-peel cells (~0.8 mm) with a finer grit on top
+    peel = N.new("ShaderNodeTexVoronoi")
+    peel.feature = "SMOOTH_F1"
+    peel.inputs["Scale"].default_value = 520.0  # ~2 mm cells: any finer averages away at 1080p
+    peel.inputs["Smoothness"].default_value = 0.6
+    L.new(coord, peel.inputs["Vector"])
+    gritn = N.new("ShaderNodeTexNoise")
+    gritn.inputs["Scale"].default_value = 1600.0
+    gritn.inputs["Detail"].default_value = 2.0
+    L.new(coord, gritn.inputs["Vector"])
+    height = math("ADD", math("MULTIPLY", peel.outputs["Distance"], 0.75), math("MULTIPLY", gritn.outputs["Fac"], 0.25))
+    bmp = N.new("ShaderNodeBump")
+    bmp.inputs["Strength"].default_value = stipple
+    bmp.inputs["Distance"].default_value = 0.0003
+    L.new(height, bmp.inputs["Height"])
+    prev = bsdf.inputs["Normal"].links[0].from_socket if bsdf.inputs["Normal"].links else None
+    if prev is not None:
+        L.new(prev, bmp.inputs["Normal"])
+    for link in list(bsdf.inputs["Normal"].links):
+        L.remove(link)
+    L.new(bmp.outputs["Normal"], bsdf.inputs["Normal"])
+    material[TAG + "_surface"] = True
+    return material

@@ -758,6 +758,7 @@ def plate_material(name, cell_mm=6.0):
         m.node_tree.nodes["Principled BSDF"].inputs["Metallic"].default_value = 0.12  # anodised, not chrome
         speaker_finish.finish(m, **speaker_finish.PLATE)
         speaker_finish.exaggerate_relief(m, **speaker_finish.RELIEF)
+        speaker_wear.surface(m, **speaker_wear.PLATE_SURFACE)
         return speaker_wear.wear(m, **speaker_wear.WEAR)
     nt = m.node_tree
     N, L = nt.nodes, nt.links
@@ -1012,6 +1013,7 @@ dome_mat = driver_material("DomeMat", "dome")
 speaker_finish.finish(cabinet_mat, **speaker_finish.CABINET)
 for _m in (woofer_mat, dome_mat):
     speaker_finish.finish(_m, **speaker_finish.DRIVER)
+speaker_wear.surface(cabinet_mat, **speaker_wear.SURFACE)  # textured satin paint, never one flat tone
 for _m in (cabinet_mat, woofer_mat, dome_mat):  # dust, flecks, fingerprints, scuffs
     speaker_wear.wear(_m, **speaker_wear.WEAR)
 speaker_wear.cone_detail(woofer_mat, **speaker_wear.CONE)
