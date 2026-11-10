@@ -2,7 +2,7 @@
 //
 //   node blender/stage/test_still.mjs                     frame 1600, wide meter shot, 48 samples
 //   node blender/stage/test_still.mjs --frames 1300,1600  several stills (show cameras, not the meter shot)
-//   node blender/stage/test_still.mjs --clip 1590,1661    ~3 s clip (72 frames at 24 fps)
+//   node blender/stage/test_still.mjs --clip 1590,1679    ~3 s clip (90 frames at the drive fps, 30)
 //   options: --name <n>  --drive <drive.json>  --samples <n>  --half  --show-cams  --rebuild  --no-grade
 //
 // It builds blender/scenes/void.blend from THIS checkout when the speaker sources changed, then
@@ -53,8 +53,8 @@ if (tasks.split(/\r?\n/).some((l) => /\s-b\s/.test(` ${l} `))) {
 }
 if (clip) {
   const [a, b] = clip.split(",").map(Number);
-  if (b - a + 1 > 80) {
-    console.error(`Clip is ${b - a + 1} frames; tests are ~3 s (<= 80 frames).`);
+  if (b - a + 1 > 100) {
+    console.error(`Clip is ${b - a + 1} frames; tests are ~3 s (<= 100 frames).`);
     process.exit(2);
   }
 }
@@ -122,7 +122,7 @@ if (!flag("--no-grade")) {
   if (clip) {
     const seq = path.join(outDir, name, "%04d.png");
     const [a] = clip.split(",");
-    spawnSync("ffmpeg", ["-v", "error", "-y", "-framerate", "24", "-start_number", a, "-i", seq,
+    spawnSync("ffmpeg", ["-v", "error", "-y", "-framerate", String(JSON.parse(fs.readFileSync(drive, "utf8")).fps || 30), "-start_number", a, "-i", seq,
       "-vf", `lut3d='${lut}',${BLACKS}`, "-c:v", "libx264", "-crf", "18", "-pix_fmt", "yuv420p",
       path.join(outDir, `${name}_graded.mp4`)], { stdio: "inherit" });
   } else {
