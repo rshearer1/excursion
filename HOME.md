@@ -454,7 +454,11 @@ Two more preset kinds, editable from the browser and from Blender (same files, i
   left out keeps the base's, so the four starter rooms build exactly the old scenes. The **scene**
   picker lists every room; `EXCURSION_SCENE=<room>` builds `blender/scenes/<room>.blend`.
   `make_reel`, Preview frame and Live rebuild the scene when the room file is newer than the
-  .blend (a minute or so; `make_reel --rebuild` forces it). `void-wide-pair` is a worked example.
+  .blend (a minute or so; `make_reel --rebuild` forces it). `void-wide-pair` is a worked example. `pair: { gap, toe }` makes a stereo pair:
+  a twin of the hero (same meshes, materials and motion) `gap` m to the right on its own stand, both
+  toed in `toe` degrees, each with its own key, graze and top-back (copies named `PairR_*`, sharing
+  the hero's light data, so the desk lanes drive both), the LED wall centred between them;
+  `void-pair` is the example (2026-11-10).
 - **Rigs** — `presets/rigs/<name>.json`: lights added at apply time, so a rig change needs no
   rebuild. Each fixture: `type` (spot, area, point), `pos`, `aim` (metres, hero at the origin,
   x right, y away from the camera, z up), `power` (W), `color`, `cone`, `blend`, `size`,
