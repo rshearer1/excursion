@@ -121,7 +121,9 @@ def finish(material, edge_radius, edge_gain, edge_lift, edge_gloss, cavity_dist,
 # the shader exaggerates it: anything below the plate face is a cell floor, darker and rougher,
 # and the step between them becomes a strong bump, so every cell wall draws a crisp line.
 PLATE_FACE_Y = -0.17748  # object-space y of the plate face on the hero cabinet
-PLATE_CELL_Y = -0.17723  # object-space y of the cell floors
+PLATE_CAD_CELL_Y = -0.17723  # object-space y of the cell floors as the CAD has them
+HEX_DEEPEN = 0.0009  # build_scene pushes the cell floors this much deeper (real depth, real shadows)
+PLATE_CELL_Y = PLATE_CAD_CELL_Y + HEX_DEEPEN  # object-space y of the cell floors after that
 RELIEF = {"floor_dark": 0.45, "floor_rough": 0.75, "face_rough": 0.32, "bump": 0.6, "bump_dist": 0.0012}
 
 

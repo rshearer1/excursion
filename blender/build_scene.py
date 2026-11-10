@@ -747,6 +747,7 @@ def hex_tile_image(path, R=40, nx=6, ny=4):
     return img, (W, H)
 
 
+HEX_DEEPEN = speaker_finish.HEX_DEEPEN  # extra depth given to the honeycomb cell floors (metres)
 HEX_BUMP = False  # the old 6 mm shader honeycomb; the CAD's own ~12 mm moulding is the real one (speaker_finish.py)
 
 
@@ -827,8 +828,13 @@ def plate_material(name, cell_mm=6.0):
 # deep out to r 38 mm then climb to meet the ridges at the rim.
 WAVEGUIDE_R_IN = 0.0273  # just outside the mid pocket wall (r_cut 27 mm), so the seam is covered
 WAVEGUIDE_R_OUT = 0.052  # where the horn meets the plate
-WAVEGUIDE_FLANGE = 0.066  # the flange's outer radius, a hair proud of the plate: it has to cover the CAD's ragged stepped recess, which reaches ~65 mm at the top and bottom (0.054 left torn edges showing)
-WAVEGUIDE_PLATE = 0.0033  # plate surface depth around the mid (metres below the baffle)
+# On the real PMC6-2 the waveguide sits in a round recess cut into the panel (nothing stands
+# proud). The CAD has a ragged stepped ring there instead, reaching ~65 mm at the top and
+# bottom; an exact boolean now cuts a clean recess over it, and the flange is its floor (it
+# covers whatever of the CAD lies deeper than the cut).
+WAVEGUIDE_RECESS_R = 0.066  # recess radius around the mid
+WAVEGUIDE_FLANGE = WAVEGUIDE_RECESS_R - 0.0004  # the flange: the recess floor, just inside its wall
+WAVEGUIDE_PLATE = 0.0046  # recess floor depth below the baffle (the plate face is at 3.1 mm)
 WAVEGUIDE_PETALS = 8
 
 
@@ -844,7 +850,19 @@ def _wg_depth(r, theta):
 
 
 def build_waveguide(body, cx, cz, front, prefix):
-    """Delete the CAD cog from body around (cx, cz) and return the modelled horn object."""
+    """Cut the round recess, delete the CAD cog from body around (cx, cz) and return the
+    modelled horn object."""
+    bpy.ops.mesh.primitive_cylinder_add(
+        vertices=256, radius=WAVEGUIDE_RECESS_R, depth=WAVEGUIDE_PLATE + 0.02,
+        location=(cx, front + (WAVEGUIDE_PLATE - 0.02) / 2, cz), rotation=(math.pi / 2, 0, 0),
+    )
+    cutter = bpy.context.object
+    mod = body.modifiers.new("cut_recess", "BOOLEAN")
+    mod.operation = "DIFFERENCE"
+    mod.solver = "EXACT"
+    mod.object = cutter
+    apply_modifier(body, mod)
+    bpy.data.objects.remove(cutter)
     me = body.data
     bm = bmesh.new()
     bm.from_mesh(me)
@@ -949,6 +967,15 @@ def build_speaker(model, prefix, location, yaw=0.0, hero=False, scale=(1, 1, 1))
                 poly.material_index = 1
                 n += 1
         print(f"plate: {n} faces get the honeycomb finish")
+        # the CAD honeycomb is only 0.25 mm deep (plate face 3.10 mm, cell floors 3.35 mm behind
+        # the baffle): too shallow to cast any shadow. Push the cell floors back so the cells
+        # read as embedded, as on the real panel; the walls stretch with them.
+        moved = 0
+        for v in me.vertices:
+            if x0 < v.co.x < x1 and (v.co.z > PLATE_HEX_TOP or v.co.z < PLATE_HEX_BOTTOM) and abs(v.co.y - speaker_finish.PLATE_CAD_CELL_Y) < 0.00005:
+                v.co.y += HEX_DEEPEN
+                moved += 1
+        print(f"plate: {moved} honeycomb floor vertices pushed {HEX_DEEPEN * 1000:.1f} mm deeper")
 
     def names_for(kind):
         if kind == "woofer" and hero:
