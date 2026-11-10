@@ -57,7 +57,7 @@ if (clip) {
 }
 
 // ---- rebuild the scene when any speaker/scene source is newer than the .blend
-const blend = path.join(ROOT, "blender", "scenes", "void.blend");
+const blend = path.resolve(ROOT, opt("--blend", "blender/scenes/void.blend")); // --blend: A/B against another scene
 const sources = ["build_scene.py", "speaker_finish.py", "speaker_wear.py", "rigkit.py", "kits/PMC6-2.json"]
   .map((f) => path.join(ROOT, "blender", f))
   .filter((f) => fs.existsSync(f));
@@ -65,7 +65,7 @@ const stale = !fs.existsSync(blend) || sources.some((f) => fs.statSync(f).mtimeM
 fs.mkdirSync(outDir, { recursive: true });
 const logPath = path.join(outDir, `${name}.log`);
 const log = fs.openSync(logPath, "w");
-if (stale || flag("--rebuild")) {
+if ((stale && !opt("--blend")) || flag("--rebuild")) {
   console.log("building void.blend from this checkout ...");
   const r = spawnSync(BLENDER, ["-b", "-P", path.join(ROOT, "blender", "build_scene.py")], {
     cwd: ROOT,
@@ -85,7 +85,7 @@ const env = {
   WALL_IMAGE: meters, WALL_IMG_GAIN: "10",
   V4_SHAKE: "1", V4_SHAKE_INFLUENCE: "0.3", V4_LENS: "1", V4_FILM: "1",
   WT_NAME: name, WT_OUT: outDir, WT_A: "0", WT_B: "1",
-  WT_RIP_W: "0.1", WT_SMOKE_GAIN: "3", WT_HAZE_BUMP: "0", WT_DUST_PUSH: "0.1",
+  WT_BACKLIGHT: "0", WT_RIP_W: "0.1", WT_SMOKE_GAIN: "3", WT_HAZE_BUMP: "0", WT_DUST_PUSH: "0.1",
 };
 if (flag("--half")) Object.assign(env, { LT_HALF: "1", WT_HALF: "1" });
 if (clip) env.WT_CLIP = clip;
@@ -110,19 +110,21 @@ if (r.status !== 0) {
   process.exit(1);
 }
 
-// ---- grade (print_soft LUT) for review copies
+// ---- grade (print_soft LUT) for review copies; the LUT lifts blacks, so press them back down
+// (the void stays black, the speaker stays black paint, not grey)
+const BLACKS = "curves=all='0/0 0.25/0.12 0.6/0.55 1/1'";
 if (!flag("--no-grade")) {
   const lut = path.join(HERE, "luts", "print_soft.cube").replace(/\\/g, "/").replace(/^([A-Z]):/, "$1\\:");
   if (clip) {
     const seq = path.join(outDir, name, "%04d.png");
     const [a] = clip.split(",");
     spawnSync("ffmpeg", ["-v", "error", "-y", "-framerate", "24", "-start_number", a, "-i", seq,
-      "-vf", `lut3d='${lut}'`, "-c:v", "libx264", "-crf", "18", "-pix_fmt", "yuv420p",
+      "-vf", `lut3d='${lut}',${BLACKS}`, "-c:v", "libx264", "-crf", "18", "-pix_fmt", "yuv420p",
       path.join(outDir, `${name}_graded.mp4`)], { stdio: "inherit" });
   } else {
     for (const f of frames.split(",")) {
       const raw = path.join(outDir, `${name}_${String(f).padStart(4, "0")}.png`);
-      spawnSync("ffmpeg", ["-v", "error", "-y", "-i", raw, "-vf", `lut3d='${lut}'`, "-q:v", "2",
+      spawnSync("ffmpeg", ["-v", "error", "-y", "-i", raw, "-vf", `lut3d='${lut}',${BLACKS}`, "-q:v", "2",
         raw.replace(/\.png$/, "_graded.jpg")], { stdio: "inherit" });
     }
   }
