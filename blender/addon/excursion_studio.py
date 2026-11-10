@@ -13,6 +13,8 @@
 #                              result; Save room writes the speakers, extra cameras and lyric
 #                              anchors as they sit in the scene now. Add camera / Add speaker
 #                              place new ones (a new speaker is a marker until the next build).
+#   Live link                  serves 127.0.0.1:8765 so the grid tool (Blender box on its show
+#                              desk) drives this scene live: playhead, faders, cues, camera, rig.
 # The schema lives in grid-tool/src/engine/rig.ts and room.ts; the Blender side in rigkit.py.
 bl_info = {
     "name": "Excursion Studio",
@@ -27,8 +29,11 @@ bl_info = {
 import importlib
 import json
 import os
+import queue
 import subprocess
 import sys
+import threading
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import bpy
 from bpy.props import BoolProperty, EnumProperty, FloatProperty, PointerProperty, StringProperty
@@ -159,6 +164,7 @@ class ExcursionSettings(bpy.types.PropertyGroup):
     new_model: EnumProperty(name="Model", items=MODEL_ITEMS, default="PMC6-2")
     new_mount: EnumProperty(name="Mount", items=MOUNT_ITEMS, default="stand")
     new_height: FloatProperty(name="Height", default=0.3, min=0.0, unit="LENGTH")
+    live_port: bpy.props.IntProperty(name="Port", default=8765, min=1024, max=65535, description="the grid tool connects to 127.0.0.1 on this port")
 
 
 class ExcursionPrefs(bpy.types.AddonPreferences):
@@ -432,6 +438,151 @@ class EXC_OT_room_add_speaker(bpy.types.Operator):
         return {"FINISHED"}
 
 
+# ---------- the live link ----------
+# A small HTTP server on 127.0.0.1 that the grid tool talks to. Requests are queued by the
+# server thread and applied on Blender's main thread by a timer (bpy is not thread-safe):
+#   GET  /status          what is open: room, rig, fixtures, Blender version
+#   POST /state           { time, fps, lanes }: the playhead and the desk (rigkit.apply_live)
+#   POST /rig             { name }: load presets/rigs/<name>.json into the scene
+# Only the newest /state waits in the queue, so scrubbing never builds a backlog.
+
+LIVE = {"server": None, "thread": None, "inbox": queue.Queue(), "status": {}, "last": ""}
+
+
+def _status(context):
+    scene = context.scene
+    room = json.loads(scene.get("excursion_room", "{}") or "{}")
+    try:
+        fixtures = len(kit(context).rig_objects(scene))
+    except RuntimeError:
+        fixtures = 0
+    return {"ok": True, "blender": bpy.app.version_string, "file": os.path.basename(bpy.data.filepath) or "(unsaved)", "room": room.get("name", ""), "rig": scene.get("excursion_rig", ""), "fixtures": fixtures, "last": LIVE["last"]}
+
+
+class _Handler(BaseHTTPRequestHandler):
+    def log_message(self, *args):  # quiet: the console is for errors
+        pass
+
+    def _send(self, code, body):
+        data = json.dumps(body).encode("utf-8")
+        self.send_response(code)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Access-Control-Allow-Origin", "*")  # the grid tool is another localhost origin
+        self.send_header("Access-Control-Allow-Headers", "Content-Type")
+        self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+        self.send_header("Access-Control-Allow-Private-Network", "true")
+        self.send_header("Content-Length", str(len(data)))
+        self.end_headers()
+        self.wfile.write(data)
+
+    def do_OPTIONS(self):
+        self._send(204, {})
+
+    def do_GET(self):
+        if self.path.split("?")[0] == "/status":
+            return self._send(200, LIVE["status"] or {"ok": True})
+        self._send(404, {"ok": False, "error": "not found"})
+
+    def do_POST(self):
+        path = self.path.split("?")[0]
+        if path not in ("/state", "/rig"):
+            return self._send(404, {"ok": False, "error": "not found"})
+        try:
+            body = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0) or 0)) or b"{}")
+        except ValueError:
+            return self._send(400, {"ok": False, "error": "bad json"})
+        if path == "/state":  # keep only the newest playhead
+            kept = []
+            while not LIVE["inbox"].empty():
+                item = LIVE["inbox"].get_nowait()
+                if item[0] != "/state":
+                    kept.append(item)
+            for item in kept:
+                LIVE["inbox"].put(item)
+        LIVE["inbox"].put((path, body))
+        self._send(202, {"ok": True, "queued": path})
+
+
+def _drain():
+    """Main-thread timer: apply what the browser sent, refresh the status the server answers with."""
+    if LIVE["server"] is None:
+        return None
+    context = bpy.context
+    applied = False
+    try:
+        while not LIVE["inbox"].empty():
+            path, body = LIVE["inbox"].get_nowait()
+            applied = True
+            rk = kit(context)
+            if path == "/state":
+                LIVE["last"] = rk.apply_live(context.scene, body)
+            elif path == "/rig":
+                rig = rk.load_rig(str(body.get("name", "")), os.path.join(project_root(context), "presets", "rigs"))
+                if rig is None:
+                    LIVE["last"] = f"no rig {body.get('name')}"
+                else:
+                    rk.build_rig(rig, context.scene)
+                    context.scene.excursion.rig_name = rig["name"]
+                    LIVE["last"] = f"rig {rig['name']} loaded"
+        LIVE["status"] = _status(context)
+        if applied:
+            for window in context.window_manager.windows:  # the viewport and the panel show the change
+                for area in window.screen.areas:
+                    if area.type == "VIEW_3D":
+                        area.tag_redraw()
+    except Exception as e:  # noqa: BLE001 — keep the link alive, show the error
+        LIVE["last"] = f"error: {e}"
+        LIVE["status"] = {**LIVE["status"], "last": LIVE["last"]}
+    return 0.05
+
+
+def live_start(port):
+    if LIVE["server"] is not None:
+        return
+    server = ThreadingHTTPServer(("127.0.0.1", port), _Handler)
+    server.daemon_threads = True
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    LIVE.update(server=server, thread=thread, last="")
+    if not bpy.app.timers.is_registered(_drain):
+        bpy.app.timers.register(_drain, first_interval=0.05, persistent=True)
+
+
+def live_stop():
+    server = LIVE["server"]
+    if server is None:
+        return
+    LIVE["server"] = None
+    server.shutdown()
+    server.server_close()
+    if bpy.app.timers.is_registered(_drain):
+        bpy.app.timers.unregister(_drain)
+
+
+class EXC_OT_live(bpy.types.Operator):
+    bl_idname = "excursion.live"
+    bl_label = "Live link"
+    bl_description = "Let the grid tool drive this scene: the playhead, the desk faders and cues, the camera and the rig show here as you work"
+
+    def execute(self, context):
+        s = context.scene.excursion
+        if LIVE["server"] is not None:
+            live_stop()
+            try:
+                kit(context).reset_live(context.scene)
+            except RuntimeError:
+                pass
+            self.report({"INFO"}, "live link off")
+            return {"FINISHED"}
+        try:
+            kit(context)
+            live_start(s.live_port)
+        except (RuntimeError, OSError) as e:
+            return _report_error(self, e)
+        self.report({"INFO"}, f"live link on: the grid tool can reach this Blender at 127.0.0.1:{s.live_port}")
+        return {"FINISHED"}
+
+
 # ---------- the panel ----------
 
 class EXC_PT_studio(bpy.types.Panel):
@@ -450,6 +601,14 @@ class EXC_PT_studio(bpy.types.Panel):
             layout.label(text="Preferences > Add-ons > Excursion Studio")
             return
         layout.label(text=os.path.basename(root), icon="FILE_FOLDER")
+
+        box = layout.box()
+        on = LIVE["server"] is not None
+        row = box.row(align=True)
+        row.operator("excursion.live", text="Live link: on" if on else "Live link: off", icon="LINKED" if on else "UNLINKED", depress=on)
+        row.prop(s, "live_port", text="")
+        if on:
+            box.label(text=LIVE["last"] or "waiting for the grid tool…")
 
         box = layout.box()
         box.label(text="Light rig", icon="LIGHT_SPOT")
@@ -529,6 +688,7 @@ CLASSES = (
     EXC_OT_room_save,
     EXC_OT_room_add_camera,
     EXC_OT_room_add_speaker,
+    EXC_OT_live,
     EXC_PT_studio,
 )
 
@@ -541,6 +701,7 @@ def register():
 
 
 def unregister():
+    live_stop()
     del bpy.types.Object.excursion_fixture
     del bpy.types.Scene.excursion
     for cls in reversed(CLASSES):

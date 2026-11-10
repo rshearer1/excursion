@@ -169,15 +169,7 @@
     .lane .cues { grid-column: 2; display: flex; gap: 6px; flex-wrap: wrap; }
     .lane .cue { font: 11px var(--mono); color: var(--text); background: var(--panel); border: 1px solid var(--line); border-radius: 999px; padding: 2px 8px; cursor: pointer; }
     .lane .cue:hover { border-color: #e06c60; }
-    .studio { display: grid; grid-template-columns: minmax(260px, 420px) 1fr; gap: 10px; margin-top: 6px; align-items: start; }
-    @media (max-width: 900px) { .studio { grid-template-columns: 1fr; } }
-    .plan { width: 100%; height: auto; border: 1px solid var(--line); border-radius: 4px; touch-action: none; }
-    .studiolist { display: grid; gap: 4px; }
-    .studiorow { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; padding: 4px 6px; border: 1px solid transparent; border-radius: 4px; font-size: 11.5px; }
-    .studiorow.sel { border-color: var(--orange); background: var(--panel2); }
-    .studiorow b { width: 10px; height: 10px; border-radius: 2px; display: inline-block; }
-    .studiorow input[type="number"] { padding: 4px 6px; font-size: 11.5px; }
-    .studiorow input[type="color"] { width: 30px; height: 22px; padding: 0; border: 1px solid var(--line); border-radius: 4px; }
+    .drophint.bad { color: #e06c60; }
     .lane .cue i { color: var(--muted); font-style: normal; margin-right: 6px; }
 
     #status { font: 11px var(--mono); color: var(--muted); min-height: 18px; margin-top: 10px; }
@@ -264,9 +256,10 @@
             <option value="clean">clean</option>
           </select>
         </label>
-        <label title="the light rig: fixtures added to the room at render time (presets/rigs/) — edit in the rig panel below">rig
+        <label title="the light rig: fixtures added to the room at render time (presets/rigs/) — build and place rigs in Blender's Excursion sidebar">rig
           <select id="rigSel"><option value="">room default</option></select>
         </label>
+        <button id="blenderRig" disabled title="load this rig into the open Blender (Live link on) to place and aim it there">Rig → Blender</button>
         <select id="scenePresetSel" title="scene presets: scene, cut cadence, lead and fps — pick one to apply it"><option value="">scene presets…</option></select>
         <button id="scenePresetSave" title="save the scene, cuts, lead and fps as a named preset in presets/scenes/">Save preset</button>
         <button id="linkdir" title="Choose your excursion project folder — exports then write straight into blender/jobs/">Link folder</button>
@@ -328,6 +321,8 @@
       <summary>show</summary>
       <div class="lyricbar">
         <label title="a Blender stays open and renders a small EEVEE frame of the playhead whenever you seek or change a cue; about a second a frame"><input type="checkbox" id="liveChk" /> live</label>
+        <label title="drive the open Blender scene live: playhead, faders, cues and camera (Blender: Excursion sidebar > Live link)"><input type="checkbox" id="blenderChk" /> Blender</label>
+        <span class="drophint" id="blenderHint"></span>
         <button id="showFromMood" title="fill the lanes from the selected mood's cues, on this track's downbeats">Lanes from mood</button>
         <button id="showClear">Clear lanes</button>
         <select id="showPresetSel" title="show presets: cue lanes stored in bars — pick one to lay it onto this track's grid"><option value="">show presets…</option></select>
@@ -367,45 +362,6 @@
         <span class="drophint" id="moodHint">not loaded — Load fills the panel from the selected mood; Save writes the file Blender reads</span>
       </div>
       <div class="desk" id="moodForm"></div>
-    </details>
-
-    <details class="adv" id="roomBox">
-      <summary>room</summary>
-      <div class="lyricbar">
-        <button id="roomLoad" title="edit the room picked under scene (presets/rooms/<scene>.json)">Load scene's room</button>
-        <select id="roomBaseNew" title="the set a new room builds on"></select>
-        <button id="roomNew">New…</button>
-        <button id="roomSave" disabled title="write presets/rooms/<name>.json; the next preview or render rebuilds the scene">Save</button>
-        <button id="roomSaveAs" disabled>Save as…</button>
-        <span class="drophint" id="roomHint">not loaded — a room is the set Blender builds: base, walls, stage, speakers, extra cameras, lyric anchors</span>
-      </div>
-      <div class="studio">
-        <canvas id="roomPlan" class="plan" width="640" height="520" title="top-down plan: drag speakers, cameras and lyric anchors; drag a camera's ring to re-aim it (shift snaps to 10 cm)"></canvas>
-        <div class="desk" id="roomForm"></div>
-      </div>
-    </details>
-
-    <details class="adv" id="rigBox">
-      <summary>rig</summary>
-      <div class="lyricbar">
-        <select id="rigPick" title="saved rigs in presets/rigs/"><option value="">no rigs yet</option></select>
-        <button id="rigLoad">Load</button>
-        <button id="rigNew">New…</button>
-        <button id="rigSave" disabled title="write presets/rigs/<name>.json — no rebuild needed">Save</button>
-        <button id="rigSaveAs" disabled>Save as…</button>
-        <select id="rigRole" title="role of the next fixture"></select>
-        <button id="rigAdd" disabled>+ fixture</button>
-        <label title="hide the room's own lights so the rig is all the light"><input type="checkbox" id="rigReplace" disabled /> replace the room's lights</label>
-        <input type="text" id="rigDesc" placeholder="description" disabled style="width:22em" />
-        <span class="drophint" id="rigHint">not loaded — a rig is a list of lights added to the room at render time</span>
-      </div>
-      <div class="studio">
-        <canvas id="rigPlan" class="plan" width="640" height="520" title="top-down plan: drag a fixture to move it, drag its ring to re-aim it (shift snaps to 10 cm); heights are in the list"></canvas>
-        <div>
-          <div class="studiolist" id="rigList"></div>
-          <span class="drophint" id="rigBuiltIns"></span>
-        </div>
-      </div>
     </details>
 
     <div id="status"></div>

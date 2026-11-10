@@ -467,12 +467,17 @@ Two more preset kinds, editable from the browser and from Blender (same files, i
   side washes, added to the room's lights).
 
 **In the grid tool**: the **rig** picker on the export strip chooses the reel's rig (room default
-= the room's own lights plus its default rig). The **room** and **rig** boxes under the console
-edit a working copy on a top-down plan (drag things on the floor; drag the ring at the end of a
-line to re-aim; shift snaps to 10 cm) and in number fields; Save writes the file through the
-linked folder. The rig rides in drive.json inline, so Live and Preview frame show unsaved rig
-edits. Templates can name a rig (`"rig": "kick-floor"`). Headless: `track-job --scene <room>
---rig <name>`; `make_reel --rig <name>` overrides the drive's.
+= the room's own lights plus its default rig); the **scene** picker lists every room. Rooms and
+rigs are built and placed in Blender (below), not in the browser. Templates can name a rig
+(`"rig": "kick-floor"`). Headless: `track-job --scene <room> --rig <name>`; `make_reel --rig
+<name>` overrides the drive's.
+
+**The live link** (2026-11-10): open a scene in Blender, Excursion sidebar > **Live link** (port
+8765), then tick **Blender** on the show desk. The open scene follows the grid tool as you work:
+the playhead (scrub or play), every fader you move, the cues on the desk (crossfades included)
+and the camera lane, on the room's lights and the rig's fixtures by role. Values are set, not
+keyed, so nothing is written into the .blend; renders still go through make_reel. **Rig →
+Blender** (next to the rig picker) loads the picked rig into the open scene to place and aim it.
 
 **In Blender**: install `blender/addon/excursion_studio.py` (Preferences > Add-ons > Install
 from Disk), set the project folder (found by itself when the open .blend is in

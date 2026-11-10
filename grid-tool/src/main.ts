@@ -56,7 +56,8 @@ import {
 import type { PreviewViewport } from "./preview/viewport";
 import type { Rig } from "./engine/rig";
 import type { Room } from "./engine/room";
-import { initStudio } from "./studio";
+import { BlenderLink } from "./blenderLink";
+import { liveLanes } from "./engine/live";
 
 declare global {
   interface Window {
@@ -456,6 +457,7 @@ function stop(): void {
 }
 function seek(t: number): void {
   requestLive();
+  window.setTimeout(pushBlender, 0);
   const wasPlaying = playing;
   pauseAt(Math.max(0, t));
   if (wasPlaying) play();
@@ -837,7 +839,7 @@ function buildCurrentDrive(
     fps,
     scene: sceneSel.value,
     mood: moodSel.value,
-    rig: studio.currentRig(),
+    rig: library.rigs[rigSel.value],
     features,
     ...motion,
     range,
@@ -1042,6 +1044,7 @@ function showChanged(): void {
   renderDesk();
   draw();
   requestLive();
+  pushBlender();
 }
 
 // live: the persistent Blender renders the playhead whenever it moves or the show changes
@@ -1125,6 +1128,7 @@ function renderDesk(): void {
           (faders[info.name] = faderValue(info.name) as CueValue);
           (faders[info.name] as unknown as Record<string, unknown>)[key] = Number(r.value);
           out.textContent = Number(r.value).toFixed(2);
+          pushBlender();
         });
         l.append(`${key} `, r, out);
         return l;
@@ -1137,6 +1141,7 @@ function renderDesk(): void {
         c.addEventListener("input", () => {
           faders[info.name] = faderValue(info.name);
           (faders[info.name] as unknown as Record<string, unknown>)[key] = fromHex(c.value);
+          pushBlender();
         });
         l.append(`${key} `, c);
         return l;
@@ -1145,7 +1150,10 @@ function renderDesk(): void {
         const l = document.createElement("label");
         const sel = document.createElement("select");
         fillSelect(sel, (SCENE_CAMERAS[sceneSel.value] ?? SCENE_CAMERAS["void"]!).map((c) => ({ value: c, label: c })), (v["camera"] as string) ?? "Cam1_Wide");
-        sel.addEventListener("change", () => (faders.camera = { camera: sel.value }));
+        sel.addEventListener("change", () => {
+          faders.camera = { camera: sel.value };
+          pushBlender();
+        });
         l.append("camera ", sel);
         fadersEl.append(l);
       } else if (info.name === "key" || info.name === "rims") {
@@ -1822,22 +1830,63 @@ syncControls();
 draw();
 status("Drop a track anywhere, or load the demo.");
 
-// ---------- room and rig panels (studio.ts) ----------
-const studio = initStudio({
-  status,
-  writePreset: (p) => writePreset(p),
-  rooms: () => library.rooms,
-  rigs: () => library.rigs,
-  sceneSel,
-  rigSel,
-  fillSelect,
-  toHex,
-  fromHex,
-  changed: () => {
-    saveState();
-    requestLive();
-  },
+// ---------- the Blender live link (blenderLink.ts) ----------
+// Rooms and rigs are built and placed in Blender; with the add-on's Live link on, the open
+// scene follows this playhead and the desk (faders and cues) as you work.
+const blenderChk = $<HTMLInputElement>("blenderChk");
+const blenderHint = $<HTMLSpanElement>("blenderHint");
+const blenderRigBtn = $<HTMLButtonElement>("blenderRig");
+const blender = new BlenderLink(8765, (st, err) => {
+  blenderRigBtn.disabled = !st?.ok || !rigSel.value;
+  blenderHint.textContent = st?.ok
+    ? `Blender ${st.blender}: ${st.file}${st.rig ? `, rig ${st.rig} (${st.fixtures})` : ""}${st.last ? ` — ${st.last}` : ""}`
+    : err ?? "";
+  blenderHint.classList.toggle("bad", !st?.ok && Boolean(err));
 });
+let blenderSentAt = -1;
+function pushBlender(): void {
+  if (!blender.connected) return;
+  blender.push({ time: songTime(), fps: Number(fpsSel.value) || 30, lanes: liveLanes(show, faders, songTime()) });
+}
+blenderChk.addEventListener("change", () => {
+  blender.setEnabled(blenderChk.checked);
+  try {
+    localStorage.setItem("excursion.blenderLink", blenderChk.checked ? "1" : "");
+  } catch {
+    /* no storage */
+  }
+  window.setTimeout(pushBlender, 400);
+});
+try {
+  if (localStorage.getItem("excursion.blenderLink")) {
+    blenderChk.checked = true;
+    blender.setEnabled(true);
+  }
+} catch {
+  /* no storage */
+}
+blenderRigBtn.addEventListener("click", async () => {
+  if (!rigSel.value) return;
+  try {
+    await blender.loadRig(rigSel.value);
+    status(`Rig ${rigSel.value} loaded into Blender — place and aim it there, then Save rig in the sidebar.`);
+    window.setTimeout(pushBlender, 400);
+  } catch (e) {
+    status(`Blender: ${e instanceof Error ? e.message : String(e)}`, true);
+  }
+});
+rigSel.addEventListener("change", () => {
+  saveState();
+  requestLive();
+  blenderRigBtn.disabled = !blender.connected || !rigSel.value;
+});
+// during playback the scene follows the music (a few frames a second is plenty for a look check)
+window.setInterval(() => {
+  if (playing && blender.connected && Math.abs(songTime() - blenderSentAt) > 0.1) {
+    blenderSentAt = songTime();
+    pushBlender();
+  }
+}, 120);
 
 // ---------- presets and templates ----------
 // Blocks are JSON files under presets/{scenes,shows,lyrics,templates}/ in the linked folder; a
@@ -1895,7 +1944,9 @@ function refreshPresetPickers(): void {
   fillSelect(templateSel, templates.length ? opts(templates, "pick a template…") : [{ value: "", label: projectDir ? "no templates yet" : "link a folder first" }]);
   templateApplyBtn.disabled = !track || !templateSel.value;
   templateSaveBtn.disabled = !track;
-  studio.refresh();
+  // the scene picker lists every room, the rig picker every rig (both edited in Blender)
+  fillSelect(sceneSel, [...new Set(["void", "macro", "stack", "concrete", ...Object.keys(library.rooms)])].sort().map((n) => ({ value: n, label: n, title: library.rooms[n]?.description })), sceneSel.value);
+  fillSelect(rigSel, [{ value: "", label: "room default", title: "the room's own lights, plus its default rig if it names one" }, ...Object.keys(library.rigs).sort().map((n) => ({ value: n, label: n, title: library.rigs[n]?.description }))], rigSel.value);
 }
 
 function addToLibrary(p: Preset): void {

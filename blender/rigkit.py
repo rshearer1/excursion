@@ -371,3 +371,81 @@ def capture_room(scene, room):
     if anchors:
         room["lyricAnchors"] = dict(sorted(anchors.items()))
     return room
+
+
+# ---------- the live link: the grid tool's playhead and desk on the open scene ----------
+# The browser posts { time, fps, lanes: { key: {gain, color}, rims: {gain, color}, wall: {trace},
+# dustback: {gain}, smoke: {density, haze}, shells: {strength}, camera: {camera} } } with only the
+# lanes it has values for. Values are set directly (not keyed), relative to each light's rest
+# value, so the viewport shows the look at the playhead and nothing is written into the file
+# until you save it yourself. A render still goes through make_reel / apply_drive as before.
+
+RIM_NAMES = ("RimLeft", "RimRight", "TopBack")
+
+
+def _rest(obj, key="live_rest"):
+    """A light's rest energy, remembered the first time the live link touches it."""
+    if key not in obj:
+        obj[key] = float(obj.get("rig_power", obj.data.energy))
+    return float(obj[key])
+
+
+def _lights(scene, names=(), prefixes=(), roles=()):
+    out = []
+    for o in scene.objects:
+        if o.type != "LIGHT" or o.hide_render:
+            continue
+        if o.name in names or (prefixes and o.name.startswith(prefixes)) or o.get("rig_role") in roles:
+            out.append(o)
+    return out
+
+
+def apply_live(scene, state):
+    """Set the scene to the browser's playhead and desk values. Returns a short summary."""
+    done = []
+    fps = state.get("fps") or scene.render.fps
+    if isinstance(state.get("time"), (int, float)):
+        frame = max(scene.frame_start, round(state["time"] * fps) + 1)
+        if frame != scene.frame_current:
+            scene.frame_set(frame)
+        done.append(f"frame {frame}")
+    lanes = state.get("lanes") or {}
+    key = lanes.get("key")
+    if key:
+        for o in _lights(scene, names=("KeyLight",), roles=("key",)):
+            o.data.energy = _rest(o) * float(key.get("gain", 1.0))
+            if "color" in key:
+                o.data.color = key["color"]
+        done.append("key")
+    rims = lanes.get("rims")
+    if rims:
+        for o in _lights(scene, names=RIM_NAMES, prefixes=("WallUp_",), roles=("rim", "wash")):
+            o.data.energy = _rest(o) * float(rims.get("gain", 1.0))
+            if "color" in rims:
+                o.data.color = rims["color"]
+        done.append("rims")
+    back = lanes.get("dustback")
+    if back:
+        for o in _lights(scene, names=("DustBack",), roles=("back",)):
+            o.data.energy = _rest(o) * float(back.get("gain", 1.0))
+        done.append("dust back")
+    wall = lanes.get("wall")
+    scope = bpy.data.materials.get("ScopeMat")
+    if wall and "trace" in wall and scope is not None and scope.node_tree is not None:
+        bsdf = scope.node_tree.nodes.get("Principled BSDF")
+        if bsdf is not None:
+            bsdf.inputs["Emission Color"].default_value = (*wall["trace"], 1.0)
+            done.append("wall")
+    cam = (lanes.get("camera") or {}).get("camera")
+    if cam and cam in bpy.data.objects and bpy.data.objects[cam].type == "CAMERA":
+        scene.camera = bpy.data.objects[cam]
+        done.append(cam)
+    return ", ".join(done) or "nothing to set"
+
+
+def reset_live(scene):
+    """Put every light the live link touched back to its rest energy."""
+    for o in scene.objects:
+        if o.type == "LIGHT" and "live_rest" in o:
+            o.data.energy = float(o["live_rest"])
+            del o["live_rest"]
