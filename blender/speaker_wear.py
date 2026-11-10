@@ -270,7 +270,7 @@ def cone_detail(material, mottle=0.35, fibre_bump=0.22, rings=0.05, settled=0.35
 # (spray build-up, slight sheen differences panel to panel). The scanned Plastic012A map alone
 # is too fine and too even to survive 1080p and the denoiser, so this adds the stipple at a
 # scale that reads, broad tonal drift, and patchy sheen.
-SURFACE = {"stipple": 0.6, "tone": 0.35, "sheen": 0.2, "lift": 1.6}
+SURFACE = {"stipple": 0.6, "tone": 0.3, "sheen": 0.2, "lift": 1.2}  # lift 1.6 made coloured rims on the top read too bright
 PLATE_SURFACE = {"stipple": 0.25, "tone": 0.15, "sheen": 0.08, "lift": 1.2}
 
 

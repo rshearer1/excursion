@@ -2627,7 +2627,9 @@ if ROOM.get("rig"):
 
 out = os.path.join(HERE, "scenes", f"{SCENE}.blend")
 os.makedirs(os.path.dirname(out), exist_ok=True)
-bpy.ops.wm.save_as_mainfile(filepath=out)
+# absolute texture paths: a copy of the .blend saved elsewhere (look tests, worktrees) still finds
+# assets/cache; with relative paths every missing texture renders as Cycles' magenta
+bpy.ops.wm.save_as_mainfile(filepath=out, relative_remap=False)
 print(f"saved {out}")
 
 # the scene-kit as glTF for the grid tool's 3D preview (phase 11): the hero and its parts,
