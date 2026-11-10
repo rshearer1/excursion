@@ -34,3 +34,25 @@ for mk in scene.timeline_markers:
     mk.camera = None
 scene.camera = cam
 print("mc:", json.dumps({"loc": list(loc), "aim": list(aim), "lens": cd.lens, "focus": round(cd.dof.focus_distance, 2), "hero": hero.name if hero else None, "res": [scene.render.resolution_x, scene.render.resolution_y]}))
+
+# The wide meter shot looks straight at the key-lit front, which the soft key turns grey; the
+# show cameras see it at an angle. Scale the key (static value and its bass-driven keys) here only.
+KEY_GAIN = float(os.environ.get("MC_KEY_GAIN", 0.35))
+key = bpy.data.objects.get("KeyLight")
+if key is not None and KEY_GAIN != 1.0:
+    key.data.energy *= KEY_GAIN
+    ad = key.data.animation_data
+    curves = list(getattr(ad.action, "fcurves", []) or []) if ad and ad.action else []
+    if ad and ad.action and not curves:
+        for layer in ad.action.layers:
+            for strip in layer.strips:
+                for bag in strip.channelbags:
+                    curves += list(bag.fcurves)
+    for fc in curves:
+        if fc.data_path == "energy":
+            for k in fc.keyframe_points:
+                k.co[1] *= KEY_GAIN
+                k.handle_left[1] *= KEY_GAIN
+                k.handle_right[1] *= KEY_GAIN
+            fc.update()
+    print("mc: key gain", KEY_GAIN, "keyed curves", len([c for c in curves if c.data_path == "energy"]))

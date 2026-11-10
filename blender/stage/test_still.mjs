@@ -102,6 +102,7 @@ const S = (f) => path.join(HERE, f);
 const chain = ["-b", "-y", blend, "-P", path.join(ROOT, "blender", "apply_drive.py"),
   "-P", S("look_test.py"), "-P", S("wall_test.py"), "-P", S("photo_test.py")];
 if (!showCams) chain.push("-P", S("meter_cam.py"));
+if (process.env.CB_LIGHTS_OFF || process.env.CB_WALL_OFF) chain.push("-P", S("debug_lights.py"));
 chain.push("-P", S("wave_test.py"), "--", drive, "--engine", "cycles", "--samples", samples);
 console.log(`rendering ${clip ? "clip " + clip : "frames " + frames} at ${samples} samples -> ${outDir}`);
 const r = spawnSync(BLENDER, chain, { cwd: ROOT, env, stdio: ["ignore", log, log] });
