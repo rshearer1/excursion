@@ -291,7 +291,8 @@ name = log["name"]
 times = []
 clip = os.environ.get("WT_CLIP")
 if clip:
-    f0, f1 = (int(x) for x in clip.split(","))
+    # "scene": the range apply_drive.py set (a full reel); else "a,b"
+    f0, f1 = (scene.frame_start, scene.frame_end) if clip == "scene" else (int(x) for x in clip.split(","))
     scene.frame_start, scene.frame_end = f0, f1
     scene.render.filepath = os.path.join(out, name, "")
     t0 = time.perf_counter()

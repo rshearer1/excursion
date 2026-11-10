@@ -57,5 +57,7 @@ if (r.status !== 0) {
   console.error("ffmpeg failed");
   process.exit(1);
 }
+// which track these meters belong to (make_reel.mjs checks it)
+fs.writeFileSync(path.join(outDir, "drive.txt"), path.basename(drivePath));
 const made = fs.readdirSync(outDir).filter((f) => /^\d+\.png$/.test(f)).length;
 console.log(`meters: ${made} frames ${first}..${last} -> ${outDir}`);

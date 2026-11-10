@@ -16,6 +16,7 @@ import { spawnSync, execSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { lookEnv, lookScripts, GRADE_VF } from "./look.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(HERE, "..", "..");
@@ -81,29 +82,16 @@ if ((stale && !opt("--blend")) || flag("--rebuild")) {
   }
 }
 
-// ---- the current look (v6 picks + meters on the wall)
+// ---- the current look (blender/stage/look.mjs: the same look full reels use)
+if (!fs.existsSync(meters)) console.warn(`no meter frames at ${meters}: the wall shows the plain waveform instead`);
 const env = {
   ...process.env,
-  LT_OUT: outDir, LT_NAME: name, LT_FIX: "1", LT_NORENDER: "1", LT_NOSHAKE: "1",
-  WALL_IMAGE: meters, WALL_IMG_GAIN: "10",
-  V4_SHAKE: "1", V4_SHAKE_INFLUENCE: "0.3", V4_LENS: "1", V4_FILM: "1",
-  WT_NAME: name, WT_OUT: outDir, WT_A: "0", WT_B: "1",
-  WT_BACKLIGHT: "0", WT_RIP_W: "0.1", WT_SMOKE_GAIN: "3", WT_HAZE_BUMP: "0", WT_DUST_PUSH: "0.1",
+  ...lookEnv({ out: outDir, name, meters: fs.existsSync(meters) ? meters : null, half: flag("--half"),
+    render: clip ? { clip } : { frames } }),
 };
-if (flag("--half")) Object.assign(env, { LT_HALF: "1", WT_HALF: "1" });
-if (clip) env.WT_CLIP = clip;
-else env.WT_FRAMES = frames;
-if (!fs.existsSync(meters)) {
-  console.warn(`no meter frames at ${meters}: the wall shows the plain waveform instead`);
-  delete env.WALL_IMAGE;
-}
-
-const S = (f) => path.join(HERE, f);
 const chain = ["-b", "-y", blend, "-P", path.join(ROOT, "blender", "apply_drive.py"),
-  "-P", S("look_test.py"), "-P", S("wall_test.py"), "-P", S("photo_test.py")];
-if (!showCams) chain.push("-P", S("meter_cam.py"));
-if (process.env.CB_LIGHTS_OFF || process.env.CB_WALL_OFF) chain.push("-P", S("debug_lights.py"));
-chain.push("-P", S("wave_test.py"), "--", drive, "--engine", "cycles", "--samples", samples);
+  ...lookScripts({ meterCam: !showCams, debugLights: !!(process.env.CB_LIGHTS_OFF || process.env.CB_WALL_OFF) }),
+  "--", drive, "--engine", "cycles", "--samples", samples];
 console.log(`rendering ${clip ? "clip " + clip : "frames " + frames} at ${samples} samples -> ${outDir}`);
 const r = spawnSync(BLENDER, chain, { cwd: ROOT, env, stdio: ["ignore", log, log] });
 fs.closeSync(log);
@@ -114,21 +102,18 @@ if (r.status !== 0) {
   process.exit(1);
 }
 
-// ---- grade (print_soft LUT) for review copies; the LUT lifts blacks, so press them back down
-// (the void stays black, the speaker stays black paint, not grey)
-const BLACKS = "curves=all='0/0 0.25/0.12 0.6/0.55 1/1'";
+// ---- grade (print_soft LUT + deep blacks, look.mjs) for review copies
 if (!flag("--no-grade")) {
-  const lut = path.join(HERE, "luts", "print_soft.cube").replace(/\\/g, "/").replace(/^([A-Z]):/, "$1\\:");
   if (clip) {
     const seq = path.join(outDir, name, "%04d.png");
     const [a] = clip.split(",");
     spawnSync("ffmpeg", ["-v", "error", "-y", "-framerate", String(JSON.parse(fs.readFileSync(drive, "utf8")).fps || 30), "-start_number", a, "-i", seq,
-      "-vf", `lut3d='${lut}',${BLACKS}`, "-c:v", "libx264", "-crf", "18", "-pix_fmt", "yuv420p",
+      "-vf", GRADE_VF, "-c:v", "libx264", "-crf", "18", "-pix_fmt", "yuv420p",
       path.join(outDir, `${name}_graded.mp4`)], { stdio: "inherit" });
   } else {
     for (const f of frames.split(",")) {
       const raw = path.join(outDir, `${name}_${String(f).padStart(4, "0")}.png`);
-      spawnSync("ffmpeg", ["-v", "error", "-y", "-i", raw, "-vf", `lut3d='${lut}',${BLACKS}`, "-q:v", "2",
+      spawnSync("ffmpeg", ["-v", "error", "-y", "-i", raw, "-vf", GRADE_VF, "-q:v", "2",
         raw.replace(/\.png$/, "_graded.jpg")], { stdio: "inherit" });
     }
   }
