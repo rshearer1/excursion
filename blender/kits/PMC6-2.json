@@ -62,9 +62,9 @@
       "y1_mm": 380,
       "floor_mm": [
         11,
-        12.6
+        22
       ],
-      "note": "honeycomb grille cell floors; removed by build_speaker so the grille is open"
+      "note": "the CAD grille is solid hex plugs: build_speaker deletes every front face 11-22 mm deep and gives the plug walls thickness, so the grille is open"
     }
   ]
 }

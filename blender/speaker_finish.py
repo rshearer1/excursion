@@ -206,6 +206,102 @@ def exaggerate_relief(material, face_y=PLATE_FACE_Y, cell_y=PLATE_CELL_Y, floor_
     return material
 
 
+VENT_DEPTH = 0.085  # metres of black port behind an opened grille
+GRILLE_WEB = 0.0012  # thickness given to each wall of the opened honeycomb grille
+VENT_INSET = 0.008  # the grille field starts this far inside the vent rectangle (inside is the bezel)
+
+
+def open_vent(body, x0, x1, z0, z1, d0, d1, front, cavity_mat, name, keep=None):
+    """Open a honeycomb grille (object-local coords on body's mesh): delete every front-facing
+    face between depths d0 and d1 behind the baffle, then add an open-fronted black port box
+    behind it, so the cells read as holes with depth, not a black floor. The box's mesh is
+    baked in place (object at the origin) so build_speaker can set location/rotation."""
+    import bmesh
+
+    me = body.data
+    bm = bmesh.new()
+    bm.from_mesh(me)
+    doomed = []
+    for f in bm.faces:
+        c = f.calc_center_median()
+        depth = c.y - front
+        if keep is not None and keep[0] <= depth <= keep[1]:
+            continue  # the grille's own front face (the honeycomb webs)
+        # inset: the bezel's inner ledge (14.5 mm deep, within ~8 mm of the vent edge) stays
+        if f.normal.y < -0.9 and x0 + VENT_INSET < c.x < x1 - VENT_INSET and z0 + VENT_INSET < c.z < z1 - VENT_INSET and d0 <= depth <= d1:
+            doomed.append(f)
+    bmesh.ops.delete(bm, geom=doomed, context="FACES")
+    # The CAD grille is solid: each cell is a hex plug and the webs are only the gaps between
+    # plugs. With the plug tops gone, what is left of each plug is a ring of zero-thickness walls,
+    # invisible edge-on from the front. Move those walls into their own object and give them a
+    # real thickness (Solidify), so the webs read as a honeycomb with holes behind.
+    walls = []
+    for f in bm.faces:
+        c = f.calc_center_median()
+        depth = c.y - front
+        if abs(f.normal.y) < 0.5 and all(  # every corner inside: the STL's long slivers reach the bezel
+            x0 + VENT_INSET < v.co.x < x1 - VENT_INSET and z0 + VENT_INSET < v.co.z < z1 - VENT_INSET and d0 <= v.co.y - front <= d1
+            for v in f.verts
+        ):
+            walls.append(f)
+    grille = None
+    if walls:
+        bm.verts.index_update()
+        gbm = bmesh.new()
+        vmap = {}
+        for f in walls:
+            vs = []
+            for v in f.verts:
+                if v.index not in vmap:
+                    vmap[v.index] = gbm.verts.new(v.co)
+                vs.append(vmap[v.index])
+            try:
+                gbm.faces.new(vs)
+            except ValueError:
+                pass
+        bmesh.ops.delete(bm, geom=walls, context="FACES_ONLY")
+        gmesh = bpy.data.meshes.new(name.replace("Cavity", "Grille"))
+        gbm.to_mesh(gmesh)
+        gbm.free()
+        grille = bpy.data.objects.new(gmesh.name, gmesh)
+        for coll in body.users_collection:
+            coll.objects.link(grille)
+        for m in body.data.materials[:1]:
+            gmesh.materials.append(m)
+        sol = grille.modifiers.new("Webs", "SOLIDIFY")
+        sol.thickness = GRILLE_WEB
+        sol.offset = 0.0
+        sol.use_even_offset = False  # even offset spikes at the STL's sliver corners (streaks across the bezel)
+        sol.use_quality_normals = True
+    bm.to_mesh(me)
+    bm.free()
+    # the port: five walls (no front), normals facing in, from just behind the grille walls
+    pad = 0.003
+    xa, xb, za, zb = x0 - pad, x1 + pad, z0 - pad, z1 + pad
+    ya, yb = front + d1, front + d1 + VENT_DEPTH  # starts behind the grille: no wall cuts the bezel
+    bm = bmesh.new()
+    v = [bm.verts.new(p) for p in (
+        (xa, ya, za), (xb, ya, za), (xb, ya, zb), (xa, ya, zb),
+        (xa, yb, za), (xb, yb, za), (xb, yb, zb), (xa, yb, zb),
+    )]
+    for quad in ((4, 7, 6, 5), (0, 4, 5, 1), (1, 5, 6, 2), (2, 6, 7, 3), (3, 7, 4, 0)):
+        bm.faces.new([v[i] for i in quad])
+    bm.normal_update()
+    centre = ((xa + xb) / 2, (ya + yb) / 2, (za + zb) / 2)
+    for f in bm.faces:  # point every wall inward, toward the box centre
+        c = f.calc_center_median()
+        if f.normal.dot(type(c)(centre) - c) < 0:
+            f.normal_flip()
+    mesh = bpy.data.meshes.new(name)
+    bm.to_mesh(mesh)
+    bm.free()
+    cav = bpy.data.objects.new(name, mesh)
+    for coll in body.users_collection:
+        coll.objects.link(cav)
+    mesh.materials.append(cavity_mat)
+    return cav, grille, len(doomed)
+
+
 def drop_hex_bump(material):
     """Bypass the old 6 mm HexTile bump on an already-built PlateMat (finish_test only)."""
     if material is None or not material.use_nodes:

@@ -924,25 +924,14 @@ def build_speaker(model, prefix, location, yaw=0.0, hero=False, scale=(1, 1, 1))
         x0, x1 = vent["x0_mm"] / 1000 - w / 2, vent["x1_mm"] / 1000 - w / 2
         z0, z1 = vent["y0_mm"] / 1000 - h / 2, vent["y1_mm"] / 1000 - h / 2
         d0, d1 = (v / 1000 for v in vent["floor_mm"])
-        bm = bmesh.new()
-        bm.from_mesh(me)
-        doomed = [
-            f for f in bm.faces
-            if f.normal.y < -0.9
-            and x0 < f.calc_center_median().x < x1
-            and z0 < f.calc_center_median().z < z1
-            and d0 <= f.calc_center_median().y - front <= d1
-        ]
-        bmesh.ops.delete(bm, geom=doomed, context="FACES")
-        bm.to_mesh(me)
-        bm.free()
-        bpy.ops.mesh.primitive_cube_add(size=1, location=((x0 + x1) / 2, front + d1 + 0.035, (z0 + z1) / 2))
-        cavity = bpy.context.object
-        cavity.name = f"{prefix}Vent_Cavity"
-        cavity.scale = (x1 - x0 + 0.01, 0.07, z1 - z0 + 0.01)
-        assign(cavity, cavity_mat)
+        # the old cube cavity was placed with its own location, which the loop at the end of
+        # this function overwrote, so it sat inside the cabinet and the grille looked solid
+        keep = tuple(v / 1000 for v in vent["keep_mm"]) if "keep_mm" in vent else None
+        cavity, grille, n = speaker_finish.open_vent(body, x0, x1, z0, z1, d0, d1, front, cavity_mat, f"{prefix}Vent_Cavity", keep)
         parts.append(cavity)
-        print(f"vents: {len(doomed)} cell floors opened on {prefix or 'hero'}")
+        if grille is not None:
+            parts.append(grille)
+        print(f"vents: {n} cell floors opened on {prefix or 'hero'}")
     if hero:
         me.materials.append(plate_material("PlateMat"))
         x0, x1, z0, z1, depth = PLATE_REGION
