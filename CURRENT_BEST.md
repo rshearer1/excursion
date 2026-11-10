@@ -18,6 +18,6 @@ Every test render comes from one place, so no test misses another thread's work.
 ## Not in git (local to the shared folder)
 
 - `assets/cache` and `blender/jobs` are junctions to the main checkout.
-- Meter frames for the LED wall: `out/meters/1430.png ...` (ffmpeg dashboard from psychidelly.wav, frames 1430-1705). Replace these files when real MiniMeters footage exists; nothing else changes.
+- Meter frames for the LED wall: `out/meters/<frame>.png`, frames 864-1763 (the full test range). Real dashboard frames are 1430-1705 (ffmpeg copy from psychidelly.wav); outside that the first/last frame is held. Replace these files when real MiniMeters footage exists (same naming); nothing else changes.
 
 Nothing here merges into `main`; PRs merge only with Robert's go.

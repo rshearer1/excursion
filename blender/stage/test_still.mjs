@@ -35,7 +35,10 @@ const drive = path.resolve(ROOT, opt("--drive", "blender/jobs/psychidelly.drive.
 const samples = opt("--samples", "48");
 const clip = opt("--clip");
 const frames = opt("--frames", "1600");
-const meters = path.resolve(ROOT, opt("--meters", "out/meters/1430.png"));
+// --meters: a folder of <frame>.png screen images (the wall starts at the lowest frame number)
+const meterDir = path.resolve(ROOT, opt("--meters", "out/meters"));
+const meterFrames = fs.existsSync(meterDir) ? fs.readdirSync(meterDir).filter((f) => /^\d+\.png$/.test(f)).map((f) => parseInt(f, 10)) : [];
+const meters = meterFrames.length ? path.join(meterDir, `${Math.min(...meterFrames)}.png`) : path.join(meterDir, "none.png");
 const outDir = path.join(ROOT, "out", "current-best", name);
 const showCams = flag("--show-cams") || (!clip && opt("--frames") && frames.includes(","));
 
