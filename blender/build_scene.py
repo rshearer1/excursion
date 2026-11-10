@@ -828,13 +828,16 @@ def plate_material(name, cell_mm=6.0):
 # deep out to r 38 mm then climb to meet the ridges at the rim.
 WAVEGUIDE_R_IN = 0.0273  # just outside the mid pocket wall (r_cut 27 mm), so the seam is covered
 WAVEGUIDE_R_OUT = 0.052  # where the horn meets the plate
-# On the real PMC6-2 the waveguide sits in a round recess cut into the panel (nothing stands
+# On the real PMC6-2 the waveguide sits down in a round dish cut into the panel (nothing stands
 # proud). The CAD has a ragged stepped ring there instead, reaching ~65 mm at the top and
-# bottom; an exact boolean now cuts a clean recess over it, and the flange is its floor (it
-# covers whatever of the CAD lies deeper than the cut).
-WAVEGUIDE_RECESS_R = 0.066  # recess radius around the mid
-WAVEGUIDE_FLANGE = WAVEGUIDE_RECESS_R - 0.0004  # the flange: the recess floor, just inside its wall
-WAVEGUIDE_PLATE = 0.0046  # recess floor depth below the baffle (the plate face is at 3.1 mm)
+# bottom; exact booleans now cut a clean dish over it: a straight wall down to the plate face,
+# then a 45-degree sloped wall to a flat floor 6 mm below the plate. The flange is that floor
+# (it covers whatever of the CAD lies deeper than the cut). Depths are behind the baffle front.
+WAVEGUIDE_PLATE_FACE = 0.0065  # the mid/tweeter plate face (6.47 mm behind the baffle front)
+WAVEGUIDE_RECESS_R = 0.066  # dish radius at the plate face
+WAVEGUIDE_PLATE = 0.0125  # dish floor depth (6 mm below the plate face)
+WAVEGUIDE_FLOOR_R = WAVEGUIDE_RECESS_R - (WAVEGUIDE_PLATE - WAVEGUIDE_PLATE_FACE)  # 45-degree wall
+WAVEGUIDE_FLANGE = WAVEGUIDE_FLOOR_R  # the flange: the dish floor's outer edge, where the modelled wall starts
 WAVEGUIDE_PETALS = 8
 
 
@@ -852,10 +855,15 @@ def _wg_depth(r, theta):
 def build_waveguide(body, cx, cz, front, prefix):
     """Cut the round recess, delete the CAD cog from body around (cx, cz) and return the
     modelled horn object."""
+    # rotation x 90 deg turns local +Z toward the camera (-Y): radius2 is the front end
+    top = WAVEGUIDE_PLATE_FACE + 0.0002
     bpy.ops.mesh.primitive_cylinder_add(
-        vertices=256, radius=WAVEGUIDE_RECESS_R, depth=WAVEGUIDE_PLATE + 0.02,
-        location=(cx, front + (WAVEGUIDE_PLATE - 0.02) / 2, cz), rotation=(math.pi / 2, 0, 0),
+        vertices=256, radius=WAVEGUIDE_RECESS_R, depth=top + 0.02,
+        location=(cx, front + (top - 0.02) / 2, cz), rotation=(math.pi / 2, 0, 0),
     )
+    # only a clean circular cut through the plate face (and the baffle where the circle crosses
+    # it): the STL is not a clean solid, so a boolean dish below that leaves CAD slivers. The
+    # sloped wall and floor are modelled as part of the waveguide object instead.
     cutter = bpy.context.object
     mod = body.modifiers.new("cut_recess", "BOOLEAN")
     mod.operation = "DIFFERENCE"
@@ -871,12 +879,13 @@ def build_waveguide(body, cx, cz, front, prefix):
         c = f.calc_center_median()
         r = math.hypot(c.x - cx, c.z - cz)
         depth = c.y - front
-        # every corner must sit under the flange: the STL's long sliver triangles have their
-        # centre inside the cog but reach well past it, and deleting those tore ragged holes
-        # in the plate around the waveguide
-        reach = max(math.hypot(v.co.x - cx, v.co.z - cz) for v in f.verts)
-        if 0.0274 < r < 0.0505 and 0.0025 < depth < 0.030 and reach < WAVEGUIDE_FLANGE - 0.0003:
+        # everything of the CAD under the dish goes (the cog, its stepped ring, the cut faces);
+        # the modelled wall, flange and horn are all that should show. The mid's pocket wall
+        # (r 27 mm) stays.
+        if 0.0274 < r < WAVEGUIDE_RECESS_R + 0.0003 and WAVEGUIDE_PLATE_FACE + 0.0001 < depth < 0.030:
             doomed.append(f)
+        elif r < WAVEGUIDE_RECESS_R and abs(depth - top) < 0.00015 and f.normal.y < -0.9:
+            doomed.append(f)  # the cut's cap: one flat disc right across the dish
     bmesh.ops.delete(bm, geom=doomed, context="FACES")
     bm.to_mesh(me)
     bm.free()
@@ -888,7 +897,7 @@ def build_waveguide(body, cx, cz, front, prefix):
     for k in range(1, 41):
         radii.append((WAVEGUIDE_R_IN + (WAVEGUIDE_R_OUT - WAVEGUIDE_R_IN) * k / 40, "horn"))
     radii.append((WAVEGUIDE_FLANGE, "flange"))
-    radii.append((WAVEGUIDE_FLANGE + 0.0002, "skirt"))  # a wall down into the plate: no gap from any angle
+    radii.append((WAVEGUIDE_RECESS_R + 0.0004, "wall"))  # the dish's sloped wall, up to just under the plate's cut edge
     bm = bmesh.new()
     for r, kind in radii:
         ring = []
@@ -898,8 +907,8 @@ def build_waveguide(body, cx, cz, front, prefix):
                 depth = 0.027
             elif kind == "flange":
                 depth = WAVEGUIDE_PLATE - 0.0003
-            elif kind == "skirt":
-                depth = 0.012
+            elif kind == "wall":
+                depth = WAVEGUIDE_PLATE_FACE + 0.00005
             else:
                 depth = _wg_depth(r, t)
             ring.append(bm.verts.new((cx + r * math.cos(t), front + depth, cz + r * math.sin(t))))
