@@ -827,7 +827,7 @@ def plate_material(name, cell_mm=6.0):
 # deep out to r 38 mm then climb to meet the ridges at the rim.
 WAVEGUIDE_R_IN = 0.0273  # just outside the mid pocket wall (r_cut 27 mm), so the seam is covered
 WAVEGUIDE_R_OUT = 0.052  # where the horn meets the plate
-WAVEGUIDE_FLANGE = 0.054  # the flange's outer radius, a hair proud of the plate to hide the cut
+WAVEGUIDE_FLANGE = 0.066  # the flange's outer radius, a hair proud of the plate: it has to cover the CAD's ragged stepped recess, which reaches ~65 mm at the top and bottom (0.054 left torn edges showing)
 WAVEGUIDE_PLATE = 0.0033  # plate surface depth around the mid (metres below the baffle)
 WAVEGUIDE_PETALS = 8
 
@@ -853,7 +853,11 @@ def build_waveguide(body, cx, cz, front, prefix):
         c = f.calc_center_median()
         r = math.hypot(c.x - cx, c.z - cz)
         depth = c.y - front
-        if 0.0274 < r < 0.0505 and 0.0025 < depth < 0.030:
+        # every corner must sit under the flange: the STL's long sliver triangles have their
+        # centre inside the cog but reach well past it, and deleting those tore ragged holes
+        # in the plate around the waveguide
+        reach = max(math.hypot(v.co.x - cx, v.co.z - cz) for v in f.verts)
+        if 0.0274 < r < 0.0505 and 0.0025 < depth < 0.030 and reach < WAVEGUIDE_FLANGE - 0.0003:
             doomed.append(f)
     bmesh.ops.delete(bm, geom=doomed, context="FACES")
     bm.to_mesh(me)
