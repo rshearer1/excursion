@@ -47,6 +47,7 @@ import sys  # noqa: E402
 sys.path.insert(0, HERE)
 import rigkit  # noqa: E402
 import speaker_finish  # noqa: E402
+import speaker_wear  # noqa: E402
 
 SCENE = os.environ.get("EXCURSION_SCENE", "void")
 ROOM = rigkit.load_room(SCENE) or {}
@@ -756,7 +757,8 @@ def plate_material(name, cell_mm=6.0):
     if not HEX_BUMP:
         m.node_tree.nodes["Principled BSDF"].inputs["Metallic"].default_value = 0.12  # anodised, not chrome
         speaker_finish.finish(m, **speaker_finish.PLATE)
-        return speaker_finish.exaggerate_relief(m, **speaker_finish.RELIEF)
+        speaker_finish.exaggerate_relief(m, **speaker_finish.RELIEF)
+        return speaker_wear.wear(m, **speaker_wear.WEAR)
     nt = m.node_tree
     N, L = nt.nodes, nt.links
     bsdf = N["Principled BSDF"]
@@ -1010,6 +1012,9 @@ dome_mat = driver_material("DomeMat", "dome")
 speaker_finish.finish(cabinet_mat, **speaker_finish.CABINET)
 for _m in (woofer_mat, dome_mat):
     speaker_finish.finish(_m, **speaker_finish.DRIVER)
+for _m in (cabinet_mat, woofer_mat, dome_mat):  # dust, flecks, fingerprints, scuffs
+    speaker_wear.wear(_m, **speaker_wear.WEAR)
+speaker_wear.cone_detail(woofer_mat, **speaker_wear.CONE)
 tweeter_mat = make_material("TweeterMat", base=(0.012, 0.012, 0.013, 1), rough=0.45)
 tweeter_mat.node_tree.nodes["Principled BSDF"].inputs["Sheen Weight"].default_value = 0.3  # coated fabric dome
 stand_mat = make_material("StandMat", base=(0.03, 0.03, 0.032, 1), rough=0.35)

@@ -21,6 +21,15 @@ if os.environ.get("FINISH", "1") != "0":
         sf.finish(bpy.data.materials.get(name), **sf.DRIVER)
     print("finish_test: speaker finish applied")
 
+if os.environ.get("WEAR", "1") != "0":
+    import speaker_wear as sw  # noqa: E402
+
+    for name in ("CabinetMat", "PlateMat", "WooferMat", "DomeMat"):
+        sw.wear(bpy.data.materials.get(name), **sw.WEAR)
+    for name in ("WooferMat",):
+        sw.cone_detail(bpy.data.materials.get(name), **sw.CONE)
+    print("finish_test: wear applied")
+
 if os.environ.get("VENTS", "1") != "0":
     # re-open the hero's grilles the way build_scene now does (only the hero sits at the origin)
     import json
