@@ -242,6 +242,30 @@ function transcribe(file: string): Promise<{ lines: { t: number; tEnd: number; t
 const previewDir = path.join(outDir, "preview");
 let previewBusy = false;
 
+// rooms (presets/rooms/<scene>.json) build into blender/scenes/<scene>.blend; the preview and
+// the live frame need the .blend first, and a room edited since its build is rebuilt
+const sceneBuilds = new Map<string, Promise<void>>();
+function ensureScene(sceneName: string): Promise<void> {
+  if (!safeName(sceneName)) return Promise.reject(new Error(`bad scene name ${sceneName}`));
+  const blend = path.join(root, "blender", "scenes", `${sceneName}.blend`);
+  const roomFile = path.join(root, "presets", "rooms", `${sceneName}.json`);
+  const stale = !existsSync(blend) || (existsSync(roomFile) && statSync(roomFile).mtimeMs > statSync(blend).mtimeMs);
+  if (!stale) return Promise.resolve();
+  const running = sceneBuilds.get(sceneName);
+  if (running) return running;
+  const build = new Promise<void>((resolve, reject) => {
+    pushLog(`building scene ${sceneName} (room changed or not built yet)…`);
+    const proc = spawn(findBlender(), ["-b", "-P", path.join(root, "blender", "build_scene.py")], { cwd: root, env: { ...process.env, EXCURSION_SCENE: sceneName } });
+    let log = "";
+    proc.stdout?.on("data", (c: Buffer) => (log += c.toString()));
+    proc.stderr?.on("data", (c: Buffer) => (log += c.toString()));
+    proc.on("error", reject);
+    proc.on("exit", (code) => (code === 0 && existsSync(blend) ? resolve() : reject(new Error(`building scene ${sceneName} failed (${code}): ${log.slice(-300)}`))));
+  }).finally(() => sceneBuilds.delete(sceneName));
+  sceneBuilds.set(sceneName, build);
+  return build;
+}
+
 /** One draft frame of the drive at `time` seconds, through apply_drive --frame; resolves to the PNG path. */
 function previewFrame(slug: string, drive: RenderRequest["drive"], time: number): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -415,6 +439,11 @@ export function renderHelper(): Plugin {
             const text = JSON.stringify(body.drive);
             if (!existsSync(drivePath) || readFileSync(drivePath, "utf8") !== text) writeFileSync(drivePath, text);
             const png = path.join(previewDir, `${body.slug}.live.png`);
+            try {
+              await ensureScene(body.drive.scene || "void");
+            } catch (e) {
+              return json(res, 500, { error: e instanceof Error ? e.message : String(e) });
+            }
             const answer = await liveRequest({
               drive: drivePath,
               frame: Math.max(1, Math.round((Number(body.time) || 0) * body.drive.fps) + 1),
@@ -430,6 +459,7 @@ export function renderHelper(): Plugin {
             const body = JSON.parse((await readBody(req)).toString("utf8")) as { slug: string; time: number; drive: RenderRequest["drive"] };
             if (!safeName(body.slug) || !body.drive?.frames?.length) return json(res, 400, { error: "bad request" });
             try {
+              await ensureScene((body.drive as { scene?: string }).scene || "void");
               await previewFrame(body.slug, body.drive, Number(body.time) || 0);
               return json(res, 200, { url: `/api/previews/${body.slug}.png?t=${Date.now()}` });
             } catch (e) {

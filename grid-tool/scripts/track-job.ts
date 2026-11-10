@@ -3,7 +3,7 @@
 //   npm run track-job -- <track.wav> [--start s --end s] [--bpm n] [--offset ms]
 //                        [--cuts bars] [--mood smoke|neon|clean] [--name slug]
 //                        [--drop s[,s]] [--break s[,s]] [--auto seconds] [--hits]
-//                        [--template name]
+//                        [--template name] [--scene room] [--rig name]
 //
 // --auto 20 picks the reel window for you: it finds the first drop (where the bass level
 // first climbs to 70 % of the track's peak), starts a bar before it on a downbeat, runs for
@@ -20,7 +20,8 @@
 // --template <name> applies presets/templates/<name>.json exactly as the grid tool's Apply
 // button does: its scene preset (scene, cut cadence, lead, fps), mood, show preset (cue lanes
 // laid onto this track's bars) and lyric styling. --mood and --cuts on the command line win
-// over the template's.
+// over the template's. --scene picks a room (presets/rooms/ or a built-in base) and --rig a light
+// rig from presets/rigs/; the rig goes into the drive inline.
 
 import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { createHash } from "node:crypto";
@@ -263,7 +264,7 @@ const range =
 // --template: the same resolution the grid tool runs, from presets/ next to blender/
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
 function readPresets(): Library & { templates: Record<string, Template> } {
-  const lib: Library & { templates: Record<string, Template> } = { scenes: {}, shows: {}, lyrics: {}, moods: [], templates: {} };
+  const lib: Library & { templates: Record<string, Template> } = { scenes: {}, shows: {}, lyrics: {}, moods: [], templates: {}, rigs: {} };
   const moodsDir = path.join(ROOT, "blender", "moods");
   if (existsSync(moodsDir)) lib.moods = readdirSync(moodsDir).filter((f) => f.endsWith(".json")).map((f) => f.replace(/\.json$/, ""));
   for (const dir of Object.values(PRESET_DIRS)) {
@@ -280,7 +281,8 @@ function readPresets(): Library & { templates: Record<string, Template> } {
       if (p.kind === "scene") lib.scenes[p.name] = p;
       else if (p.kind === "show") lib.shows[p.name] = p;
       else if (p.kind === "lyrics") lib.lyrics[p.name] = p;
-      else lib.templates[p.name] = p;
+      else if (p.kind === "rig") lib.rigs![p.name] = p;
+      else if (p.kind === "template") lib.templates[p.name] = p;
     }
   }
   return lib;
@@ -296,8 +298,8 @@ let reel: ReelState = {
   lyrics: structuredClone(DEFAULT_LYRICS),
 };
 const templateName = opt("--template");
-if (templateName) {
-  const lib = readPresets();
+const lib = templateName || opt("--rig") ? readPresets() : null;
+if (templateName && lib) {
   const t = lib.templates[templateName];
   if (!t) {
     console.error(`no template presets/templates/${templateName}.json (have: ${Object.keys(lib.templates).join(", ") || "none"})`);
@@ -310,6 +312,10 @@ if (templateName) {
   if (num("--cuts") !== undefined) reel.cutsEveryBars = num("--cuts")!;
   console.log(`template ${templateName}: scene ${reel.scene}, mood ${reel.mood}, cuts every ${reel.cutsEveryBars} bars, ${Object.keys(reel.show.lanes).length} show lanes`);
 }
+if (opt("--scene")) reel.scene = opt("--scene")!;
+if (opt("--rig")) reel.rig = opt("--rig")!;
+const rig = reel.rig ? lib?.rigs?.[reel.rig] : undefined;
+if (reel.rig && !rig) console.warn(`no rig presets/rigs/${reel.rig}.json — the room's own lights only`);
 
 const drive = buildDrive({
   fileName: `${slug}.wav`,
@@ -327,6 +333,7 @@ const drive = buildDrive({
   cuts: computeCuts(grid, durationSec, { everyBars: reel.cutsEveryBars, markerTimes: reel.cutMarkers ? sections.map((s) => s.t) : [] }),
   leadMs: reel.leadMs,
   show: reel.show,
+  ...(rig ? { rig } : {}),
   // --hits: track kicks and snares (phase 09); shells and the logo then ride the kicks
   ...(process.argv.includes("--hits") ? { hits: detectHits(mono, sampleRate, { grid }) } : {}),
 });

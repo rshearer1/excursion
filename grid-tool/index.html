@@ -169,6 +169,7 @@
     .lane .cues { grid-column: 2; display: flex; gap: 6px; flex-wrap: wrap; }
     .lane .cue { font: 11px var(--mono); color: var(--text); background: var(--panel); border: 1px solid var(--line); border-radius: 999px; padding: 2px 8px; cursor: pointer; }
     .lane .cue:hover { border-color: #e06c60; }
+    .drophint.bad { color: #e06c60; }
     .lane .cue i { color: var(--muted); font-style: normal; margin-right: 6px; }
 
     #status { font: 11px var(--mono); color: var(--muted); min-height: 18px; margin-top: 10px; }
@@ -255,6 +256,10 @@
             <option value="clean">clean</option>
           </select>
         </label>
+        <label title="the light rig: fixtures added to the room at render time (presets/rigs/) — build and place rigs in Blender's Excursion sidebar">rig
+          <select id="rigSel"><option value="">room default</option></select>
+        </label>
+        <button id="blenderRig" disabled title="load this rig into the open Blender (Live link on) to place and aim it there">Rig → Blender</button>
         <select id="scenePresetSel" title="scene presets: scene, cut cadence, lead and fps — pick one to apply it"><option value="">scene presets…</option></select>
         <button id="scenePresetSave" title="save the scene, cuts, lead and fps as a named preset in presets/scenes/">Save preset</button>
         <button id="linkdir" title="Choose your excursion project folder — exports then write straight into blender/jobs/">Link folder</button>
@@ -316,6 +321,8 @@
       <summary>show</summary>
       <div class="lyricbar">
         <label title="a Blender stays open and renders a small EEVEE frame of the playhead whenever you seek or change a cue; about a second a frame"><input type="checkbox" id="liveChk" /> live</label>
+        <label title="drive the open Blender scene live: playhead, faders, cues and camera (Blender: Excursion sidebar > Live link)"><input type="checkbox" id="blenderChk" /> Blender</label>
+        <span class="drophint" id="blenderHint"></span>
         <button id="showFromMood" title="fill the lanes from the selected mood's cues, on this track's downbeats">Lanes from mood</button>
         <button id="showClear">Clear lanes</button>
         <select id="showPresetSel" title="show presets: cue lanes stored in bars — pick one to lay it onto this track's grid"><option value="">show presets…</option></select>

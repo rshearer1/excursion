@@ -442,3 +442,53 @@ selects it. Alt+N with nothing loaded starts a fresh mood from the defaults.
 cues in bars, lyric styling). The line in the Templates strip reads "3 reels · new look", or
 warns "this look matches reel #2" when the current settings would reproduce an earlier reel —
 hover it for the list. Per track, saved with the grid.
+
+## Rooms and light rigs (2026-11-09)
+
+Two more preset kinds, editable from the browser and from Blender (same files, in git):
+
+- **Rooms** — `presets/rooms/<name>.json`: a base set (`void`, `macro`, `stack`, `concrete`)
+  plus optional overrides: `walls`, `stage` (the full show: truss, heads, lasers, wide cameras),
+  `speakers` around the hero (model, x/y, yaw, mount `stand`/`floor`/height), extra `cameras`
+  (they join the cuts after the built-in shots), `lyricAnchors`, and a default `rig`. A field
+  left out keeps the base's, so the four starter rooms build exactly the old scenes. The **scene**
+  picker lists every room; `EXCURSION_SCENE=<room>` builds `blender/scenes/<room>.blend`.
+  `make_reel`, Preview frame and Live rebuild the scene when the room file is newer than the
+  .blend (a minute or so; `make_reel --rebuild` forces it). `void-wide-pair` is a worked example.
+- **Rigs** — `presets/rigs/<name>.json`: lights added at apply time, so a rig change needs no
+  rebuild. Each fixture: `type` (spot, area, point), `pos`, `aim` (metres, hero at the origin,
+  x right, y away from the camera, z up), `power` (W), `color`, `cone`, `blend`, `size`,
+  `volume` (haze), `role` and `react`. Role says what drives it: `key` (the desk's key lane and
+  the bass, like the softbox), `rim` (rims lane colour and gain, downbeat pulse), `wash` (rims
+  lane, steady), `back` (dust-back lane), `static` (its own colour and power). React adds
+  `bass`, `beat` or `kick` motion, scaled by `amount`. `replaceBuiltIn` hides the room's own
+  KeyLight, Graze, TopBack, rims and uplights. Starters: `studio` (an editable copy of the
+  built-in lights that replaces them) and `kick-floor` (amber floor cans on the kicks plus two
+  side washes, added to the room's lights).
+
+**In the grid tool**: the **rig** picker on the export strip chooses the reel's rig (room default
+= the room's own lights plus its default rig); the **scene** picker lists every room. Rooms and
+rigs are built and placed in Blender (below), not in the browser. Templates can name a rig
+(`"rig": "kick-floor"`). Headless: `track-job --scene <room> --rig <name>`; `make_reel --rig
+<name>` overrides the drive's.
+
+**The live link** (2026-11-10): open a scene in Blender, Excursion sidebar > **Live link** (port
+8765), then tick **Blender** on the show desk. The open scene follows the grid tool as you work:
+the playhead (scrub or play), every fader you move, the cues on the desk (crossfades included)
+and the camera lane, on the room's lights and the rig's fixtures by role. Values are set, not
+keyed, so nothing is written into the .blend; renders still go through make_reel. **Rig →
+Blender** (next to the rig picker) loads the picked rig into the open scene to place and aim it.
+
+**In Blender**: install `blender/addon/excursion_studio.py` (Preferences > Add-ons > Install
+from Disk), set the project folder (found by itself when the open .blend is in
+`blender/scenes/`), then View3D > Sidebar > **Excursion**:
+- *Light rig*: Load puts a rig's fixtures in the `ExcursionRig` collection; move and aim them
+  in the viewport, set role, react and amount on the selected light; **Add fixture** drops one at
+  the 3D cursor, **Adopt selected** turns lights you made into fixtures; **Save rig** writes the
+  file. "Replace the room's lights" hides the built-ins live.
+- *Room*: **Build & open** runs build_scene for the picked room and opens it; **Add camera**
+  puts a shot camera where the viewport looks from, **Add speaker** a marker at the cursor;
+  **Save room** writes the speakers, extra cameras and lyric anchors as they sit (rebuild to see a
+  new speaker as the real model).
+Shared code: `blender/rigkit.py` (apply_drive uses it too). Schema: `grid-tool/src/engine/rig.ts`
+and `room.ts`.

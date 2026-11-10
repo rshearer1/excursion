@@ -34,14 +34,26 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 CACHE = os.path.join(ROOT, "assets", "cache")
 HDRI = os.path.join(CACHE, "polyhaven", "studio_small_09_2k.hdr")
-# the scene (plan: the set list). One builder, one switch: EXCURSION_SCENE=void|macro|stack|concrete.
+# the scene (plan: the set list). One builder, one switch: EXCURSION_SCENE=<room>. A room is
+# presets/rooms/<room>.json (grid-tool/src/engine/room.ts): one of four bases plus optional
+# overrides; the scene is saved as blender/scenes/<room>.blend. The bases:
 #   void      the hero floating in the dark, five cameras (the default)
 #   macro     the same hero, only the close cameras plus a 90 mm on the cone, finer dust
 #   stack     the hero on its stand with four more PMC6-2 stacked either side, wide camera back
 #   concrete  the hero in a concrete room corner (walls on, concrete PBR)
+# A base name with no room file builds the base as it always has.
+import sys  # noqa: E402
+
+sys.path.insert(0, HERE)
+import rigkit  # noqa: E402
+
 SCENE = os.environ.get("EXCURSION_SCENE", "void")
-if SCENE not in ("void", "macro", "stack", "concrete"):
-    raise SystemExit(f"unknown scene {SCENE!r}")
+ROOM = rigkit.load_room(SCENE) or {}
+BASE = ROOM.get("base", SCENE)
+if BASE not in rigkit.ROOM_BASES:
+    raise SystemExit(f"unknown scene {SCENE!r}: no presets/rooms/{SCENE}.json and not one of {', '.join(rigkit.ROOM_BASES)}")
+if ROOM:
+    print(f"room {SCENE}: base {BASE}, overrides: {', '.join(k for k in ('walls', 'stage', 'speakers', 'cameras', 'lyricAnchors', 'rig') if k in ROOM) or 'none'}")
 CABINET_TEXTURE = ("Plastic012A", "4K")  # ambientCG id + resolution (see void.manifest.json)
 CONCRETE_TEXTURE = ("Concrete034", "2K")  # the concrete room's walls (concrete.manifest.json)
 PLASTIC = os.path.join(CACHE, "ambientcg", f"{CABINET_TEXTURE[0]}_{CABINET_TEXTURE[1]}-JPG")
@@ -62,7 +74,7 @@ LOOK = "moody"
 MOODY = LOOK == "moody"
 # INTIMATE: one speaker, close cameras, nothing that reads as a stage — the film is about the
 # sound. False brings back the whole PMC rig, the truss, lasers, projectors and the LED wall.
-INTIMATE = True
+INTIMATE = not ROOM.get("stage", False)  # a room with "stage": true brings the whole show back
 BACK_LASERS = 0  # thin beams behind the speaker in the intimate look (0 = none); look B has none
 BACK_LASER_COLOR = (1.0, 0.22, 0.08)  # deep red-orange; (0.15, 1.0, 0.25) for classic green
 BACK_LASER_POWER = 700  # Cycles scatters beams physically; this reads as faint rays, not a wash
@@ -1021,7 +1033,7 @@ STACK_RIG = [  # a wall of six: the hero on the floor in the middle of the botto
     ("PMC6-2", "R1_", (0.43 + STACK_GAP, 0.0), 0.0, "floor"),
     ("PMC6-2", "R2_", (0.43 + STACK_GAP, 0.0), 0.0, 0.40 + STACK_GAP),
 ]
-RIG = STACK_RIG if SCENE == "stack" else [] if INTIMATE else [
+RIG = STACK_RIG if BASE == "stack" else [] if INTIMATE else [
     ("PMC6-2", "R6-2_", (RIG_SPACING, 0.0), 0.0, "stand"),
     ("PMC8-2INCSTAND", "L8-2_", (-1.35, 0.30), 15.0, "floor"),
     ("PMC8-2INCSTAND", "R8-2_", (RIG_SPACING + 1.35, 0.30), -15.0, "floor"),
@@ -1031,6 +1043,11 @@ RIG = STACK_RIG if SCENE == "stack" else [] if INTIMATE else [
     ("PMC6", "LFILL_", (RIG_SPACING / 2 - 0.14, 0.15), 12.0, 0.266),
     ("PMC6", "RFILL_", (RIG_SPACING / 2 + 0.14, 0.15), -12.0, 0.266),
 ]
+if "speakers" in ROOM:  # the room's own layout replaces the base's
+    RIG = [(s["model"], f"{s['id']}_", tuple(s["pos"]), float(s.get("yaw", 0.0)), s["mount"]) for s in ROOM["speakers"]]
+    for _m in {r[0] for r in RIG}:
+        if not os.path.exists(os.path.join(KITS, f"{_m}.json")):
+            raise SystemExit(f"room {SCENE}: no kit blender/kits/{_m}.json (models: {', '.join(sorted(f[:-5] for f in os.listdir(KITS)))})")
 
 
 
@@ -1045,7 +1062,7 @@ if kit_ready("PMC6-2"):
     tw = next(drv for drv in hero["drivers"] if drv["kind"] == "tweeter")
     tweeter_xz, badge_xz = (tw["x"], tw["z"]), BADGE_CENTRE
     build_logo(cabinet_mat)
-    on_stand = os.path.exists(STAND_STL) and SCENE != "stack"  # the stack sits on the floor
+    on_stand = os.path.exists(STAND_STL) and BASE != "stack"  # the stack sits on the floor
     floor_z = -top_z - STAND_SIZE[1] if on_stand else -top_z
     if on_stand:
         place_stand("Stand_L", 0, 0, floor_z, hero["w"] / STAND_SIZE[0])
@@ -1063,7 +1080,8 @@ if kit_ready("PMC6-2"):
             z = floor_z + h / 2
         else:
             z = floor_z + how + h / 2
-        build_speaker(model, prefix, (x, y, z), math.radians(yaw))
+        body, _info = build_speaker(model, prefix, (x, y, z), math.radians(yaw))
+        body["excursion_speaker"] = json.dumps({"id": prefix.rstrip("_"), "model": model, "mount": how})  # the add-on's Save room reads it back
         rig_built.append(prefix.rstrip("_"))
     rig_x0 = min([x - load_kit(m)["size_mm"][0] / 2000 for m, _, (x, _y), _, how in RIG] + [-half_w])
     rig_x1 = max([x + load_kit(m)["size_mm"][0] / 2000 for m, _, (x, _y), _, how in RIG] + [half_w])
@@ -1158,22 +1176,24 @@ LYRIC_ANCHORS = {
     "front-low": ((0.0, front_y - 0.28, -0.18), True),  # low in the frame, in front of the stand
     "wall": ((0.0, 1.05, 0.58), True),  # high, just in front of the LED wall
 }
-if SCENE == "concrete":  # the plan's concrete anchors, on the back wall
+if BASE == "concrete":  # the plan's concrete anchors, on the back wall
     LYRIC_ANCHORS = {
         "wall-left": ((-0.75, 1.32, 0.45), True),  # 3 cm off the back wall (WALL_Y = 1.35, defined further down)
         "wall-right": ((0.75, 1.32, 0.45), True),
         "wall-top": ((0.0, 1.32, 1.1), True),
     }
-elif SCENE == "macro":
+elif BASE == "macro":
     LYRIC_ANCHORS = {}
-elif SCENE == "stack":
+elif BASE == "stack":
     LYRIC_ANCHORS = {"behind": ((0.0, 0.4, top_z + 0.30), True)}
+if "lyricAnchors" in ROOM:  # the room's own anchors replace the base's (all standing)
+    LYRIC_ANCHORS = {k: (tuple(v), True) for k, v in ROOM["lyricAnchors"].items()}
 for _name, (_loc, _standing) in LYRIC_ANCHORS.items():
     add_lyric_anchor(_name, _loc, _standing)
 
 
 upper, lower = woofer_z_mid + woofer_z_half, woofer_z_mid - woofer_z_half
-wide = add_camera("Cam1_Wide", (0, front_y - (2.4 if SCENE == "stack" else 1.30), 0.02 if SCENE != "stack" else 0.2), (0, front_y, 0.0 if SCENE != "stack" else 0.2), 50)
+wide = add_camera("Cam1_Wide", (0, front_y - (2.4 if BASE == "stack" else 1.30), 0.02 if BASE != "stack" else 0.2), (0, front_y, 0.0 if BASE != "stack" else 0.2), 50)
 set_dof(
     wide,
     add_focus("Focus_Wide", (woofer_x, front_y, upper)),
@@ -1233,7 +1253,7 @@ if INTIMATE:
     aim(side, add_focus("Aim_Side", (woofer_x, front_y, 0.0)))
     side["move"] = [0.3, -0.03, 0.0]  # track across the woofers from the left edge
     top = add_camera("Cam7_Top", (0.28, front_y - 0.5, 0.62), (0.0, front_y, 0.0), 24)
-    if SCENE == "macro":
+    if BASE == "macro":
         # the cone shot: a 90 mm macro a hand from the upper woofer's cap, wide open
         cone_cam = add_camera("Cam8_Cone", (woofer_x + 0.10, front_y - 0.30, upper + 0.02), (woofer_x, front_y, upper), 90)
         set_dof(cone_cam, add_focus("Focus_Cone", (woofer_x, front_y + 0.004, upper)), 4.0)  # on the dust cap's apex
@@ -1257,6 +1277,14 @@ else:
     aim(top, add_focus("Aim_Top", (0.0, front_y, -0.1)))
     top["move"] = [-1.1, 0.2, -0.3]  # from the truss, sweeping across and down onto the hero
 scene.camera = wide
+# the room's own cameras: added to the base's, aimed at their target, and cut after the built-in
+# shots (apply_drive puts "custom_shot" cameras at the end of its shot order)
+for _cam in ROOM.get("cameras", []):
+    _c = add_camera(_cam["name"], tuple(_cam["pos"]), tuple(_cam["target"]), float(_cam.get("lens", 35)))
+    set_dof(_c, add_focus(f"Focus_{_cam['name']}", tuple(_cam["target"])), float(_cam.get("fstop", 2.8)))
+    aim(_c, add_focus(f"Aim_{_cam['name']}", tuple(_cam["target"])))
+    _c["move"] = list(_cam.get("move", [0.0, 0.0, 0.0]))
+    _c["custom_shot"] = True
 
 # lights: no ambient at all — every highlight comes from an aimed spot ---------------------
 # The world is black and EEVEE's bounce light is off, so what is not in a beam stays black.
@@ -1304,8 +1332,8 @@ if KEY_SOFTBOX > 0:
     key_data = bpy.data.lights.new("KeyLight", "AREA")
     key_data.shape = "SQUARE"
     key_data.size = KEY_SOFTBOX
-    key_data.spread = math.radians(70 if SCENE == "stack" else 40)  # a softbox with a grid: a pool on the drivers, not the whole room (wider for the wall of six)
-    key_data.energy = (10.0 if MOODY else 13.0) * (2.4 if SCENE == "stack" else 1.0)  # area watts go forward; matched by eye against the 380 W spot (A/B on the board)
+    key_data.spread = math.radians(70 if BASE == "stack" else 40)  # a softbox with a grid: a pool on the drivers, not the whole room (wider for the wall of six)
+    key_data.energy = (10.0 if MOODY else 13.0) * (2.4 if BASE == "stack" else 1.0)  # area watts go forward; matched by eye against the 380 W spot (A/B on the board)
     key_data.color = WARM
     key_data.volume_factor = 0.6
     key = new_object("KeyLight", key_data)
@@ -1330,7 +1358,7 @@ if not INTIMATE:
 
 # the set: a room corner behind the rig — dark plaster walls, a riser under the sub stack,
 # red uplights along the wall base, and a neon BIGHECK on the wall that beats with the track
-SET_WALLS = SCENE == "concrete"  # True: room corner (concrete); False: black void
+SET_WALLS = ROOM.get("walls", BASE == "concrete")  # True: room corner (concrete); False: black void
 WALL_Y = 1.35  # back wall plane (behind the set-back PMC8-2s)
 WALL_H = 3.2
 ROOM_MARGIN = 1.5  # side walls this far outside the rig
@@ -1483,7 +1511,7 @@ def wall(name, size, location, rotation):
 # concrete PBR; the stage rig used plaster.
 if SET_WALLS:
     concrete_dir = os.path.join(CACHE, "ambientcg", f"{CONCRETE_TEXTURE[0]}_{CONCRETE_TEXTURE[1]}-JPG")
-    if SCENE == "concrete" and os.path.isdir(concrete_dir):
+    if BASE == "concrete" and os.path.isdir(concrete_dir):
         wall_mat = plastic_material("WallMat", scale=0.7, texture=CONCRETE_TEXTURE, albedo=0.55)
     else:
         wall_mat = plaster_material("WallMat")
@@ -1789,11 +1817,11 @@ if hasattr(slate, "visible_shadow"):
 DUST_COUNT = 12000  # fewer, in a smaller box: motes live where the wide frame and the backlight are (handoff item 6)
 DUST_BOX = ((rig_x0 - 0.45, -0.50, -0.6), (rig_x1 + 0.45, 1.2, 0.6))  # the wide frame's width and height, from behind the speaker to just short of the close-up lens
 DUST_RADIUS = (0.00025, 0.0007)  # metres, log-normal: in focus they are sub-pixel, out of focus they bloom
-if SCENE == "macro":  # the plan's macro row: finer motes, packed in front of the baffle
+if BASE == "macro":  # the plan's macro row: finer motes, packed in front of the baffle
     DUST_COUNT = 20000
     DUST_BOX = ((-0.35, front_y - 0.40, -0.35), (0.35, front_y + 0.05, 0.35))
     DUST_RADIUS = (0.0001, 0.0003)
-elif SCENE == "stack":
+elif BASE == "stack":
     DUST_COUNT = 30000
     DUST_BOX = ((rig_x0 - 0.3, -0.5, -0.9), (rig_x1 + 0.3, 1.2, 0.7))
 DUST_LINT = 0.07  # fraction of motes that are lint: flattened, elongated, randomly turned
@@ -2550,6 +2578,13 @@ def build_compositor():
 
 
 build_compositor()
+
+# the room travels with the scene: apply_drive falls back to the room's rig, the add-on's
+# Save room starts from it
+scene["excursion_room"] = json.dumps(ROOM or {"kind": "room", "name": SCENE, "description": "", "base": BASE})
+scene["excursion_built_speakers"] = json.dumps(globals().get("rig_built", []))  # a speaker skipped for a missing STL is not "deleted" when the add-on saves the room
+if ROOM.get("rig"):
+    scene["room_rig"] = ROOM["rig"]
 
 out = os.path.join(HERE, "scenes", f"{SCENE}.blend")
 os.makedirs(os.path.dirname(out), exist_ok=True)

@@ -1,0 +1,6 @@
+{
+  "kind": "room",
+  "name": "macro",
+  "description": "The same hero, close cameras only plus a 90 mm on the cone, finer dust.",
+  "base": "macro"
+}

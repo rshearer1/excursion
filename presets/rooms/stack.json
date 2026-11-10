@@ -1,0 +1,6 @@
+{
+  "kind": "room",
+  "name": "stack",
+  "description": "A wall of six PMC6-2s on the floor, the wide camera further back.",
+  "base": "stack"
+}

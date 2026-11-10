@@ -9,7 +9,9 @@ Fixed recipes: applying one reproduces exactly what was saved. All files carry `
 | `scenes/` | `scene` | scene, cut cadence, cut-at-markers, lead ms, fps |
 | `shows/` | `show` | the desk's cue lanes with times in **bars from the downbeat** |
 | `lyrics/` | `lyrics` | lyric defaults and section styles — never the lines |
-| `templates/` | `template` | names one block of each kind plus a mood (`blender/moods/<mood>.json`) |
+| `templates/` | `template` | names one block of each kind plus a mood (`blender/moods/<mood>.json`) and optionally a rig |
+| `rooms/` | `room` | the set Blender builds: a base plus walls, stage, speakers, extra cameras, lyric anchors, default rig |
+| `rigs/` | `rig` | light fixtures added at render time, each with a role (what drives it) and a react (extra motion) |
 
 In the tool: **Link folder**, then the pickers fill from here. **Save preset** on the export strip,
 the show desk and the lyrics panel writes one block; **Templates → Save as…** writes a block of
@@ -17,3 +19,7 @@ each kind plus the template. Headless: `npm run track-job -- track.wav --templat
 
 `club-night` is the starter: void scene cutting every 8 bars, the moody mood, red/purple rim and
 wall cues alternating every 2 bars, lyrics fading in behind the speaker and popping white on drops.
+
+Rooms and rigs (HOME.md, "Rooms and light rigs"): the **room** and **rig** boxes in the tool and the
+Excursion sidebar in Blender (`blender/addon/excursion_studio.py`) edit the same files. A room change
+rebuilds its scene on the next render; a rig change needs no rebuild.

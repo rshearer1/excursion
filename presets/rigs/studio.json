@@ -1,0 +1,143 @@
+{
+  "kind": "rig",
+  "name": "studio",
+  "description": "An editable copy of the scenes' own lights (key softbox, graze, top back, two rims) that replaces them. Positions are for the void's hero; the key holds its aim instead of sweeping across the drivers.",
+  "replaceBuiltIn": true,
+  "fixtures": [
+    {
+      "id": "key",
+      "type": "area",
+      "pos": [
+        -0.3,
+        -1.034,
+        0.7
+      ],
+      "aim": [
+        -0.1075,
+        -0.184,
+        0.1
+      ],
+      "power": 10,
+      "color": [
+        1,
+        0.84,
+        0.66
+      ],
+      "cone": 40,
+      "blend": 0.5,
+      "size": 0.8,
+      "volume": 0.6,
+      "role": "key",
+      "react": "none",
+      "amount": 0.5
+    },
+    {
+      "id": "graze",
+      "type": "spot",
+      "pos": [
+        -0.8,
+        -0.304,
+        -0.02
+      ],
+      "aim": [
+        0.1,
+        -0.204,
+        0.0
+      ],
+      "power": 150,
+      "color": [
+        1,
+        0.95,
+        0.9
+      ],
+      "cone": 22,
+      "blend": 0.3,
+      "size": 0.08,
+      "volume": 1.0,
+      "role": "static",
+      "react": "none",
+      "amount": 0.5
+    },
+    {
+      "id": "top-back",
+      "type": "spot",
+      "pos": [
+        0.1,
+        0.9,
+        1.2
+      ],
+      "aim": [
+        0.0,
+        -0.12,
+        -0.1
+      ],
+      "power": 1800,
+      "color": [
+        0.4,
+        0.6,
+        1.0
+      ],
+      "cone": 40,
+      "blend": 0.8,
+      "size": 0.08,
+      "volume": 0.35,
+      "role": "rim",
+      "react": "none",
+      "amount": 0.5
+    },
+    {
+      "id": "rim-left",
+      "type": "spot",
+      "pos": [
+        -1.115,
+        0.9,
+        0.35
+      ],
+      "aim": [
+        -0.215,
+        0.3,
+        -0.2
+      ],
+      "power": 900,
+      "color": [
+        0.4,
+        0.6,
+        1.0
+      ],
+      "cone": 28,
+      "blend": 0.8,
+      "size": 0.08,
+      "volume": 0.05,
+      "role": "rim",
+      "react": "none",
+      "amount": 0.5
+    },
+    {
+      "id": "rim-right",
+      "type": "spot",
+      "pos": [
+        1.115,
+        0.9,
+        -0.05
+      ],
+      "aim": [
+        0.215,
+        0.3,
+        -0.2
+      ],
+      "power": 800,
+      "color": [
+        0.4,
+        0.6,
+        1.0
+      ],
+      "cone": 28,
+      "blend": 0.8,
+      "size": 0.08,
+      "volume": 0.05,
+      "role": "rim",
+      "react": "none",
+      "amount": 0.5
+    }
+  ]
+}

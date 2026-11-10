@@ -1,4 +1,5 @@
 import { describe, test, expect, beforeAll } from "vitest";
+import { parseRig } from "./rig";
 import { buildDrive, type DriveJson } from "./exporter";
 import { extractFeatures } from "./features";
 import { synthTestTrack } from "./synth";
@@ -53,6 +54,16 @@ describe("buildDrive", () => {
     }
     expect(withCone.frames.some((fr) => Math.abs(fr.cone![1] - fr.cone![0]) > 0.2)).toBe(true);
     expect(buildDrive(base).frames[0]).not.toHaveProperty("cone");
+  });
+
+  test("carries the rig inline when one is picked, and nothing otherwise", () => {
+    const signal = synthTestTrack({ bpm: 140, offsetMs: 150, bars: 1, sampleRate: SR });
+    const base = { fileName: "t.wav", sha1: "x", durationSec: signal.length / SR, grid, fps: 30, scene: "void-wide-pair", mood: "smoke", features: extractFeatures(signal, SR, { fps: 30 }) };
+    expect(buildDrive(base)).not.toHaveProperty("rig");
+    const rig = parseRig({ kind: "rig", name: "kick-floor", fixtures: [{ id: "can", role: "static", react: "kick" }] });
+    const d = buildDrive({ ...base, rig });
+    expect(d.rig?.fixtures[0]?.react).toBe("kick");
+    expect(d.scene).toBe("void-wide-pair");
   });
 
   test("carries audio, grid, scene and mood metadata through", () => {
