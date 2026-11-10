@@ -23,7 +23,7 @@ ROOMS_DIR = os.path.join(ROOT, "presets", "rooms")
 
 RIG_COLLECTION = "ExcursionRig"
 BUILT_IN_LIGHTS = ("KeyLight", "Graze", "TopBack", "RimLeft", "RimRight")
-BUILT_IN_PREFIXES = ("WallUp_",)
+BUILT_IN_PREFIXES = ("WallUp_", "PairR_")  # PairR_: the stereo-pair twin's copies of the key, graze and top-back
 ROOM_BASES = ("void", "macro", "stack", "concrete")
 TYPES = ("spot", "area", "point")
 ROLES = ("key", "rim", "wash", "back", "static")

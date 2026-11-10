@@ -1082,6 +1082,14 @@ RIG = STACK_RIG if BASE == "stack" else [] if INTIMATE else [
     ("PMC6", "LFILL_", (RIG_SPACING / 2 - 0.14, 0.15), 12.0, 0.266),
     ("PMC6", "RFILL_", (RIG_SPACING / 2 + 0.14, 0.15), -12.0, 0.266),
 ]
+# a stereo pair: room "pair": {"gap": metres centre to centre, "toe": degrees}. A twin of the
+# hero (same meshes and materials, so it moves and wears identically) stands on its own stand
+# to the right, both toed in, each with its own key softbox, graze and top-back from the same
+# light data, so the desk's key and rim lanes drive both. The LED wall centres between them.
+PAIR = ROOM.get("pair")
+PAIR_GAP = float(PAIR.get("gap", 1.4)) if PAIR else 0.0
+PAIR_TOE = math.radians(float(PAIR.get("toe", 10.0))) if PAIR else 0.0
+PAIR_PREFIX = "PairR_"
 if "speakers" in ROOM:  # the room's own layout replaces the base's
     RIG = [(s["model"], f"{s['id']}_", tuple(s["pos"]), float(s.get("yaw", 0.0)), s["mount"]) for s in ROOM["speakers"]]
     for _m in {r[0] for r in RIG}:
@@ -1388,6 +1396,8 @@ add_spot("Graze", (-0.80, front_y - 0.12, -0.02), (0.10, front_y - 0.02, 0.0), 1
 rig_mid = (rig_x0 + rig_x1) / 2
 add_spot("TopBack", (rig_mid + 0.1, 0.9, 1.2), (rig_mid, -0.12, top_z - 0.3), 1800, RIM_COLOR, 40, blend=0.8, radius=0.08, volume=0.35)
 add_spot("RimLeft", (rig_x0 - 0.9, 0.9, 0.35), (rig_x0, 0.3, -0.2), 900, RIM_COLOR, 28, blend=0.8, radius=0.08, volume=0.05)
+if PAIR:  # the twin is added at the end of the build; the right rim, dust and smoke reach past it now
+    rig_x1 = max(rig_x1, PAIR_GAP + half_w)
 add_spot("RimRight", (rig_x1 + 0.9, 0.9, -0.05), (rig_x1, 0.3, -0.2), 800, RIM_COLOR, 28, blend=0.8, radius=0.08, volume=0.05)
 # the wall: a wide, soft, warm fill from front-above so the whole rig reads, and a dark-red
 # wash from high behind that catches the tops and the stands. Both far dimmer than the hero's key.
@@ -1408,7 +1418,7 @@ ROOM_MARGIN = 1.5  # side walls this far outside the rig
 # In Cycles it is a real light — its cool glow is what edges the cabinet, lights the dust and
 # reflects in the floor, so the blue in the frame has a source you can see.
 LED_WALL = (2.4, 1.35)  # metres, 16:9
-LED_WALL_POS = (0.0, 1.2, 0.12)  # behind the hero
+LED_WALL_POS = (PAIR_GAP / 2 if PAIR else 0.0, 1.2, 0.12)  # behind the hero (centred between a pair)
 LED_TRACE = (0.55, 0.75, 1.0)  # cool white-blue
 LED_PANEL_GLOW = 0.06  # the panel's own faint glow between the traces
 
@@ -2617,6 +2627,55 @@ def build_compositor():
 
 
 build_compositor()
+
+
+def build_pair():
+    """The room's stereo pair: toe the hero in and add its twin (see PAIR above)."""
+    hero_parts = [
+        o for o in list(scene.objects)
+        if o.type == "MESH" and o.parent is None and o.location.length < 1e-6
+        and (o.name in ("Cabinet", "Tweeter", "Woofer_L", "Woofer_L_Trim", "Mid", "Woofer_R", "Woofer_R_Trim", "Waveguide", "Badge", "Logo")
+             or o.name.startswith("Vent_"))
+    ]
+    for o in hero_parts:
+        twin = o.copy()  # linked mesh data: the cones and domes move with the hero's
+        for col in o.users_collection:
+            col.objects.link(twin)
+        twin.name = PAIR_PREFIX + o.name
+        twin.location = (PAIR_GAP, 0.0, 0.0)
+        twin.rotation_euler = (0.0, 0.0, -PAIR_TOE)
+        o.rotation_euler = (0.0, 0.0, PAIR_TOE)
+    stand = bpy.data.objects.get("Stand_L")
+    if stand is not None:
+        twin_stand = stand.copy()
+        scene.collection.objects.link(twin_stand)
+        twin_stand.name = PAIR_PREFIX + "Stand"
+        twin_stand.location.x += PAIR_GAP
+    key_target = bpy.data.objects.get("KeyTarget")
+    twin_target = None
+    if key_target is not None:
+        twin_target = bpy.data.objects.new(PAIR_PREFIX + "KeyTarget", None)
+        scene.collection.objects.link(twin_target)
+        twin_target.location = key_target.location + Vector((PAIR_GAP, 0.0, 0.0))
+    lights = []
+    for name in ("KeyLight", "Graze", "TopBack"):
+        o = bpy.data.objects.get(name)
+        if o is None:
+            continue
+        twin = o.copy()  # shares the light data: keyed colour and power follow the hero's
+        for col in o.users_collection:
+            col.objects.link(twin)
+        twin.name = PAIR_PREFIX + name
+        twin.location.x += PAIR_GAP
+        for con in twin.constraints:
+            if getattr(con, "target", None) is key_target and twin_target is not None:
+                con.target = twin_target
+        lights.append(twin.name)
+    print(f"pair: twin {len(hero_parts)} parts {PAIR_GAP:.2f} m right, toe {math.degrees(PAIR_TOE):.0f} deg, lights {', '.join(lights)}")
+
+
+if PAIR and kit_ready("PMC6-2"):
+    build_pair()
 
 # the room travels with the scene: apply_drive falls back to the room's rig, the add-on's
 # Save room starts from it
