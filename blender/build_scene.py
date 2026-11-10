@@ -46,6 +46,7 @@ import sys  # noqa: E402
 
 sys.path.insert(0, HERE)
 import rigkit  # noqa: E402
+import speaker_finish  # noqa: E402
 
 SCENE = os.environ.get("EXCURSION_SCENE", "void")
 ROOM = rigkit.load_room(SCENE) or {}
@@ -745,9 +746,17 @@ def hex_tile_image(path, R=40, nx=6, ny=4):
     return img, (W, H)
 
 
+HEX_BUMP = False  # the old 6 mm shader honeycomb; the CAD's own ~12 mm moulding is the real one (speaker_finish.py)
+
+
 def plate_material(name, cell_mm=6.0):
-    """The hero's mid/tweeter plate: the cabinet finish with a machined honeycomb relief."""
+    """The hero's mid/tweeter plate: the cabinet finish, with the CAD honeycomb's edges and
+    grooves picked out by speaker_finish (and optionally the old shader relief, HEX_BUMP)."""
     m = plastic_material(name)
+    if not HEX_BUMP:
+        m.node_tree.nodes["Principled BSDF"].inputs["Metallic"].default_value = 0.12  # anodised, not chrome
+        speaker_finish.finish(m, **speaker_finish.PLATE)
+        return speaker_finish.exaggerate_relief(m, **speaker_finish.RELIEF)
     nt = m.node_tree
     N, L = nt.nodes, nt.links
     bsdf = N["Principled BSDF"]
@@ -1009,6 +1018,9 @@ def place_stand(name, x, y, floor_z, width_scale):
 cabinet_mat = plastic_material("CabinetMat")
 woofer_mat = driver_material("WooferMat", "cone")
 dome_mat = driver_material("DomeMat", "dome")
+speaker_finish.finish(cabinet_mat, **speaker_finish.CABINET)
+for _m in (woofer_mat, dome_mat):
+    speaker_finish.finish(_m, **speaker_finish.DRIVER)
 tweeter_mat = make_material("TweeterMat", base=(0.012, 0.012, 0.013, 1), rough=0.45)
 tweeter_mat.node_tree.nodes["Principled BSDF"].inputs["Sheen Weight"].default_value = 0.3  # coated fabric dome
 stand_mat = make_material("StandMat", base=(0.03, 0.03, 0.032, 1), rough=0.35)
