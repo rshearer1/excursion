@@ -1001,6 +1001,33 @@ def build_waveguide(body, cx, cz, front, prefix, r_cut):
 
 
 
+def paint_screws(body, model, w, h, front):
+    """Give every front screw head its own metal. The screws are part of the CAD body (cabinet
+    plastic until now); kits/<model>.screws.json lists them (blender/measure_screws.mjs finds
+    each by its hex socket: centre, head face depth, head radius, socket depth)."""
+    path = os.path.join(KITS, f"{model}.screws.json")
+    if not os.path.exists(path):
+        return
+    with open(path, encoding="utf-8") as fh:
+        screws = json.load(fh)["screws"]
+    me = body.data
+    me.materials.append(screw_mat)
+    me.materials.append(screw_rim_mat)
+    slot = len(me.materials) - 2
+    spots = [(s["x_mm"] / 1000 - w / 2, s["y_mm"] / 1000 - h / 2, s["head_mm"] / 1000, s["head_r_mm"] / 1000, s["socket_mm"] / 1000) for s in screws]
+    n = 0
+    for p in me.polygons:
+        c = p.center
+        depth = c.y - front
+        for sx, sz, head, r, socket in spots:
+            if abs(c.x - sx) < r + 0.0003 and abs(c.z - sz) < r + 0.0003 and math.hypot(c.x - sx, c.z - sz) < r + 0.0003 and head - 0.0003 < depth < head + socket + 0.0005:
+                # the photo shows a dark head with a light ring round its edge (the chamfer)
+                p.material_index = slot + (1 if math.hypot(c.x - sx, c.z - sz) > 0.72 * r and depth < head + 0.0004 else 0)
+                n += 1
+                break
+    print(f"screws: {len(spots)} heads, {n} faces in ScrewMat on {body.name}")
+
+
 def build_speaker(model, prefix, location, yaw=0.0, hero=False, scale=(1, 1, 1)):
     kit = load_kit(model)
     stl = os.path.join(ROOT, *kit["stl"].split("/"))
@@ -1095,6 +1122,7 @@ def build_speaker(model, prefix, location, yaw=0.0, hero=False, scale=(1, 1, 1))
             parts.append(build_waveguide(body, mid_centre[0], mid_centre[1], front, prefix, mid_r_cut))
         else:  # the CAD horn itself is the true shape, only coarser
             print('note: kits/PMC6-2.waveguide.json missing (node blender/measure_waveguide.mjs) - keeping the CAD horn')
+    paint_screws(body, model, w, h, front)
     for obj in parts:
         obj.location = location
         obj.rotation_euler = (0, 0, yaw)
@@ -1146,6 +1174,11 @@ tweeter_mat.node_tree.nodes["Principled BSDF"].inputs["Sheen Weight"].default_va
 stand_mat = make_material("StandMat", base=(0.03, 0.03, 0.032, 1), rough=0.35)
 cavity_mat = make_material("CavityMat", base=(0.003, 0.003, 0.003, 1), rough=0.95)
 # the vent grille (product photo): a light grey honeycomb web in front of the black port, clearly lighter than the cabinet
+# screw heads (product photo): dark steel socket screws, a little brighter and glossier than the plastic around them
+screw_mat = make_material("ScrewMat", base=(0.03, 0.03, 0.032, 1), rough=0.35)
+screw_rim_mat = make_material("ScrewRimMat", base=(0.30, 0.30, 0.31, 1), rough=0.35)
+screw_rim_mat.node_tree.nodes["Principled BSDF"].inputs["Metallic"].default_value = 1.0
+screw_mat.node_tree.nodes["Principled BSDF"].inputs["Metallic"].default_value = 1.0
 vent_grille_mat = make_material("VentGrilleMat", base=(0.035, 0.035, 0.037, 1), rough=0.5)
 trim_mat = make_material("TrimMat", base=(0.78, 0.79, 0.8, 1), rough=0.38)  # brushed aluminium chassis ring (a mirror would only reflect the void)
 trim_mat.node_tree.nodes["Principled BSDF"].inputs["Metallic"].default_value = 1.0
