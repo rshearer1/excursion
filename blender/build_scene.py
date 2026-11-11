@@ -405,7 +405,7 @@ def driver_material(name, kind):
 
 
 DOME_PEBBLE_SCALE = 650  # pebble cells per metre on the mid dome (~1.5 mm; finer vanishes at 1080p)
-DOME_PEBBLE_STRENGTH = 0.7
+DOME_PEBBLE_STRENGTH = 0.35  # 0.7 read too bumpy (Robert, 2026-11-11)
 FIBRE_PITCH = 1600  # crossed threads per metre in the woofer cones (0.6 mm; reads as grain, not rings)
 
 
