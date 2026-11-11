@@ -1404,8 +1404,8 @@ screw_rim_mat = make_material("ScrewRimMat", base=(0.06, 0.06, 0.063, 1), rough=
 screw_rim_mat.node_tree.nodes["Principled BSDF"].inputs["Metallic"].default_value = 1.0
 screw_mat.node_tree.nodes["Principled BSDF"].inputs["Metallic"].default_value = 1.0
 # the thin bright ring round each woofer (product photo): the flange chamfer in bright satin metal
-woofer_rim_mat = make_material("WooferRimMat", base=(0.42, 0.42, 0.43, 1), rough=0.42)  # reads bright all the way round in the photo: a satin silver finish, not a mirror
-woofer_rim_mat.node_tree.nodes["Principled BSDF"].inputs["Metallic"].default_value = 0.75  # mostly a glint: the photo's ring is uneven round the circle, and a matte-bright one read thick and white in the show light
+woofer_rim_mat = make_material("WooferRimMat", base=(0.26, 0.26, 0.27, 1), rough=0.5)  # reads bright all the way round in the photo: a satin silver finish, not a mirror
+woofer_rim_mat.node_tree.nodes["Principled BSDF"].inputs["Metallic"].default_value = 0.6  # mostly a glint (0.75 / base 0.42 was a strong white arc under the show key light): the photo's ring is uneven round the circle, and a matte-bright one read thick and white in the show light
 vent_grille_mat = make_material("VentGrilleMat", base=(0.035, 0.035, 0.037, 1), rough=0.5)
 trim_mat = make_material("TrimMat", base=(0.78, 0.79, 0.8, 1), rough=0.38)  # brushed aluminium chassis ring (a mirror would only reflect the void)
 trim_mat.node_tree.nodes["Principled BSDF"].inputs["Metallic"].default_value = 1.0
