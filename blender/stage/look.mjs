@@ -8,6 +8,7 @@
 //   -> photo_test.py (Shakify 30 %, OSL lens, film finish) -> [meter_cam.py] -> wave_test.py (air
 //   ripples, dust push; renders), then an ffmpeg grade: print_soft.cube + a deep-blacks curve.
 // Blender must run with -y (Shakify's drivers are Python expressions).
+import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -26,6 +27,37 @@ export function meterImage(dir) {
   if (!dir || !fs.existsSync(dir)) return null;
   const nums = fs.readdirSync(dir).filter((f) => /^\d+\.png$/.test(f)).map((f) => parseInt(f, 10));
   return nums.length ? path.join(dir, `${Math.min(...nums)}.png`) : null;
+}
+
+/**
+ * The meter frames for a drive, never the old plain waveform by accident (Robert rejected it):
+ *   1. explicit: a folder the caller named (--meters); must hold frames
+ *   2. out/meters when its drive.txt names this drive (the real MiniMeters capture)
+ *   3. out/meters-<name>: drawn from the track by make_meters.mjs, made now if missing (silent: ffmpeg only)
+ * wall "waveform" is the explicit opt-out (returns null). Throws with a plain message when
+ * nothing can be found or made.
+ */
+export function metersFor({ drivePath, name, explicit, wall }) {
+  if (wall === "waveform") return null;
+  if (explicit) {
+    const img = meterImage(explicit);
+    if (!img) throw new Error(`no meter frames (<frame>.png) in ${explicit}`);
+    return img;
+  }
+  const shared = path.join(ROOT, "out", "meters");
+  const stampFile = path.join(shared, "drive.txt");
+  const stamp = fs.existsSync(stampFile) ? fs.readFileSync(stampFile, "utf8").trim() : "";
+  if (path.basename(stamp) === path.basename(drivePath) && meterImage(shared)) return meterImage(shared);
+  const own = path.join(ROOT, "out", `meters-${name}`);
+  if (!meterImage(own)) {
+    console.log(`look: no meter frames for ${path.basename(drivePath)}; drawing them from the track -> ${own}`);
+    const r = spawnSync(process.execPath, [path.join(HERE, "make_meters.mjs"), "--drive", drivePath, "--out", own], { stdio: "inherit" });
+    if (r.status !== 0 || !meterImage(own)) {
+      throw new Error(`could not make meter frames for ${path.basename(drivePath)} (is its audio file next to it, and ffmpeg installed?). ` +
+        `Fix that, pass --meters <folder>, or pass --wall waveform to use the plain waveform on the LED wall.`);
+    }
+  }
+  return meterImage(own);
 }
 
 /**

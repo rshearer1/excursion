@@ -16,7 +16,7 @@ import { spawnSync, execSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { lookEnv, lookScripts, GRADE_VF } from "./look.mjs";
+import { lookEnv, lookScripts, metersFor, GRADE_VF } from "./look.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(HERE, "..", "..");
@@ -36,10 +36,16 @@ const drive = path.resolve(ROOT, opt("--drive", "blender/jobs/psychidelly.drive.
 const samples = opt("--samples", "48");
 const clip = opt("--clip");
 const frames = opt("--frames", "1280");
-// --meters: a folder of <frame>.png screen images (the wall starts at the lowest frame number)
-const meterDir = path.resolve(ROOT, opt("--meters", "out/meters"));
-const meterFrames = fs.existsSync(meterDir) ? fs.readdirSync(meterDir).filter((f) => /^\d+\.png$/.test(f)).map((f) => parseInt(f, 10)) : [];
-const meters = meterFrames.length ? path.join(meterDir, `${Math.min(...meterFrames)}.png`) : path.join(meterDir, "none.png");
+// --meters <folder of <frame>.png>: the LED wall's screen images; default: this drive's meters
+// (look.mjs metersFor). --wall waveform: the old plain waveform instead (never by accident).
+let meters;
+try {
+  meters = metersFor({ drivePath: drive, name: path.basename(drive).replace(/\.drive\.json$/, ""),
+    explicit: opt("--meters") && path.resolve(ROOT, opt("--meters")), wall: opt("--wall") });
+} catch (e) {
+  console.error(e.message);
+  process.exit(2);
+}
 const outDir = path.join(ROOT, "out", "current-best", name);
 const showCams = flag("--show-cams") || (!clip && opt("--frames") && frames.includes(","));
 
@@ -83,10 +89,9 @@ if ((stale && !opt("--blend")) || flag("--rebuild")) {
 }
 
 // ---- the current look (blender/stage/look.mjs: the same look full reels use)
-if (!fs.existsSync(meters)) console.warn(`no meter frames at ${meters}: the wall shows the plain waveform instead`);
 const env = {
   ...process.env,
-  ...lookEnv({ out: outDir, name, meters: fs.existsSync(meters) ? meters : null, half: flag("--half"),
+  ...lookEnv({ out: outDir, name, meters, half: flag("--half"),
     render: clip ? { clip } : { frames } }),
 };
 const chain = ["-b", "-y", blend, "-P", path.join(ROOT, "blender", "apply_drive.py"),

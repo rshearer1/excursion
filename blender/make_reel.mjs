@@ -5,7 +5,8 @@
 //   look (cycles only): the locked v11 look from blender/stage/look.mjs is on by default with --engine cycles
 //   (LED wall + meters, Shakify 30 %, OSL lens, film, air ripples, print_soft grade + deep blacks).
 //   --no-look renders as before. --meters <dir> picks the wall's meter frames (default out/meters when
-//   its drive.txt names this drive). --clip a,b renders only scene frames a..b (a short check).
+//   its drive.txt names this drive, else frames drawn from the track into out/meters-<name>;
+//   --wall waveform gives the old plain waveform). --clip a,b renders only scene frames a..b (a short check).
 //
 // Steps: fetch scene assets -> build scene if missing (or its room file changed) -> apply drive + render frames -> ffmpeg mux.
 // Audio is resolved from drive.audio.file sitting NEXT TO the drive.json (or pass --audio).
@@ -15,11 +16,11 @@ import { spawn } from "node:child_process";
 import { access, readFile, mkdir, stat } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { lookEnv, lookScripts, meterImage, GRADE_VF } from "./stage/look.mjs";
+import { lookEnv, lookScripts, metersFor, GRADE_VF } from "./stage/look.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const args = process.argv.slice(2);
-const valueFlags = new Set(["--engine", "--audio", "--sweep", "--shutter", "--crf", "--samples", "--mood", "--lut", "--rig", "--meters", "--clip"]);
+const valueFlags = new Set(["--engine", "--audio", "--sweep", "--shutter", "--crf", "--samples", "--mood", "--lut", "--rig", "--meters", "--clip", "--wall"]);
 const drivePaths = args.filter((a, i) => !a.startsWith("--") && !valueFlags.has(args[i - 1] ?? ""));
 if (drivePaths.length > 1) {
   // batch: one reel after another, same flags; a failure stops the batch
@@ -81,14 +82,15 @@ const look = engine === "cycles" && !flag("--no-look");
 const clip = look && opt("--clip") ? opt("--clip").split(",").map(Number) : null;
 let lookEnvVars = {};
 if (look) {
-  let meterDir = opt("--meters") ? path.resolve(opt("--meters")) : path.join(root, "out", "meters");
-  if (!opt("--meters")) {
-    const stampFile = path.join(meterDir, "drive.txt");
-    const stamp = (await exists(stampFile)) ? (await readFile(stampFile, "utf8")).trim() : "";
-    if (path.basename(stamp) !== path.basename(drivePath)) meterDir = null; // another track's meters
+  // this drive's meter frames: the real capture, or drawn from the track now. Never the old plain
+  // waveform unless asked for with --wall waveform.
+  let meters;
+  try {
+    meters = metersFor({ drivePath: path.resolve(drivePath), name, explicit: opt("--meters") && path.resolve(opt("--meters")), wall: opt("--wall") });
+  } catch (e) {
+    console.error(`look: ${e.message}`);
+    process.exit(1);
   }
-  const meters = meterImage(meterDir);
-  if (!meters) console.warn("look: no meter frames for this drive, the wall shows the plain waveform (make them: node blender/stage/make_meters.mjs --drive <drive.json>)");
   lookEnvVars = lookEnv({ out: path.dirname(framesDir), name, meters, render: { clip: clip ? clip.join(",") : "scene" } });
 }
 const applyArgs = look
