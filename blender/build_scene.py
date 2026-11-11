@@ -1020,9 +1020,9 @@ def paint_screws(body, model, w, h, front):
         c = p.center
         depth = c.y - front
         for sx, sz, head, r, socket in spots:
-            if abs(c.x - sx) < r + 0.0003 and abs(c.z - sz) < r + 0.0003 and math.hypot(c.x - sx, c.z - sz) < r + 0.0003 and head - 0.0003 < depth < head + socket + 0.0005:
+            if abs(c.x - sx) < r + 0.0005 and abs(c.z - sz) < r + 0.0005 and math.hypot(c.x - sx, c.z - sz) < r + 0.0005 and head - 0.0003 < depth < head + socket + 0.0005:
                 # the photo shows a dark head with a light ring round its edge (the chamfer)
-                p.material_index = slot + (1 if math.hypot(c.x - sx, c.z - sz) > 0.72 * r and depth < head + 0.0004 else 0)
+                p.material_index = slot + (1 if math.hypot(c.x - sx, c.z - sz) > 0.9 * r else 0)
                 n += 1
                 break
     print(f"screws: {len(spots)} heads, {n} faces in ScrewMat on {body.name}")
@@ -1169,14 +1169,39 @@ speaker_wear.surface(cabinet_mat, **speaker_wear.SURFACE)  # textured satin pain
 for _m in (cabinet_mat, woofer_mat, dome_mat):  # dust, flecks, fingerprints, scuffs
     speaker_wear.wear(_m, **speaker_wear.WEAR)
 speaker_wear.cone_detail(woofer_mat, **speaker_wear.CONE)
-tweeter_mat = make_material("TweeterMat", base=(0.012, 0.012, 0.013, 1), rough=0.45)
-tweeter_mat.node_tree.nodes["Principled BSDF"].inputs["Sheen Weight"].default_value = 0.3  # coated fabric dome
+# the tweeter dome wears the same coating as the mid dome (Robert, 2026-11-11): near-black satin
+# with the pebbly rubber skin, same cell size and strength
+tweeter_mat = make_material("TweeterMat", base=(0.006, 0.006, 0.007, 1), rough=0.36)
+
+
+def add_pebble_skin(material):
+    nt = material.node_tree
+    N, L = nt.nodes, nt.links
+    pebble = N.new("ShaderNodeTexVoronoi")
+    pebble.feature = "SMOOTH_F1"
+    pebble.inputs["Scale"].default_value = DOME_PEBBLE_SCALE
+    pebble.inputs["Smoothness"].default_value = 0.6
+    pebble.inputs["Randomness"].default_value = 1.0
+    L.new(N.new("ShaderNodeTexCoord").outputs["Object"], pebble.inputs["Vector"])
+    height = N.new("ShaderNodeMath")
+    height.operation = "MULTIPLY_ADD"  # 0.75 * (1 - 1.6 * distance), as in the mid dome's mix
+    L.new(pebble.outputs["Distance"], height.inputs[0])
+    height.inputs[1].default_value = -1.2
+    height.inputs[2].default_value = 0.75
+    bump = N.new("ShaderNodeBump")
+    bump.inputs["Strength"].default_value = DOME_PEBBLE_STRENGTH
+    bump.inputs["Distance"].default_value = 0.0004
+    L.new(height.outputs[0], bump.inputs["Height"])
+    L.new(bump.outputs["Normal"], N["Principled BSDF"].inputs["Normal"])
+
+
+add_pebble_skin(tweeter_mat)
 stand_mat = make_material("StandMat", base=(0.03, 0.03, 0.032, 1), rough=0.35)
 cavity_mat = make_material("CavityMat", base=(0.003, 0.003, 0.003, 1), rough=0.95)
 # the vent grille (product photo): a light grey honeycomb web in front of the black port, clearly lighter than the cabinet
 # screw heads (product photo): dark steel socket screws, a little brighter and glossier than the plastic around them
 screw_mat = make_material("ScrewMat", base=(0.03, 0.03, 0.032, 1), rough=0.35)
-screw_rim_mat = make_material("ScrewRimMat", base=(0.30, 0.30, 0.31, 1), rough=0.35)
+screw_rim_mat = make_material("ScrewRimMat", base=(0.18, 0.18, 0.19, 1), rough=0.45)
 screw_rim_mat.node_tree.nodes["Principled BSDF"].inputs["Metallic"].default_value = 1.0
 screw_mat.node_tree.nodes["Principled BSDF"].inputs["Metallic"].default_value = 1.0
 vent_grille_mat = make_material("VentGrilleMat", base=(0.035, 0.035, 0.037, 1), rough=0.5)
