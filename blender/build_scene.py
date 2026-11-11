@@ -842,13 +842,13 @@ WAVEGUIDE_RECESS_R = 0.066  # dish radius at the plate face
 WAVEGUIDE_PLATE = 0.0125  # dish floor depth (6 mm below the plate face)
 WAVEGUIDE_FLOOR_R = WAVEGUIDE_RECESS_R - (WAVEGUIDE_PLATE - WAVEGUIDE_PLATE_FACE)  # 45-degree wall
 WAVEGUIDE_FLANGE = WAVEGUIDE_FLOOR_R  # the flange: the dish floor's outer edge, where the modelled wall starts
-WAVEGUIDE_PETALS = 8
+WAVEGUIDE_PETALS = 12  # the PMC6-2 photo shows ~12 soft petals (Robert, 2026-11-11)
 
 
 # Petals (Robert, 2026-11-11, from the photo): long flutes that start wide at the dome and
 # run almost to the rim, narrowing to a point, not short dashes near the rim.
 WAVEGUIDE_FLUTE_DEPTH = 0.007  # metres a flute sinks below the horn surface at its deepest
-WAVEGUIDE_FLUTE_TIP = 0.12  # flute width at the rim as a fraction of its width at the dome
+WAVEGUIDE_FLUTE_TIP = 0.35  # flute width at the rim as a fraction of its width at the dome (soft, rounded ends)
 
 
 def _wg_depth(r, theta):
