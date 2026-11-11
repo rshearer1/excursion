@@ -20,6 +20,6 @@ each kind plus the template. Headless: `npm run track-job -- track.wav --templat
 `club-night` is the starter: void scene cutting every 8 bars, the moody mood, red/purple rim and
 wall cues alternating every 2 bars, lyrics fading in behind the speaker and popping white on drops.
 
-Rooms and rigs (HOME.md, "Rooms and light rigs"): the **room** and **rig** boxes in the tool and the
+Rooms and rigs (`docs/features.md`, "Rooms and light rigs"): the **room** and **rig** boxes in the tool and the
 Excursion sidebar in Blender (`blender/addon/excursion_studio.py`) edit the same files. A room change
 rebuilds its scene on the next render; a rig change needs no rebuild.
