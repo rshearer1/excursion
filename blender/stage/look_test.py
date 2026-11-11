@@ -21,7 +21,7 @@ FSTOPS = {"Cam1_Wide": 5.6, "Cam2_Woofers": 2.8, "Cam3_Macro": 5.6, "Cam6_Side":
 # item 3: highlight rolloff on coloured light. Real gels and LEDs never reach a pure primary;
 # pull every light colour (static and keyed) part way toward white, and cap the top light.
 GEL_DESAT = 0.35   # fraction of saturation removed
-TOPBACK_GAIN = float(os.environ.get("LT_TOPBACK", 0.3))  # the light that floods the cabinet top (0.7 still left it a pale lilac slab in the top camera, 2026-11-11)
+TOPBACK_GAIN = float(os.environ.get("LT_TOPBACK", 0.05))  # the purple back light: it lit the haze round the speaker and made it look milky and out of place (Robert, 2026-11-11)
 
 # item 4: 1/f handheld on top of apply_drive's (tiny, sine) wobble
 SHAKE_LOC = 0.004   # metres

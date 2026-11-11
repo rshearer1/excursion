@@ -76,7 +76,7 @@ export function lookEnv({ out, name, meters, half = false, render }) {
   };
   // air: hazer-style (Robert, 2026-11-11): a lot of even haze, few clumps, so beams and lasers read.
   // An AIR_* value already in the environment wins.
-  if (!process.env.AIR_HAZE) env.AIR_HAZE = "10";
+  if (!process.env.AIR_HAZE) env.AIR_HAZE = "4";  // 10 veiled the speaker
   if (!process.env.AIR_DENSITY) env.AIR_DENSITY = "0.3";
   if (meters) env.WALL_IMAGE = meters;
   if (half) Object.assign(env, { LT_HALF: "1", WT_HALF: "1" });
