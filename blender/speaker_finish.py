@@ -119,6 +119,31 @@ def finish(material, edge_radius, edge_gain, edge_lift, edge_gloss, cavity_dist,
 # CAD truth (measured 2026-11-11): the plate face is flat at 6.47 mm and the honeycomb is its
 # OUTLINES only: engraved lines 0.8 mm wide and 0.25 mm deep (6.72 mm), as is the "6-2" under
 # the badge. The cells are not sunk. The product photo shows them as thin dark lines.
+def round_edges(material, radius=0.00025, samples=6):
+    """Shade every sharp edge as a small real radius (Bevel node on the final normal). Unlike
+    finish()'s edge lift, which brightens edges everywhere, a rounded edge only glints where it
+    mirrors a light: the product photo's hex lines shine as thin bright outlines on one side of
+    the field and stay dark on the other. Call it last, after every bump has been added."""
+    if material is None or not material.use_nodes or material.get(TAG + "_round"):
+        return material
+    nt = material.node_tree
+    bsdf = next((n for n in nt.nodes if n.type == "BSDF_PRINCIPLED"), None)
+    if bsdf is None:
+        return material
+
+    def make(src, default):
+        bevel = nt.nodes.new("ShaderNodeBevel")
+        bevel.samples = samples
+        bevel.inputs["Radius"].default_value = radius
+        if src is not None:
+            nt.links.new(src, bevel.inputs["Normal"])
+        return bevel.outputs["Normal"]
+
+    _rewire(nt, bsdf.inputs["Normal"], make)
+    material[TAG + "_round"] = True
+    return material
+
+
 # The CAD honeycomb on the hero plate is only 0.25 mm deep: the plate face sits 3.10 mm behind
 # the baffle and the cell floors 3.35 mm (measured from the STL). Too shallow to catch light, so
 # the shader exaggerates it: anything below the plate face is a cell floor, darker and rougher,
@@ -127,10 +152,19 @@ PLATE_FACE_Y = -0.17748  # object-space y of the plate face on the hero cabinet
 PLATE_CAD_CELL_Y = -0.17723  # object-space y of the cell floors as the CAD has them
 HEX_DEEPEN = 0.0012  # build_scene pushes the engraved line floors this much deeper (real depth, real shadows)
 PLATE_CELL_Y = PLATE_CAD_CELL_Y + HEX_DEEPEN  # object-space y of the cell floors after that
+# The photo's lines are dark over most of the plate but shine as bright outlines where they
+# mirror the light: the engraved floors are bare, semi-polished material (floor_metal), black
+# where they reflect a dark room and bright where they reflect a lamp. Matte pits never shine,
+# and a plain glossy plastic floor reflects too little to beat the plate around it (both tried).
+# Note: under a bright all-round fill (a studio HDRI) they shine everywhere; judge them in a
+# dark room with lamps, which is also what the show scenes are.
+# 2026-11-11: three tries at that shine (rounded edges, glossy plastic floors, metallic floors at
+# several strengths) either lit every line on the plate or washed the lines out; the settings
+# below are the verified dark-line look. floor_metal / floor_spec / round_edges() stay available.
 RELIEF = {"floor_dark": 0.12, "floor_rough": 0.75, "face_rough": 0.32, "bump": 0.6, "bump_dist": 0.0012}
 
 
-def exaggerate_relief(material, face_y=PLATE_FACE_Y, cell_y=PLATE_CELL_Y, floor_dark=0.45, floor_rough=0.75, face_rough=0.32, bump=0.6, bump_dist=0.0012):
+def exaggerate_relief(material, face_y=PLATE_FACE_Y, cell_y=PLATE_CELL_Y, floor_dark=0.45, floor_rough=0.75, face_rough=0.32, bump=0.6, bump_dist=0.0012, floor_metal=0.0, floor_spec=None):
     if material is None or not material.use_nodes or material.get(TAG + "_relief"):
         return material
     nt = material.node_tree
@@ -163,8 +197,8 @@ def exaggerate_relief(material, face_y=PLATE_FACE_Y, cell_y=PLATE_CELL_Y, floor_
     def mix_into(socket_in, data_type, value):
         mix = N.new("ShaderNodeMix")
         mix.data_type = data_type
-        if data_type == "RGBA":
-            mix.blend_type = "MULTIPLY"
+        if data_type == "RGBA" and not floor_metal:
+            mix.blend_type = "MULTIPLY"  # matte pits: darken; reflective floors: floor_dark is their own grey
         ids = {"RGBA": ("A_Color", "B_Color", "Result_Color"), "FLOAT": ("A_Float", "B_Float", "Result_Float")}[data_type]
         a = next(s for s in mix.inputs if s.identifier == ids[0])
         b = next(s for s in mix.inputs if s.identifier == ids[1])
@@ -182,6 +216,10 @@ def exaggerate_relief(material, face_y=PLATE_FACE_Y, cell_y=PLATE_CELL_Y, floor_
         return a
 
     mix_into(bsdf.inputs["Base Color"], "RGBA", (floor_dark,) * 3 + (1.0,))
+    if floor_metal:
+        mix_into(bsdf.inputs["Metallic"], "FLOAT", floor_metal)
+    if floor_spec is not None and "Specular IOR Level" in bsdf.inputs:
+        mix_into(bsdf.inputs["Specular IOR Level"], "FLOAT", floor_spec)
     # the plate face a satin, the floors matte: the pattern reads in the highlight too
     face = N.new("ShaderNodeMath")
     face.operation = "MINIMUM"

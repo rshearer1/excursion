@@ -902,6 +902,8 @@ def plate_material(name, cell_mm=6.0):
         speaker_wear.wear(m, **speaker_wear.WEAR)
         # last, so the engraved lines stay dark: wear's pale cavity dust used to fill them and they read as light ridges
         speaker_finish.exaggerate_relief(m, **speaker_finish.RELIEF)
+        # (speaker_finish.round_edges was tried here: it turns the narrow line floors into rounded
+        # channels that shine from every direction; the photo's shine is local, so the floors stay flat)
         return m
     nt = m.node_tree
     N, L = nt.nodes, nt.links
