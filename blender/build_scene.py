@@ -891,7 +891,20 @@ HEX_DEEPEN = speaker_finish.HEX_DEEPEN  # extra depth given to the honeycomb cel
 HEX_BUMP = False  # the old 6 mm shader honeycomb; the CAD's own ~12 mm moulding is the real one (speaker_finish.py)
 
 
-def plate_material(name, cell_mm=6.0):
+_plate_horn_mat = None
+
+
+def plate_horn_material():
+    """The plate's own finish without the engraved-line treatment, for everything on the plate
+    that is not its flat face: the mid horn (Waveguide) and the tweeter dish. Robert, 2026-11-11:
+    the cabinet finish there drew harsh circles round the mid and the tweeter."""
+    global _plate_horn_mat
+    if _plate_horn_mat is None:
+        _plate_horn_mat = plate_material("PlateHornMat", relief=False)
+    return _plate_horn_mat
+
+
+def plate_material(name, cell_mm=6.0, relief=True):
     """The hero's mid/tweeter plate: the cabinet finish, with the CAD honeycomb's edges and
     grooves picked out by speaker_finish (and optionally the old shader relief, HEX_BUMP)."""
     m = plastic_material(name)
@@ -901,7 +914,9 @@ def plate_material(name, cell_mm=6.0):
         speaker_wear.surface(m, **speaker_wear.PLATE_SURFACE)
         speaker_wear.wear(m, **speaker_wear.WEAR)
         # last, so the engraved lines stay dark: wear's pale cavity dust used to fill them and they read as light ridges
-        speaker_finish.exaggerate_relief(m, **speaker_finish.RELIEF)
+        # the horn and the tweeter dish (relief=False) are the same moulding with the same satin
+        # sheen, but deeper than the engraved lines: no line treatment there
+        speaker_finish.exaggerate_relief(m, **speaker_finish.RELIEF, lines=relief)
         # (speaker_finish.round_edges was tried here: it turns the narrow line floors into rounded
         # channels that shine from every direction; the photo's shine is local, so the floors stay flat)
         return m
@@ -1086,7 +1101,7 @@ def build_waveguide(body, cx, cz, front, prefix, r_cut):
     bm.to_mesh(mesh)
     bm.free()
     obj = new_object(f"{prefix}Waveguide", mesh)
-    assign(obj, cabinet_mat)
+    assign(obj, plate_horn_material())  # the horn is part of the plate moulding: same finish, no line where they meet
     assign(obj, mid_ring_mat)  # slot 1: the bright ring
     return obj
 
@@ -1173,6 +1188,20 @@ def build_speaker(model, prefix, location, yaw=0.0, hero=False, scale=(1, 1, 1))
                 poly.material_index = 1
                 n += 1
         print(f"plate: {n} faces get the honeycomb finish")
+        # everything else that faces front inside the plate outline (the tweeter dish, the badge
+        # slot) gets the plate's finish too, so no ring shows where a dish meets the flat face
+        me.materials.append(plate_horn_material())
+        horn_slot = len(me.materials) - 1
+        dished = 0
+        for poly in me.polygons:
+            c = poly.center
+            if poly.material_index == 0 and on_plate(c.x, c.z) and z0 < c.z < z1 and poly.normal.y < -0.2 and 0.006 < c.y - front < 0.030:
+                poly.material_index = horn_slot
+                dished += 1
+        print(f"plate: {dished} dish faces get the plate finish")
+        # the panel gap round the plate as a visible dark groove, on both sides of it
+        for _m in (cabinet_mat, me.materials[1], plate_horn_material()):
+            speaker_finish.seam_groove(_m, _px, _pz)
         # the CAD honeycomb is only 0.25 mm deep (plate face 3.10 mm, cell floors 3.35 mm behind
         # the baffle): too shallow to cast any shadow. Push the cell floors back so the cells
         # read as embedded, as on the real panel; the walls stretch with them.

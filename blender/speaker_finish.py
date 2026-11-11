@@ -119,6 +119,81 @@ def finish(material, edge_radius, edge_gain, edge_lift, edge_gloss, cavity_dist,
 # CAD truth (measured 2026-11-11): the plate face is flat at 6.47 mm and the honeycomb is its
 # OUTLINES only: engraved lines 0.8 mm wide and 0.25 mm deep (6.72 mm), as is the "6-2" under
 # the badge. The cells are not sunk. The product photo shows them as thin dark lines.
+def seam_groove(material, px, pz, face_y=None, half_strip=0.0498, disc_r=0.07275, disc_half_h=0.053, width=0.0007, dark=0.1, bump=0.8):
+    """The panel gap round the mid/tweeter plate as a visible dark groove. In the CAD it is a
+    0.5 mm slot that follows the plate outline (a 99.6 mm wide strip merged with a 145.5 mm
+    disc round the mid, centre px/pz in object x/z); real, but under two pixels wide in a
+    full-front frame, so it vanished while the product photo shows a clear dark line. This
+    darkens and dents a band `width` either side of that outline, on front faces at plate level."""
+    if material is None or not material.use_nodes or material.get(TAG + "_seam"):
+        return material
+    face_y = PLATE_FACE_Y if face_y is None else face_y
+    nt = material.node_tree
+    N, L = nt.nodes, nt.links
+    bsdf = next((n for n in N if n.type == "BSDF_PRINCIPLED"), None)
+    if bsdf is None:
+        return material
+
+    def math(op, a, b=None):
+        n = N.new("ShaderNodeMath")
+        n.operation = op
+        for i, v in enumerate((a, b)):
+            if v is None:
+                continue
+            if isinstance(v, (int, float)):
+                n.inputs[i].default_value = v
+            else:
+                L.new(v, n.inputs[i])
+        return n.outputs[0]
+
+    sep = N.new("ShaderNodeSeparateXYZ")
+    L.new(N.new("ShaderNodeTexCoord").outputs["Object"], sep.inputs[0])
+    ax = math("ABSOLUTE", math("SUBTRACT", sep.outputs[0], px))
+    az = math("ABSOLUTE", math("SUBTRACT", sep.outputs[2], pz))
+    d_strip = math("ABSOLUTE", math("SUBTRACT", ax, half_strip))
+    r = math("SQRT", math("ADD", math("MULTIPLY", ax, ax), math("MULTIPLY", az, az)))
+    d_disc = math("ABSOLUTE", math("SUBTRACT", r, disc_r))
+    in_disc = math("LESS_THAN", az, disc_half_h)  # beside the mid the outline is the disc, elsewhere the strip
+    d = math("ADD", d_strip, math("MULTIPLY", in_disc, math("SUBTRACT", d_disc, d_strip)))
+    band = N.new("ShaderNodeMapRange")
+    band.interpolation_type = "SMOOTHSTEP"
+    band.inputs["From Min"].default_value = width * 0.35
+    band.inputs["From Max"].default_value = width
+    band.inputs["To Min"].default_value = 1.0
+    band.inputs["To Max"].default_value = 0.0
+    L.new(d, band.inputs["Value"])
+    level = math("LESS_THAN", math("ABSOLUTE", math("SUBTRACT", sep.outputs[1], face_y)), 0.002)
+    mask = math("MULTIPLY", band.outputs["Result"], level)
+
+    def colour(src, default):
+        mix = N.new("ShaderNodeMix")
+        mix.data_type = "RGBA"
+        mix.blend_type = "MULTIPLY"
+        L.new(mask, next(s for s in mix.inputs if s.identifier == "Factor_Float"))
+        a = next(s for s in mix.inputs if s.identifier == "A_Color")
+        if src is not None:
+            L.new(src, a)
+        else:
+            a.default_value = default
+        next(s for s in mix.inputs if s.identifier == "B_Color").default_value = (dark,) * 3 + (1.0,)
+        return next(s for s in mix.outputs if s.identifier == "Result_Color")
+
+    def normal(src, default):
+        bmp = N.new("ShaderNodeBump")
+        bmp.invert = True  # the groove is below the surface
+        bmp.inputs["Strength"].default_value = bump
+        bmp.inputs["Distance"].default_value = width
+        L.new(mask, bmp.inputs["Height"])
+        if src is not None:
+            L.new(src, bmp.inputs["Normal"])
+        return bmp.outputs["Normal"]
+
+    _rewire(nt, bsdf.inputs["Base Color"], colour)
+    _rewire(nt, bsdf.inputs["Normal"], normal)
+    material[TAG + "_seam"] = True
+    return material
+
+
 def round_edges(material, radius=0.00025, samples=6):
     """Shade every sharp edge as a small real radius (Bevel node on the final normal). Unlike
     finish()'s edge lift, which brightens edges everywhere, a rounded edge only glints where it
@@ -164,7 +239,9 @@ PLATE_CELL_Y = PLATE_CAD_CELL_Y + HEX_DEEPEN  # object-space y of the cell floor
 RELIEF = {"floor_dark": 0.12, "floor_rough": 0.75, "face_rough": 0.32, "bump": 0.6, "bump_dist": 0.0012}
 
 
-def exaggerate_relief(material, face_y=PLATE_FACE_Y, cell_y=PLATE_CELL_Y, floor_dark=0.45, floor_rough=0.75, face_rough=0.32, bump=0.6, bump_dist=0.0012, floor_metal=0.0, floor_spec=None):
+def exaggerate_relief(material, face_y=PLATE_FACE_Y, cell_y=PLATE_CELL_Y, floor_dark=0.45, floor_rough=0.75, face_rough=0.32, bump=0.6, bump_dist=0.0012, floor_metal=0.0, floor_spec=None, lines=True):
+    # lines=False: only the plate face's satin roughness cap, no engraved-line treatment (the horn
+    # and the tweeter dish: same moulding and sheen as the plate face, but no lines)
     if material is None or not material.use_nodes or material.get(TAG + "_relief"):
         return material
     nt = material.node_tree
@@ -215,10 +292,11 @@ def exaggerate_relief(material, face_y=PLATE_FACE_Y, cell_y=PLATE_CELL_Y, floor_
         L.new(o, socket_in)
         return a
 
-    mix_into(bsdf.inputs["Base Color"], "RGBA", (floor_dark,) * 3 + (1.0,))
-    if floor_metal:
+    if lines:
+        mix_into(bsdf.inputs["Base Color"], "RGBA", (floor_dark,) * 3 + (1.0,))
+    if lines and floor_metal:
         mix_into(bsdf.inputs["Metallic"], "FLOAT", floor_metal)
-    if floor_spec is not None and "Specular IOR Level" in bsdf.inputs:
+    if lines and floor_spec is not None and "Specular IOR Level" in bsdf.inputs:
         mix_into(bsdf.inputs["Specular IOR Level"], "FLOAT", floor_spec)
     # the plate face a satin, the floors matte: the pattern reads in the highlight too
     face = N.new("ShaderNodeMath")
@@ -232,6 +310,9 @@ def exaggerate_relief(material, face_y=PLATE_FACE_Y, cell_y=PLATE_CELL_Y, floor_
     for link in list(bsdf.inputs["Roughness"].links):
         L.remove(link)
     L.new(face.outputs[0], bsdf.inputs["Roughness"])
+    if not lines:
+        material[TAG + "_relief"] = True
+        return material
     mix_into(bsdf.inputs["Roughness"], "FLOAT", floor_rough)
     # the step as a bump on top of whatever normal is there
     bmp = N.new("ShaderNodeBump")
