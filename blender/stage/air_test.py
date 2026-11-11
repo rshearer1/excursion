@@ -117,3 +117,14 @@ if n > 0:
             data.animation_data.action = ref.data.animation_data.action  # colour and level follow the back light's cues
             data.energy = watts
     print("air: beam rig %d beams, %g W, %g deg" % (n, watts, cone))
+
+# AIR_VEIL: multiplier on how much the lights aimed AT the speaker (Graze, KeyLight) light the
+# haze in front of it. That lit haze is a milky veil over the speaker; 0 removes it while the
+# speaker itself stays lit the same.
+if os.environ.get("AIR_VEIL") is not None:
+    k = float(os.environ["AIR_VEIL"])
+    for name in os.environ.get("AIR_VEIL_LIGHTS", "Graze,KeyLight").split(","):
+        o = bpy.data.objects.get(name)
+        if o is not None and o.type == "LIGHT":
+            o.data.volume_factor *= k
+    print("air: veil x%g on %s" % (k, os.environ.get("AIR_VEIL_LIGHTS", "Graze,KeyLight")))
