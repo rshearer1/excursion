@@ -65,3 +65,10 @@ if os.environ.get("NEUTRAL_TOP"):
     lo.location = centre + Vector((0.0, -1.6 * math.cos(el), 1.6 * math.sin(el)))
     lo.rotation_euler = (centre - lo.location).to_track_quat("-Z", "Y").to_euler()
     print("neutral: softbox", ld.energy)
+
+# NEUTRAL_AIM="x,z" (metres from the cabinet centre) and NEUTRAL_LENS (mm): a close-up of one part
+if os.environ.get("NEUTRAL_AIM"):
+    ax, az = (float(v) for v in os.environ["NEUTRAL_AIM"].split(","))
+    cam.location = cam.location + Vector((ax, 0.0, az))
+    cam_data.lens = float(os.environ.get("NEUTRAL_LENS", 240))
+    scene.render.resolution_x = scene.render.resolution_y = 1100

@@ -315,9 +315,20 @@ def driver_material(name, kind):
             math_node("SINE", math_node("MULTIPLY", anti, 2 * math.pi * FIBRE_PITCH)),
         )
         height = math_node("ADD", math_node("MULTIPLY", height, 0.7), math_node("MULTIPLY", threads, 0.15))
+    else:
+        # the mid dome's coating (product photo, Robert 2026-11-11): a bumpy, almost rubbery pebble
+        # skin, ~1.5 mm cells, which breaks the highlight into speckle
+        pebble = N.new("ShaderNodeTexVoronoi")
+        pebble.feature = "SMOOTH_F1"
+        pebble.inputs["Scale"].default_value = DOME_PEBBLE_SCALE
+        pebble.inputs["Smoothness"].default_value = 0.6
+        pebble.inputs["Randomness"].default_value = 1.0
+        L.new(coord, pebble.inputs["Vector"])
+        bumps = math_node("SUBTRACT", 1.0, math_node("MULTIPLY", pebble.outputs["Distance"], 1.6))
+        height = math_node("ADD", math_node("MULTIPLY", height, 0.25), math_node("MULTIPLY", bumps, 0.75))
     bump = N.new("ShaderNodeBump")
-    bump.inputs["Strength"].default_value = 0.25 if kind == "cone" else 0.12
-    bump.inputs["Distance"].default_value = 0.0002
+    bump.inputs["Strength"].default_value = 0.25 if kind == "cone" else DOME_PEBBLE_STRENGTH
+    bump.inputs["Distance"].default_value = 0.0002 if kind == "cone" else 0.0004
     L.new(height, bump.inputs["Height"])
 
     def blend(input_name, data_type, driver_value, mask_socket=None):
@@ -393,6 +404,8 @@ def driver_material(name, kind):
     return m
 
 
+DOME_PEBBLE_SCALE = 650  # pebble cells per metre on the mid dome (~1.5 mm; finer vanishes at 1080p)
+DOME_PEBBLE_STRENGTH = 0.7
 FIBRE_PITCH = 1600  # crossed threads per metre in the woofer cones (0.6 mm; reads as grain, not rings)
 
 
