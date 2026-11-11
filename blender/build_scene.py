@@ -1167,6 +1167,10 @@ def build_speaker(model, prefix, location, yaw=0.0, hero=False, scale=(1, 1, 1))
         moved = 0
         for v in me.vertices:
             # every engraved line on the plate: the whole honeycomb and the "6-2" (the old z limits left the fields half deepened)
+            # ...but not the driver dishes: the tweeter dish slope passes through this depth at r ~28 mm,
+            # and deepening that ring of vertices cut a big false groove round the tweeter
+            if any(math.hypot(v.co.x - (drv["x_mm"] / 1000 - w / 2), v.co.z - (drv["y_mm"] / 1000 - h / 2)) < 0.040 for drv in kit["drivers"] if drv["kind"] in ("tweeter", "mid")):
+                continue
             if x0 < v.co.x < x1 and abs(v.co.y - speaker_finish.PLATE_CAD_CELL_Y) < 0.00005:
                 v.co.y += HEX_DEEPEN
                 moved += 1
