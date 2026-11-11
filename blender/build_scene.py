@@ -1154,10 +1154,20 @@ def build_speaker(model, prefix, location, yaw=0.0, hero=False, scale=(1, 1, 1))
     if hero:
         me.materials.append(plate_material("PlateMat"))
         x0, x1, z0, z1, depth = PLATE_REGION
+        # the plate's real outline (CAD, measured): a 100 mm wide strip centred on the mid driver,
+        # merged with a 145 mm disc round it; a 0.5 mm panel gap runs all the way round. The old
+        # x range started 5 mm inside the left gap and ran 40 mm past the right one, so the
+        # finish changed along a ragged line of triangle centres just inside the seam.
+        _mid = next((drv for drv in kit["drivers"] if drv["kind"] == "mid"), None)
+        _px, _pz = (_mid["x_mm"] / 1000 - w / 2, _mid["y_mm"] / 1000 - h / 2) if _mid else ((x0 + x1) / 2, 0.0)
+
+        def on_plate(x, z):
+            return abs(x - _px) < 0.0499 or (abs(z - _pz) < 0.053 and math.hypot(x - _px, z - _pz) < 0.0727)
+
         n = 0
         for poly in me.polygons:
             c = poly.center
-            if x0 < c.x < x1 and z0 < c.z < z1 and abs(c.y - (front + depth)) < 0.0004 and poly.normal.y < -0.95:
+            if on_plate(c.x, c.z) and z0 < c.z < z1 and abs(c.y - (front + depth)) < 0.0004 and poly.normal.y < -0.95:
                 poly.material_index = 1
                 n += 1
         print(f"plate: {n} faces get the honeycomb finish")
@@ -1171,7 +1181,7 @@ def build_speaker(model, prefix, location, yaw=0.0, hero=False, scale=(1, 1, 1))
             # and deepening that ring of vertices cut a big false groove round the tweeter
             if any(math.hypot(v.co.x - (drv["x_mm"] / 1000 - w / 2), v.co.z - (drv["y_mm"] / 1000 - h / 2)) < 0.040 for drv in kit["drivers"] if drv["kind"] in ("tweeter", "mid")):
                 continue
-            if x0 < v.co.x < x1 and abs(v.co.y - speaker_finish.PLATE_CAD_CELL_Y) < 0.00005:
+            if on_plate(v.co.x, v.co.z) and abs(v.co.y - speaker_finish.PLATE_CAD_CELL_Y) < 0.00005:
                 v.co.y += HEX_DEEPEN
                 moved += 1
         print(f"plate: {moved} honeycomb floor vertices pushed {HEX_DEEPEN * 1000:.1f} mm deeper")
