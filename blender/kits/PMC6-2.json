@@ -22,14 +22,15 @@
     },
     {
       "kind": "woofer",
-      "x_mm": 107.6,
-      "y_mm": 292.5,
-      "r_cone_mm": 49,
+      "x_mm": 107.51,
+      "y_mm": 292.51,
+      "r_cone_mm": 53,
       "r_surround_mm": 70,
       "r_cut_mm": 78,
       "depth_mm": 15.9,
       "plate_depth_mm": 4,
-      "back_mm": 19.9
+      "back_mm": 19.9,
+      "skin": "pmc6-2"
     },
     {
       "kind": "mid",
@@ -45,14 +46,15 @@
     },
     {
       "kind": "woofer",
-      "x_mm": 107.6,
-      "y_mm": 107.6,
-      "r_cone_mm": 49,
+      "x_mm": 107.51,
+      "y_mm": 107.51,
+      "r_cone_mm": 53,
       "r_surround_mm": 70,
       "r_cut_mm": 78,
       "depth_mm": 15.9,
       "plate_depth_mm": 4,
-      "back_mm": 19.9
+      "back_mm": 19.9,
+      "skin": "pmc6-2"
     }
   ],
   "vents": [

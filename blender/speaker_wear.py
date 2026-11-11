@@ -19,7 +19,7 @@ import math as _m
 from speaker_finish import TAG, _rewire
 
 WEAR = {"cavity_dust": 0.55, "flecks": 0.6, "prints": 0.55, "print_scale": 9.0, "print_density": 0.45, "scuffs": 0.35}
-CONE = {"mottle": 0.08, "fibre_bump": 0.12, "rings": 0.012, "settled": 0.05}  # satin cones: light, even dust (PMC6-2 photo)
+CONE = {"mottle": 0.0, "fibre_bump": 0.04, "rings": 0.0, "settled": 0.0}  # the real cone is one clean dark satin bowl: no clouds, rings or settled dust (photo + CAD, 2026-11-11)
 DUST_COLOUR = (0.32, 0.30, 0.27, 1.0)
 
 
@@ -238,7 +238,7 @@ def cone_detail(material, mottle=0.35, fibre_bump=0.22, rings=0.05, settled=0.35
 
     def rough(src, default):
         base = src if src is not None else default
-        varied = math("ADD", base, math("MULTIPLY", math("SUBTRACT", cloud.outputs["Fac"], 0.5), math("MULTIPLY", mask, 0.25)))
+        varied = math("ADD", base, math("MULTIPLY", math("SUBTRACT", cloud.outputs["Fac"], 0.5), math("MULTIPLY", mask, 3.0 * mottle)))
         return mix_f(varied, None, dusty, 0.9)
 
     _rewire(nt, bsdf.inputs["Base Color"], colour)

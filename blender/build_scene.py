@@ -258,6 +258,11 @@ def driver_material(name, kind):
     shader reads them with Attribute nodes, so the trim ring outside the cone keeps the
     box-projected cabinet finish (no seam)."""
     m = plastic_material(name)
+    if kind == "cone":
+        # dust, flecks, fingerprints and scuffs belong on the plastic flange only: applied
+        # first, so the cone and surround blends below sit on top of them (the product photo's
+        # cone is one clean dark satin surface)
+        speaker_wear.wear(m, **speaker_wear.WEAR)
     nt = m.node_tree
     N, L = nt.nodes, nt.links
     bsdf = N["Principled BSDF"]
@@ -327,7 +332,7 @@ def driver_material(name, kind):
         bumps = math_node("SUBTRACT", 1.0, math_node("MULTIPLY", pebble.outputs["Distance"], 1.6))
         height = math_node("ADD", math_node("MULTIPLY", height, 0.25), math_node("MULTIPLY", bumps, 0.75))
     bump = N.new("ShaderNodeBump")
-    bump.inputs["Strength"].default_value = 0.25 if kind == "cone" else DOME_PEBBLE_STRENGTH
+    bump.inputs["Strength"].default_value = 0.08 if kind == "cone" else DOME_PEBBLE_STRENGTH
     bump.inputs["Distance"].default_value = 0.0002 if kind == "cone" else 0.0004
     L.new(height, bump.inputs["Height"])
 
@@ -360,11 +365,11 @@ def driver_material(name, kind):
         L.new(coord, speckle.inputs["Vector"])
         tone = N.new("ShaderNodeMix")
         tone.data_type = "RGBA"
-        next(s for s in tone.inputs if s.identifier == "A_Color").default_value = (0.010, 0.010, 0.011, 1.0)
-        next(s for s in tone.inputs if s.identifier == "B_Color").default_value = (0.016, 0.016, 0.017, 1.0)
+        next(s for s in tone.inputs if s.identifier == "A_Color").default_value = (0.005, 0.005, 0.006, 1.0)
+        next(s for s in tone.inputs if s.identifier == "B_Color").default_value = (0.008, 0.008, 0.009, 1.0)
         L.new(speckle.outputs["Fac"], next(s for s in tone.inputs if s.identifier == "Factor_Float"))
         blend("Base Color", "RGBA", next(s for s in tone.outputs if s.identifier == "Result_Color"))
-        blend("Roughness", "FLOAT", math_node("ADD", 0.30, math_node("MULTIPLY", 0.06, grain.outputs["Fac"])))  # dark satin: one broad soft highlight, as in the PMC6-2 photo
+        blend("Roughness", "FLOAT", 0.3)  # dark satin: one broad soft highlight, as in the PMC6-2 photo (no grain term: it speckled the highlight)
         # the dust cap (real geometry, see add_woofer_details) is the same doped paper, a touch glossier
         cap = N.new("ShaderNodeMapRange")
         cap.interpolation_type = "SMOOTHSTEP"
@@ -373,7 +378,7 @@ def driver_material(name, kind):
         L.new(prop("cap_r"), cap.inputs["From Max"])
         cap.inputs["To Min"].default_value = 1.0
         cap.inputs["To Max"].default_value = 0.0
-        blend("Roughness", "FLOAT", 0.30, mask_socket=cap.outputs["Result"])  # the cap matches the cone (no separate gloss)
+        blend("Roughness", "FLOAT", 0.36, mask_socket=cap.outputs["Result"])  # legacy cap mask (other models): same as the cone
     else:
         # the real mid dome (product photo): near-black coated fabric, satin, one broad soft highlight
         blend("Base Color", "RGBA", (0.006, 0.006, 0.007, 1.0))
@@ -398,7 +403,7 @@ def driver_material(name, kind):
     band_out.inputs["To Max"].default_value = 0.0
     band = math_node("MULTIPLY", band_in.outputs["Result"], band_out.outputs["Result"])
     blend("Base Color", "RGBA", (0.018, 0.018, 0.019, 1.0) if kind == "cone" else (0.004, 0.004, 0.004, 1.0), mask_socket=band)  # the mid's surround reads black in the photo
-    blend("Roughness", "FLOAT", 0.6, mask_socket=band)  # rubber: a diffuse highlight, not a glossy one
+    blend("Roughness", "FLOAT", 0.4 if kind == "cone" else 0.6, mask_socket=band)  # the woofer roll shows a narrow bright highlight band in the photo
     flat = N.new("ShaderNodeNewGeometry").outputs["Normal"]
     blend("Normal", "VECTOR", flat, mask_socket=band)
     return m
@@ -542,6 +547,88 @@ def _join(target, extra):
     for p in me.polygons:
         if p.material_index >= slots or me.materials[p.material_index] is None:
             p.material_index = 0
+
+
+# The PMC6-2 woofer as PMC's CAD has it (measured 2026-11-11; the product photo agrees). Depths
+# in mm behind the baffle-front datum, radii from the woofer axis:
+#   - the cone is ONE continuous spherical bowl (sphere radius 119.78), 19.97 deep at the
+#     centre, 7.60 at its edge r 53.0. There is no dust cap, centre dome or glue line;
+#   - a 0.56 mm lip, a conical land to r 56.29, then the surround: a half-roll of radius 6.725
+#     centred at r 63.5, its crest flush with the datum (5 mm proud of the flange), with 2 mm
+#     fillets either side, landing on the flange face (4.967) at r 71.39;
+#   - the flange is flat to a square groove at r 77.5-79.0 (2 mm deep), carries six cap screws
+#     at r 84.75, and ends in a 45-degree chamfer at r 89.5-91.0. That chamfer is the thin
+#     bright ring in the photos.
+# The STL has only 180 flat triangles for the cone, so the piece's front skin is re-lathed from
+# these exact segments. The older dust cap, glue ring, extra roll and floating trim ring were
+# invented from a photo and are not used for this model.
+def pmc62_woofer_depth(r):
+    """CAD profile, mm in -> mm out, for 0 <= r <= 77.5 (the flange face)."""
+    if r <= 53.0:
+        return -99.817 + math.sqrt(119.7845 ** 2 - r * r)
+    if r <= 56.290:
+        return 7.046 + (5.351 - 7.046) * (r - 53.0) / (56.290 - 53.0)
+    if r <= 57.215:
+        return 3.587 + math.sqrt(max(0.0, 4.0 - (r - 55.346) ** 2))
+    if r <= 69.581:
+        return 6.692 - math.sqrt(max(0.0, 6.725 ** 2 - (r - 63.5) ** 2))
+    if r <= 71.390:
+        return 2.967 + math.sqrt(max(0.0, 4.0 - (r - 71.390) ** 2))
+    return 4.967
+
+
+def add_woofer_skin(piece, cx, cz, r_cut, front, y_skin):
+    """Replace the woofer piece's coarse CAD front skin with a fine lathe of the measured
+    profile (cone, lip, land, roll, flange, groove wall out to the cut). Joined before the
+    shape key exists, so the cone and surround ride the Excursion key."""
+    me = piece.data
+    bm = bmesh.new()
+    bm.from_mesh(me)
+    skin = [f for f in bm.faces if f.calc_center_median().y < y_skin and math.hypot(f.calc_center_median().x - cx, f.calc_center_median().z - cz) < r_cut - 0.0003]
+    bmesh.ops.delete(bm, geom=skin, context="FACES")
+    def span(a, b, n):
+        return [a + (b - a) * k / n for k in range(1, n + 1)]
+    radii = span(0.0, 53.0, 56)  # the bowl
+    profile = [(r, pmc62_woofer_depth(r)) for r in radii]
+    profile.append((53.0, 7.046))  # the lip: a 0.56 mm step toward the listener
+    for seg in (span(53.0, 56.290, 4), span(56.290, 57.215, 5), span(57.215, 69.581, 40), span(69.581, 71.390, 8), span(71.390, 77.5, 4)):
+        profile += [(r, pmc62_woofer_depth(r)) for r in seg]
+    r_edge = r_cut * 1000
+    profile += [(77.5, 6.967), (r_edge, 6.967)]  # the groove's inner wall and floor, out to the cut
+    n_t = 256
+    rings = []
+    for r, depth in profile:
+        rings.append([bm.verts.new((cx + r / 1000 * math.cos(2 * math.pi * j / n_t), front + depth / 1000, cz + r / 1000 * math.sin(2 * math.pi * j / n_t))) for j in range(n_t)])
+    apex = bm.verts.new((cx, front + pmc62_woofer_depth(0.0) / 1000, cz))
+    made = [bm.faces.new((apex, rings[0][(j + 1) % n_t], rings[0][j])) for j in range(n_t)]
+    for a, b in zip(rings, rings[1:]):
+        made += [bm.faces.new((a[j], a[(j + 1) % n_t], b[(j + 1) % n_t], b[j])) for j in range(n_t)]
+    bm.normal_update()
+    if sum(f.normal.y * f.calc_area() for f in made) > 0:  # normals out of the cabinet (-Y)
+        bmesh.ops.reverse_faces(bm, faces=made)
+    for f in made:
+        f.material_index = 0
+    mark_sharp(bm)  # smooth, with the lip and the groove edge kept crisp
+    bm.to_mesh(me)
+    bm.free()
+    print(f"woofer skin: {len(skin)} CAD faces replaced by the measured profile on {piece.name}")
+
+
+def paint_woofer_rims(body, woofers, front):
+    """The thin bright ring round each woofer in the photos is the flange's 45-degree chamfer
+    (r 89.5-91.0 mm), part of the CAD body: give those faces their own bright metal."""
+    me = body.data
+    me.materials.append(woofer_rim_mat)
+    slot = len(me.materials) - 1
+    n = 0
+    for p in me.polygons:
+        depth = p.center.y - front
+        if not (0.0050 < depth < 0.00645 and -0.95 < p.normal.y < -0.4):
+            continue
+        if any(0.0894 < math.hypot(p.center.x - cx, p.center.z - cz) < 0.09105 for cx, cz in woofers):
+            p.material_index = slot
+            n += 1
+    print(f"woofer rims: {n} chamfer faces in WooferRimMat on {body.name}")
 
 
 def add_woofer_details(piece, name, cx, cz, r_cone, r_surround, r_cut, front, y_skin):
@@ -1093,6 +1180,7 @@ def build_speaker(model, prefix, location, yaw=0.0, hero=False, scale=(1, 1, 1))
     names = {k: names_for(k) for k in ("woofer", "mid", "tweeter")}
     info = {"front_y": front, "w": w, "h": h, "d": d, "drivers": []}
     mid_centre = mid_r_cut = None
+    rim_centres = []
     for drv in kit["drivers"]:
         cx = drv["x_mm"] / 1000 - w / 2
         cz = drv["y_mm"] / 1000 - h / 2
@@ -1104,7 +1192,10 @@ def build_speaker(model, prefix, location, yaw=0.0, hero=False, scale=(1, 1, 1))
             piece.data.materials[0] = tweeter_mat
         else:
             amount = EXCURSION if drv["kind"] == "woofer" else MID_EXCURSION
-            if drv["kind"] == "woofer":
+            if drv["kind"] == "woofer" and drv.get("skin") == "pmc6-2":
+                add_woofer_skin(piece, cx, cz, r_cut, front, y_skin=back - 0.002)
+                rim_centres.append((cx, cz))
+            elif drv["kind"] == "woofer":  # other models: the older hand-modelled details (unverified against their CAD)
                 parts.append(add_woofer_details(piece, name, cx, cz, r_cone, r_surround, r_cut, front, y_skin=back - 0.002))
             elif drv.get("dome_r_mm"):
                 add_mid_dome(piece, cx, cz, drv["dome_r_mm"] / 1000, r_cut, front, drv["depth_mm"] / 1000, drv["plate_depth_mm"] / 1000, y_skin=back - 0.002)
@@ -1112,7 +1203,7 @@ def build_speaker(model, prefix, location, yaw=0.0, hero=False, scale=(1, 1, 1))
             piece.data.materials[0] = woofer_mat if drv["kind"] == "woofer" else dome_mat
             piece["cone_cx"], piece["cone_cz"], piece["cone_r"] = cx, cz, r_cone
             piece["surround_r"] = r_surround
-            piece["cap_r"] = WOOFER_CAP * r_cone if drv["kind"] == "woofer" else 0.0
+            piece["cap_r"] = WOOFER_CAP * r_cone if drv["kind"] == "woofer" and drv.get("skin") != "pmc6-2" else 0.0  # no dust cap on the PMC6-2
         parts.append(piece)
         info["drivers"].append({"kind": drv["kind"], "name": name, "x": cx, "z": cz, "r": r_cone})
         if drv["kind"] == "mid":
@@ -1123,6 +1214,8 @@ def build_speaker(model, prefix, location, yaw=0.0, hero=False, scale=(1, 1, 1))
         else:  # the CAD horn itself is the true shape, only coarser
             print('note: kits/PMC6-2.waveguide.json missing (node blender/measure_waveguide.mjs) - keeping the CAD horn')
     paint_screws(body, model, w, h, front)
+    if rim_centres:
+        paint_woofer_rims(body, rim_centres, front)
     for obj in parts:
         obj.location = location
         obj.rotation_euler = (0, 0, yaw)
@@ -1204,6 +1297,9 @@ screw_mat = make_material("ScrewMat", base=(0.03, 0.03, 0.032, 1), rough=0.35)
 screw_rim_mat = make_material("ScrewRimMat", base=(0.18, 0.18, 0.19, 1), rough=0.45)
 screw_rim_mat.node_tree.nodes["Principled BSDF"].inputs["Metallic"].default_value = 1.0
 screw_mat.node_tree.nodes["Principled BSDF"].inputs["Metallic"].default_value = 1.0
+# the thin bright ring round each woofer (product photo): the flange chamfer in bright satin metal
+woofer_rim_mat = make_material("WooferRimMat", base=(0.62, 0.62, 0.64, 1), rough=0.5)  # reads bright all the way round in the photo: a satin silver finish, not a mirror
+woofer_rim_mat.node_tree.nodes["Principled BSDF"].inputs["Metallic"].default_value = 0.35
 vent_grille_mat = make_material("VentGrilleMat", base=(0.035, 0.035, 0.037, 1), rough=0.5)
 trim_mat = make_material("TrimMat", base=(0.78, 0.79, 0.8, 1), rough=0.38)  # brushed aluminium chassis ring (a mirror would only reflect the void)
 trim_mat.node_tree.nodes["Principled BSDF"].inputs["Metallic"].default_value = 1.0
