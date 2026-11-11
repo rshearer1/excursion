@@ -702,7 +702,11 @@ def add_camera(name, location, target, lens):
 KITS = os.path.join(HERE, "kits")
 PMC_DIR = os.path.join(CACHE, "pmc")
 STAND_STL = os.path.join(PMC_DIR, "PMC8-2STAND.stl")
-STAND_SIZE = (0.540, 1.090, 0.400)  # w, h, d of the PMC8-2 stand
+STAND_SIZE = (0.540, 1.090, 0.400)  # w, h, d of the PMC8-2 stand STL
+# The full 1.09 m stand made the speaker look perched on a pole in the wide shots (Robert,
+# 2026-11-11); studio monitor stands are ~0.8 m. The column is shortened, the plates kept.
+STAND_HEIGHT = 0.80
+STAND_PLATE = 0.04  # top and bottom bands (plates, feet) that keep their real size
 PLATE_REGION = (0.0, 0.135, -0.18, 0.2, 0.0065)  # hero mid/tweeter plate: local x0, x1, z0, z1, depth
 PLATE_HEX_TOP, PLATE_HEX_BOTTOM = 0.133, -0.142  # local z: honeycomb above the tweeter ring / below the badge
 
@@ -841,15 +845,27 @@ WAVEGUIDE_FLANGE = WAVEGUIDE_FLOOR_R  # the flange: the dish floor's outer edge,
 WAVEGUIDE_PETALS = 8
 
 
+# Petals (Robert, 2026-11-11, from the photo): long flutes that start wide at the dome and
+# run almost to the rim, narrowing to a point, not short dashes near the rim.
+WAVEGUIDE_FLUTE_DEPTH = 0.007  # metres a flute sinks below the horn surface at its deepest
+WAVEGUIDE_FLUTE_TIP = 0.12  # flute width at the rim as a fraction of its width at the dome
+
+
 def _wg_depth(r, theta):
     span = WAVEGUIDE_R_OUT - WAVEGUIDE_R_IN
     u = min(1.0, max(0.0, (WAVEGUIDE_R_OUT - r) / span))  # 1 at the dome, 0 at the rim
-    ridge = WAVEGUIDE_PLATE + 0.015 * u ** 2.2
-    v = min(1.0, max(0.0, (WAVEGUIDE_R_OUT - r) / 0.014))
-    valley = max(ridge, min(0.018, WAVEGUIDE_PLATE + 0.015 * v ** 1.6))
-    m = 0.5 + 0.5 * math.cos(WAVEGUIDE_PETALS * theta)
-    m = m * m * (3 - 2 * m)  # rounded lobes, not a sine
-    return ridge + (valley - ridge) * m
+    horn = WAVEGUIDE_PLATE + 0.015 * u ** 2.2  # the smooth flare
+    t = 1.0 - u  # 0 at the dome, 1 at the rim
+    # depth along the flute: a quick start off the dome lip, deepest near the dome, fading to 0 at the rim
+    ramp = min(1.0, t / 0.08)
+    amp = WAVEGUIDE_FLUTE_DEPTH * ramp * ramp * (3 - 2 * ramp) * (1.0 - t) ** 0.8
+    # angular distance from the flute centre: 0 on the centre line, 1 halfway to the next flute
+    period = 2 * math.pi / WAVEGUIDE_PETALS
+    d = abs(((theta + period / 2) % period) - period / 2) / (period / 2)
+    width = 0.95 - (0.95 - WAVEGUIDE_FLUTE_TIP) * t  # wide at the dome, a point at the rim
+    p = max(0.0, 1.0 - d / width)
+    p = p * p * (3 - 2 * p)  # rounded edges
+    return horn + amp * p
 
 
 def build_waveguide(body, cx, cz, front, prefix):
@@ -1038,6 +1054,16 @@ def place_stand(name, x, y, floor_z, width_scale):
     stand.matrix_world = Matrix.Identity(4)
     bm = bmesh.new()
     bm.from_mesh(stand.data)
+    # shorten the column to STAND_HEIGHT: the bottom and top STAND_PLATE bands keep their size
+    z0 = min(v.co.z for v in bm.verts)
+    k = (STAND_HEIGHT - 2 * STAND_PLATE) / (h - 2 * STAND_PLATE)
+    for v in bm.verts:
+        z = v.co.z - z0
+        if z > h - STAND_PLATE:
+            z -= h - STAND_HEIGHT
+        elif z > STAND_PLATE:
+            z = STAND_PLATE + (z - STAND_PLATE) * k
+        v.co.z = z0 + z
     mark_sharp(bm)
     bm.to_mesh(stand.data)
     bm.free()
@@ -1119,7 +1145,7 @@ if kit_ready("PMC6-2"):
     tweeter_xz, badge_xz = (tw["x"], tw["z"]), BADGE_CENTRE
     build_logo(cabinet_mat)
     on_stand = os.path.exists(STAND_STL) and BASE != "stack"  # the stack sits on the floor
-    floor_z = -top_z - STAND_SIZE[1] if on_stand else -top_z
+    floor_z = -top_z - STAND_HEIGHT if on_stand else -top_z
     if on_stand:
         place_stand("Stand_L", 0, 0, floor_z, hero["w"] / STAND_SIZE[0])
     rig_built = []
@@ -1131,7 +1157,7 @@ if kit_ready("PMC6-2"):
         if how == "stand":
             if os.path.exists(STAND_STL):
                 place_stand(f"{prefix}Stand", x, y, floor_z, load_kit(model)["size_mm"][0] / 1000 / STAND_SIZE[0])
-            z = floor_z + STAND_SIZE[1] + h / 2
+            z = floor_z + STAND_HEIGHT + h / 2
         elif how == "floor":
             z = floor_z + h / 2
         else:

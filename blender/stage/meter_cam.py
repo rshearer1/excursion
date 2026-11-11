@@ -12,7 +12,7 @@ def vec(name, default):
     return Vector(float(x) for x in os.environ.get(name, default).split(","))
 
 
-loc = vec("MC_LOC", "0.35,-2.7,0.0")
+loc = vec("MC_LOC", "0.3,-2.2,0.0")  # 2.2 m back (was 2.7): the speaker reads bigger, the 2.5 m wall still fits
 aim = vec("MC_AIM", "0.0,0.6,0.1")
 cd = bpy.data.cameras.new("MeterCam")
 cd.sensor_fit = "HORIZONTAL"
