@@ -74,8 +74,10 @@ export function lookEnv({ out, name, meters, half = false, render }) {
     WT_NAME: name, WT_OUT: out, WT_A: "0", WT_B: "1",
     WT_BACKLIGHT: "0", WT_RIP_W: "0.1", WT_SMOKE_GAIN: "3", WT_HAZE_BUMP: "0", WT_DUST_PUSH: "0.1",
   };
-  // air: Robert picked 4x haze (option 2, 2026-11-11); an AIR_* value already in the environment wins
-  if (!process.env.AIR_HAZE) env.AIR_HAZE = "4";
+  // air: hazer-style (Robert, 2026-11-11): a lot of even haze, few clumps, so beams and lasers read.
+  // An AIR_* value already in the environment wins.
+  if (!process.env.AIR_HAZE) env.AIR_HAZE = "10";
+  if (!process.env.AIR_DENSITY) env.AIR_DENSITY = "0.3";
   if (meters) env.WALL_IMAGE = meters;
   if (half) Object.assign(env, { LT_HALF: "1", WT_HALF: "1" });
   if (render.clip) env.WT_CLIP = render.clip;
