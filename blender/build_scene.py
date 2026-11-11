@@ -1448,6 +1448,8 @@ PAIR = ROOM.get("pair")
 PAIR_GAP = float(PAIR.get("gap", 1.4)) if PAIR else 0.0
 PAIR_TOE = math.radians(float(PAIR.get("toe", 10.0))) if PAIR else 0.0
 PAIR_PREFIX = "PairR_"
+# real PMC pairs are mirror images, mids and tweeters on the inside: "mirror": true flips the twin
+PAIR_MIRROR = bool(PAIR.get("mirror", False)) if PAIR else False
 if "speakers" in ROOM:  # the room's own layout replaces the base's
     RIG = [(s["model"], f"{s['id']}_", tuple(s["pos"]), float(s.get("yaw", 0.0)), s["mount"]) for s in ROOM["speakers"]]
     for _m in {r[0] for r in RIG}:
@@ -3020,6 +3022,12 @@ def build_pair():
         twin.name = PAIR_PREFIX + o.name
         twin.location = (PAIR_GAP, 0.0, 0.0)
         twin.rotation_euler = (0.0, 0.0, -PAIR_TOE)
+        if PAIR_MIRROR:
+            if o.name in ("Badge", "Logo"):
+                # lettering must not read backwards: keep it unmirrored and slide it to the mirrored spot
+                twin.location = Vector((PAIR_GAP, 0.0, 0.0)) + Matrix.Rotation(-PAIR_TOE, 3, "Z") @ Vector((-2 * BADGE_CENTRE[0], 0.0, 0.0))
+            else:
+                twin.scale = (-1.0, 1.0, 1.0)  # shared mesh data, mirrored in x (the engraved 6-2 mirrors with it)
         o.rotation_euler = (0.0, 0.0, PAIR_TOE)
     stand = bpy.data.objects.get("Stand_L")
     if stand is not None:
@@ -3047,7 +3055,7 @@ def build_pair():
             if getattr(con, "target", None) is key_target and twin_target is not None:
                 con.target = twin_target
         lights.append(twin.name)
-    print(f"pair: twin {len(hero_parts)} parts {PAIR_GAP:.2f} m right, toe {math.degrees(PAIR_TOE):.0f} deg, lights {', '.join(lights)}")
+    print(f"pair: twin {len(hero_parts)} parts {PAIR_GAP:.2f} m right, toe {math.degrees(PAIR_TOE):.0f} deg{', mirrored' if PAIR_MIRROR else ''}, lights {', '.join(lights)}")
 
 
 if PAIR and kit_ready("PMC6-2"):

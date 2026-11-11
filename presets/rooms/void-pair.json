@@ -1,7 +1,7 @@
 {
   "kind": "room",
   "name": "void-pair",
-  "description": "The void with a stereo pair: a twin PMC6-2 on its own stand 1.4 m to the right, both toed in 10 deg and lit alike, the LED wall centred between them, and a wide camera on the pair.",
+  "description": "The void with a stereo pair: a mirror-image twin PMC6-2 (mids and tweeters on the inside) on its own stand 1.4 m to the right, both toed in 10 deg and lit alike, the LED wall centred between them, and a wide camera on the pair.",
   "base": "void",
   "cameras": [
     {
@@ -27,6 +27,7 @@
   ],
   "pair": {
     "gap": 1.4,
-    "toe": 10
+    "toe": 10,
+    "mirror": true
   }
 }

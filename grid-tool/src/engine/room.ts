@@ -57,7 +57,7 @@ export interface Room {
   rig?: string;
   /** a stereo pair: a twin of the hero `gap` metres to the right (centre to centre), both toed in
    * `toe` degrees, each lit by its own key, graze and top-back; the LED wall centres between them */
-  pair?: { gap: number; toe: number };
+  pair?: { gap: number; toe: number; /** the twin is a mirror image (real PMC pairs: mids and tweeters on the inside) */ mirror?: boolean };
 }
 
 export const ROOM_BASES: { value: RoomBase; hint: string }[] = [
@@ -191,7 +191,7 @@ export function parseRoom(json: string | Record<string, unknown>): Room {
     const toe = p["toe"] === undefined ? 10 : p["toe"];
     if (!finite(gap) || gap < 0.5 || gap > 4) throw new Error("pair gap must be 0.5 to 4 metres");
     if (!finite(toe) || Math.abs(toe) > 45) throw new Error("pair toe must be -45 to 45 degrees");
-    room.pair = { gap, toe };
+    room.pair = { gap, toe, ...(p["mirror"] === true ? { mirror: true } : {}) };
   }
   return room;
 }
@@ -207,7 +207,7 @@ export function roomToJson(room: Room): string {
   if (room.speakers) out["speakers"] = room.speakers.map((s) => ({ id: s.id, model: s.model, pos: s.pos.map(r4), yaw: r4(s.yaw), mount: typeof s.mount === "number" ? r4(s.mount) : s.mount }));
   if (room.cameras) out["cameras"] = room.cameras.map((c) => ({ name: c.name, pos: c.pos.map(r4), target: c.target.map(r4), lens: r4(c.lens), fstop: r4(c.fstop), move: c.move.map(r4) }));
   if (room.lyricAnchors) out["lyricAnchors"] = Object.fromEntries(Object.entries(room.lyricAnchors).map(([k, v]) => [k, v.map(r4)]));
-  if (room.pair) out["pair"] = { gap: r4(room.pair.gap), toe: r4(room.pair.toe) };
+  if (room.pair) out["pair"] = { gap: r4(room.pair.gap), toe: r4(room.pair.toe), ...(room.pair.mirror ? { mirror: true } : {}) };
   return JSON.stringify(out, null, 2) + "\n";
 }
 
