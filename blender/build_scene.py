@@ -1030,7 +1030,7 @@ def build_speaker(model, prefix, location, yaw=0.0, hero=False, scale=(1, 1, 1))
         # the old cube cavity was placed with its own location, which the loop at the end of
         # this function overwrote, so it sat inside the cabinet and the grille looked solid
         keep = tuple(v / 1000 for v in vent["keep_mm"]) if "keep_mm" in vent else None
-        cavity, grille, n = speaker_finish.open_vent(body, x0, x1, z0, z1, d0, d1, front, cavity_mat, f"{prefix}Vent_Cavity", keep)
+        cavity, grille, n = speaker_finish.open_vent(body, x0, x1, z0, z1, d0, d1, front, cavity_mat, f"{prefix}Vent_Cavity", keep, grille_mat=vent_grille_mat)
         parts.append(cavity)
         if grille is not None:
             parts.append(grille)
@@ -1145,6 +1145,8 @@ tweeter_mat = make_material("TweeterMat", base=(0.012, 0.012, 0.013, 1), rough=0
 tweeter_mat.node_tree.nodes["Principled BSDF"].inputs["Sheen Weight"].default_value = 0.3  # coated fabric dome
 stand_mat = make_material("StandMat", base=(0.03, 0.03, 0.032, 1), rough=0.35)
 cavity_mat = make_material("CavityMat", base=(0.003, 0.003, 0.003, 1), rough=0.95)
+# the vent grille (product photo): a light grey honeycomb web in front of the black port, clearly lighter than the cabinet
+vent_grille_mat = make_material("VentGrilleMat", base=(0.035, 0.035, 0.037, 1), rough=0.5)
 trim_mat = make_material("TrimMat", base=(0.78, 0.79, 0.8, 1), rough=0.38)  # brushed aluminium chassis ring (a mirror would only reflect the void)
 trim_mat.node_tree.nodes["Principled BSDF"].inputs["Metallic"].default_value = 1.0
 mid_ring_mat = make_material("MidRingMat", base=(0.2, 0.2, 0.21, 1), rough=0.45)  # the dome ring: satin grey metal, a thin light line in the photo, not a white one

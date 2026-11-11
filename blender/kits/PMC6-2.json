@@ -65,7 +65,11 @@
         11,
         22
       ],
-      "note": "the CAD grille is solid hex plugs: build_speaker deletes every front face 11-22 mm deep and gives the plug walls thickness, so the grille is open"
+      "note": "CAD: closed cell floors 21.5 mm deep with a 2 mm wide honeycomb web standing 3 mm proud (top face 18.5 mm). build_speaker deletes the cell floors (11-22 mm) but keeps the web tops (keep_mm) and its side walls, so the grille is an open honeycomb of solid bars",
+      "keep_mm": [
+        18,
+        19
+      ]
     }
   ]
 }

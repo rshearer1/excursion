@@ -209,11 +209,11 @@ def exaggerate_relief(material, face_y=PLATE_FACE_Y, cell_y=PLATE_CELL_Y, floor_
 
 
 VENT_DEPTH = 0.085  # metres of black port behind an opened grille
-GRILLE_WEB = 0.0012  # thickness given to each wall of the opened honeycomb grille
+GRILLE_WEB = 0.0004  # thickness given to the grille faces: the CAD web is 2 mm wide (top face kept), so the bars come out ~2.4 mm
 VENT_INSET = 0.008  # the grille field starts this far inside the vent rectangle (inside is the bezel)
 
 
-def open_vent(body, x0, x1, z0, z1, d0, d1, front, cavity_mat, name, keep=None):
+def open_vent(body, x0, x1, z0, z1, d0, d1, front, cavity_mat, name, keep=None, grille_mat=None):
     """Open a honeycomb grille (object-local coords on body's mesh): delete every front-facing
     face between depths d0 and d1 behind the baffle, then add an open-fronted black port box
     behind it, so the cells read as holes with depth, not a black floor. The box's mesh is
@@ -241,7 +241,8 @@ def open_vent(body, x0, x1, z0, z1, d0, d1, front, cavity_mat, name, keep=None):
     for f in bm.faces:
         c = f.calc_center_median()
         depth = c.y - front
-        if abs(f.normal.y) < 0.5 and all(  # every corner inside: the STL's long slivers reach the bezel
+        top = keep is not None and f.normal.y < -0.9 and keep[0] <= depth <= keep[1]  # a web's own front face
+        if (abs(f.normal.y) < 0.5 or top) and all(  # every corner inside: the STL's long slivers reach the bezel
             x0 + VENT_INSET < v.co.x < x1 - VENT_INSET and z0 + VENT_INSET < v.co.z < z1 - VENT_INSET and d0 <= v.co.y - front <= d1
             for v in f.verts
         ):
@@ -268,7 +269,7 @@ def open_vent(body, x0, x1, z0, z1, d0, d1, front, cavity_mat, name, keep=None):
         grille = bpy.data.objects.new(gmesh.name, gmesh)
         for coll in body.users_collection:
             coll.objects.link(grille)
-        for m in body.data.materials[:1]:
+        for m in ([grille_mat] if grille_mat is not None else body.data.materials[:1]):
             gmesh.materials.append(m)
         sol = grille.modifiers.new("Webs", "SOLIDIFY")
         sol.thickness = GRILLE_WEB
