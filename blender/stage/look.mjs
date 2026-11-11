@@ -36,7 +36,7 @@ export function meterImage(dir) {
  */
 export function lookEnv({ out, name, meters, half = false, render }) {
   const env = {
-    LT_OUT: out, LT_NAME: name, LT_FIX: "1", LT_NORENDER: "1", LT_NOSHAKE: "1",
+    LT_OUT: out, LT_NAME: name, LT_FIX: "1", LT_NORENDER: "1", LT_NOSHAKE: "1", LT_MBLUR: "1",
     WALL_IMG_GAIN: "10",
     V4_SHAKE: "1", V4_SHAKE_INFLUENCE: "0.3", V4_LENS: "1", V4_FILM: "1",
     WT_NAME: name, WT_OUT: out, WT_A: "0", WT_B: "1",

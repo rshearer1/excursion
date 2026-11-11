@@ -129,6 +129,12 @@ if os.environ.get("LT_AGX") == "1":
 else:
     log["view"] = (scene.view_settings.view_transform, scene.view_settings.look)
 
+if os.environ.get("LT_MBLUR") == "1":
+    # film motion blur at the drive's shutter (apply_drive --shutter, 0.5 = 180 degrees); at 24 fps
+    # moving cones and the handheld camera stay smooth instead of strobing
+    scene.render.use_motion_blur = True
+    log["motion_blur"] = scene.render.motion_blur_shutter
+
 if os.environ.get("LT_HALF") == "1":
     scene.render.resolution_percentage = 50
 print("lt:", json.dumps(log))

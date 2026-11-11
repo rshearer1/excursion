@@ -10,7 +10,8 @@
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit",
     "demo-job": "vite-node scripts/demo-job.ts",
-    "track-job": "vite-node scripts/track-job.ts"
+    "track-job": "vite-node scripts/track-job.ts",
+    "refps-drive": "vite-node scripts/refps-drive.ts"
   },
   "devDependencies": {
     "@types/node": "^26.5.1",

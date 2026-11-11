@@ -12,7 +12,7 @@ Every test render comes from one place, so no test misses another thread's work.
 2. **Work on your own branch, cut from the current best:** `git fetch origin && git switch -c <your-branch> origin/claude/project-thread-11phqh` in your own checkout or worktree. Look changes go in `blender/stage/`; speaker and scene changes go where they already live (`build_scene.py`, `speaker_finish.py`, ...).
 3. **Land a change:** push your branch, then in the shared folder run `git pull --no-edit origin <your-branch>` (a merge, no rebase, no force), render one test still there, and push: `git push origin claude/project-thread-11phqh`. Only one thread lands at a time; never leave uncommitted edits in the shared folder.
 4. **Before you start work or a test, update:** `git -C D:\Rescue\Kingston\Users-ITSM\excursion-current pull`.
-5. **One GPU:** the command refuses to start while another Blender runs. Tests are single frames or clips of about 3 s (90 frames at 30 fps; 100 max) at 48 samples.
+5. **One GPU:** the command refuses to start while another Blender runs. Tests are single frames or clips of about 3 s (72 frames at 24 fps; 100 max) at 48 samples.
 6. **Watch the log** (`out/current-best/<name>/<name>.log`) for "Failed to load image" (magenta textures).
 
 ## Not in git (local to the shared folder)

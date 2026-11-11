@@ -1,8 +1,8 @@
 // Current-best test render: the one command every thread uses for test stills and short clips.
 //
-//   node blender/stage/test_still.mjs                     frame 1600, wide meter shot, 48 samples
-//   node blender/stage/test_still.mjs --frames 1300,1600  several stills (show cameras, not the meter shot)
-//   node blender/stage/test_still.mjs --clip 1590,1679    ~3 s clip (90 frames at the drive fps, 30)
+//   node blender/stage/test_still.mjs                     frame 1280, wide meter shot, 48 samples
+//   node blender/stage/test_still.mjs --frames 1040,1280  several stills (show cameras, not the meter shot)
+//   node blender/stage/test_still.mjs --clip 1272,1343    ~3 s clip (72 frames at the drive fps, 24)
 //   options: --name <n>  --drive <drive.json>  --samples <n>  --half  --show-cams  --rebuild  --no-grade
 //
 // It builds blender/scenes/void.blend from THIS checkout when the speaker sources changed, then
@@ -35,7 +35,7 @@ const name = opt("--name", `cb_${commit}_${stamp}`);
 const drive = path.resolve(ROOT, opt("--drive", "blender/jobs/psychidelly.drive.json"));
 const samples = opt("--samples", "48");
 const clip = opt("--clip");
-const frames = opt("--frames", "1600");
+const frames = opt("--frames", "1280");
 // --meters: a folder of <frame>.png screen images (the wall starts at the lowest frame number)
 const meterDir = path.resolve(ROOT, opt("--meters", "out/meters"));
 const meterFrames = fs.existsSync(meterDir) ? fs.readdirSync(meterDir).filter((f) => /^\d+\.png$/.test(f)).map((f) => parseInt(f, 10)) : [];
