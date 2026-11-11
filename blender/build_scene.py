@@ -1293,8 +1293,8 @@ stand_mat = make_material("StandMat", base=(0.03, 0.03, 0.032, 1), rough=0.35)
 cavity_mat = make_material("CavityMat", base=(0.003, 0.003, 0.003, 1), rough=0.95)
 # the vent grille (product photo): a light grey honeycomb web in front of the black port, clearly lighter than the cabinet
 # screw heads (product photo): dark steel socket screws, a little brighter and glossier than the plastic around them
-screw_mat = make_material("ScrewMat", base=(0.03, 0.03, 0.032, 1), rough=0.35)
-screw_rim_mat = make_material("ScrewRimMat", base=(0.18, 0.18, 0.19, 1), rough=0.45)
+screw_mat = make_material("ScrewMat", base=(0.02, 0.02, 0.022, 1), rough=0.38)  # black-oxide steel: a slightly metallic black, not silver (Robert, 2026-11-11)
+screw_rim_mat = make_material("ScrewRimMat", base=(0.06, 0.06, 0.063, 1), rough=0.4)  # the chamfer: only a faint lighter edge
 screw_rim_mat.node_tree.nodes["Principled BSDF"].inputs["Metallic"].default_value = 1.0
 screw_mat.node_tree.nodes["Principled BSDF"].inputs["Metallic"].default_value = 1.0
 # the thin bright ring round each woofer (product photo): the flange chamfer in bright satin metal
