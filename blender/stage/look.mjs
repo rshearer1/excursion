@@ -93,6 +93,7 @@ export function lookScripts({ meterCam = false, debugLights = false } = {}) {
   const chain = ["-P", S("look_test.py"), "-P", S("wall_test.py"), "-P", S("photo_test.py")];
   if (meterCam) chain.push("-P", S("meter_cam.py"));
   if (debugLights) chain.push("-P", S("debug_lights.py"));
+  chain.push("-P", S("air_test.py"));  // AIR_HAZE / AIR_DENSITY / AIR_DUST trims; all default to 1 = no change
   chain.push("-P", S("check_textures.py"));  // prints "textures: OK ..." or "textures: MISSING ..." (see textureReport)
   chain.push("-P", S("wave_test.py"));
   return chain;
