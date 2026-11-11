@@ -19,7 +19,7 @@ import math as _m
 from speaker_finish import TAG, _rewire
 
 WEAR = {"cavity_dust": 0.55, "flecks": 0.6, "prints": 0.55, "print_scale": 9.0, "print_density": 0.45, "scuffs": 0.35}
-CONE = {"mottle": 0.3, "fibre_bump": 0.22, "rings": 0.012, "settled": 0.14}
+CONE = {"mottle": 0.08, "fibre_bump": 0.12, "rings": 0.012, "settled": 0.05}  # satin cones: light, even dust (PMC6-2 photo)
 DUST_COLOUR = (0.32, 0.30, 0.27, 1.0)
 
 

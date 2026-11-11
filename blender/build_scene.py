@@ -350,10 +350,10 @@ def driver_material(name, kind):
         tone = N.new("ShaderNodeMix")
         tone.data_type = "RGBA"
         next(s for s in tone.inputs if s.identifier == "A_Color").default_value = (0.010, 0.010, 0.011, 1.0)
-        next(s for s in tone.inputs if s.identifier == "B_Color").default_value = (0.026, 0.025, 0.023, 1.0)
+        next(s for s in tone.inputs if s.identifier == "B_Color").default_value = (0.016, 0.016, 0.017, 1.0)
         L.new(speckle.outputs["Fac"], next(s for s in tone.inputs if s.identifier == "Factor_Float"))
         blend("Base Color", "RGBA", next(s for s in tone.outputs if s.identifier == "Result_Color"))
-        blend("Roughness", "FLOAT", math_node("ADD", 0.45, math_node("MULTIPLY", 0.12, grain.outputs["Fac"])))  # doped paper: between the photo's sheen and the handoff's matte
+        blend("Roughness", "FLOAT", math_node("ADD", 0.30, math_node("MULTIPLY", 0.06, grain.outputs["Fac"])))  # dark satin: one broad soft highlight, as in the PMC6-2 photo
         # the dust cap (real geometry, see add_woofer_details) is the same doped paper, a touch glossier
         cap = N.new("ShaderNodeMapRange")
         cap.interpolation_type = "SMOOTHSTEP"
@@ -362,7 +362,7 @@ def driver_material(name, kind):
         L.new(prop("cap_r"), cap.inputs["From Max"])
         cap.inputs["To Min"].default_value = 1.0
         cap.inputs["To Max"].default_value = 0.0
-        blend("Roughness", "FLOAT", 0.28, mask_socket=cap.outputs["Result"])
+        blend("Roughness", "FLOAT", 0.30, mask_socket=cap.outputs["Result"])  # the cap matches the cone (no separate gloss)
     else:
         blend("Base Color", "RGBA", (0.008, 0.008, 0.009, 1.0))
         blend("Roughness", "FLOAT", 0.75)
@@ -468,7 +468,7 @@ def add_excursion_key(obj, cx, cz, r_in, r_out, y_skin, amount=EXCURSION):
 # the centre of each cone, the rubber half-roll surround between cone and chassis, and the
 # polished aluminium ring around the chassis edge (the one bright thing on a PMC baffle).
 WOOFER_CAP = 0.45  # dust cap radius as a fraction of the cone radius (~22 mm on the 6")
-WOOFER_CAP_RISE = 0.35  # cap height as a fraction of its radius
+WOOFER_CAP_RISE = 0.07  # cap height as a fraction of its radius (real PMC6-2: almost flush, no visible dome)
 WOOFER_ROLL = 0.42  # half-roll minor radius as a fraction of the cone-to-chassis gap
 TRIM_RING = 0.0015  # the polished ring's tube radius
 
@@ -519,7 +519,7 @@ def add_woofer_details(piece, name, cx, cz, r_cone, r_surround, r_cut, front, y_
     _join(piece, cap)
     # the glue ring where the cap meets the cone (handoff item 4)
     bpy.ops.mesh.primitive_torus_add(
-        major_radius=r_cap, minor_radius=0.0007, major_segments=128, minor_segments=12,
+        major_radius=r_cap, minor_radius=0.0003, major_segments=128, minor_segments=12,
         location=(cx, y_cap + 0.0002, cz), rotation=(math.pi / 2, 0, 0),
     )
     glue = bpy.context.object
