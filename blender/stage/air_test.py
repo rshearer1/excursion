@@ -6,6 +6,7 @@
 # Values are scaled where they are static and on every keyframe where apply_drive keyed them.
 # Nothing is saved.
 import json
+import math
 import os
 
 import bpy
@@ -75,3 +76,44 @@ if k != 1.0 and back is not None:
     log["DustBack"] = {"gain": k, "keyed_curves": scale_curve(back.data, "energy", k)}
 
 print("air:", json.dumps(log))
+
+# AIR_BEAMS: multiplier on how strongly every spot light shows in the haze (its volume factor).
+# The rig's spots are set low (0.3-0.35) so the room stays dark; rave beams need 1 or more.
+k = float(os.environ.get("AIR_BEAMS", 1.0))
+if k != 1.0:
+    spots = [o for o in bpy.context.scene.objects if o.type == "LIGHT" and o.data.type == "SPOT" and not o.name.startswith("DustBack")]
+    for o in spots:
+        o.data.volume_factor *= k
+    print("air: beams x%g on %d spots: %s" % (k, len(spots), ", ".join("%s %.0fdeg vol %.2f" % (o.name, math.degrees(o.data.spot_size), o.data.volume_factor) for o in spots)))
+
+# BEAM_RIG=<count>: narrow hard-edged beams from a bar above and behind the LED wall, fanned
+# toward the camera side (a rave back-truss). Test only; colour follows the TopBack light.
+n = int(os.environ.get("BEAM_RIG", 0))
+if n > 0:
+    from mathutils import Vector
+    scene = bpy.context.scene
+    ref = bpy.data.objects.get("TopBack")
+    wall = bpy.data.objects.get("Scope")
+    cx = wall.location.x if wall is not None else 0.0
+    watts = float(os.environ.get("BEAM_POWER", 900))
+    cone = float(os.environ.get("BEAM_CONE", 7))
+    for j in range(n):
+        t = (j / (n - 1) - 0.5) if n > 1 else 0.0
+        src = Vector((cx + t * 2.2, 1.0, 1.35))
+        aim = Vector((cx + t * 4.5, -2.6, -0.6))
+        data = bpy.data.lights.new(f"TestBeam_{j}", "SPOT")
+        data.energy = watts
+        data.color = tuple(ref.data.color) if ref is not None else (0.6, 0.3, 1.0)
+        data.spot_size = math.radians(cone)
+        data.spot_blend = 0.15
+        data.shadow_soft_size = 0.01
+        data.volume_factor = 2.0
+        ob = bpy.data.objects.new(f"TestBeam_{j}", data)
+        scene.collection.objects.link(ob)
+        ob.location = src
+        ob.rotation_euler = (aim - src).to_track_quat("-Z", "Y").to_euler()
+        if ref is not None and ref.data.animation_data and ref.data.animation_data.action:
+            data.animation_data_create()
+            data.animation_data.action = ref.data.animation_data.action  # colour and level follow the back light's cues
+            data.energy = watts
+    print("air: beam rig %d beams, %g W, %g deg" % (n, watts, cone))
