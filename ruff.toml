@@ -1,0 +1,13 @@
+# Ruff (Python lint and format) settings for the Blender scripts. Config only: nothing in the
+# repo has been reformatted with it. Check without changing files:
+#   ruff check blender            (lint: real errors such as undefined names)
+#   ruff format --diff blender    (shows what a reformat would change; writes nothing)
+line-length = 120
+target-version = "py311"  # Blender 4.2 bundles Python 3.11; 5.x bundles 3.13
+extend-exclude = [".venv-ai", "assets", "out", "frames", "blender/jobs"]
+
+[lint]
+select = ["E4", "E7", "E9", "F"]  # Ruff's defaults: syntax errors, undefined names, unused imports
+
+[format]
+quote-style = "double"

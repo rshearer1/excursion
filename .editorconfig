@@ -1,0 +1,23 @@
+# Editor settings that match how the code is already written. Editors with EditorConfig
+# support apply these on save; nothing is reformatted by this file alone.
+root = true
+
+[*]
+charset = utf-8
+insert_final_newline = true
+trim_trailing_whitespace = true
+
+[*.{py,osl}]
+indent_style = space
+indent_size = 4
+
+[*.{ts,mjs,js,json,html,css}]
+indent_style = space
+indent_size = 2
+
+[*.md]
+trim_trailing_whitespace = false
+
+[*.cube]
+insert_final_newline = unset
+trim_trailing_whitespace = unset
