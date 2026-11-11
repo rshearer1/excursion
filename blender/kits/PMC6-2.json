@@ -35,12 +35,13 @@
       "kind": "mid",
       "x_mm": 260,
       "y_mm": 200,
-      "r_cone_mm": 16,
-      "r_surround_mm": 26,
-      "r_cut_mm": 27,
+      "r_cone_mm": 27.5,
+      "r_surround_mm": 28.8,
+      "r_cut_mm": 29,
       "depth_mm": 9.6,
       "plate_depth_mm": 21.5,
-      "back_mm": 21.5
+      "back_mm": 21.5,
+      "dome_r_mm": 27.5
     },
     {
       "kind": "woofer",
