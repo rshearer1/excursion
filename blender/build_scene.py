@@ -65,8 +65,9 @@ EXCURSION = 0.014  # metres of cone travel at shape key value 1.0 (a real driver
 MID_EXCURSION = 0.003  # the 75 mm mid dome moves far less
 SHARP_ANGLE = math.radians(30)
 CABINET_ALBEDO = 0.22  # multiplier on the texture's colour map
-CABINET_ROUGHNESS = (0.42, 0.68)  # the roughness map is remapped into this range (PMC's finish is a flat textured black)
-CABINET_BUMP = 0.22  # displacement-map bump strength on top of the normal map (a fine textured paint, not leather)
+CABINET_ROUGHNESS = (0.52, 0.74)  # the roughness map is remapped into this range (PMC's finish is a flat textured black)
+CABINET_BUMP = 0.08  # displacement-map bump strength on top of the normal map (0.22 read as leather next to the real smooth satin, 2026-11-11)
+CABINET_NORMAL = 0.3  # normal-map strength (was 0.8: its 45 mm tiles showed as streaks the product photo does not have)
 SETTLED_DUST = 0.03  # how much dust has settled on the cabinet's up-facing surfaces (0 = none; 0.12 turned the top into a pale lilac slab under the back light)
 SMUDGE = 0.08  # roughness variation from handling: 0 = perfectly uniform (the biggest CGI tell)
 # LOOK: "moody" = the single-speaker-in-the-void grade — warm key, dark red rims, almost no
@@ -175,7 +176,7 @@ def plastic_material(name, scale=22.0, texture=None, albedo=None):
     shading_normal = None
     if normal:
         nmap = nt.nodes.new("ShaderNodeNormalMap")
-        nmap.inputs["Strength"].default_value = 0.8
+        nmap.inputs["Strength"].default_value = CABINET_NORMAL
         nt.links.new(normal.outputs["Color"], nmap.inputs["Color"])
         shading_normal = nmap.outputs["Normal"]
     if height:

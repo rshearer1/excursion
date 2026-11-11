@@ -236,7 +236,7 @@ PLATE_CELL_Y = PLATE_CAD_CELL_Y + HEX_DEEPEN  # object-space y of the cell floor
 # 2026-11-11: three tries at that shine (rounded edges, glossy plastic floors, metallic floors at
 # several strengths) either lit every line on the plate or washed the lines out; the settings
 # below are the verified dark-line look. floor_metal / floor_spec / round_edges() stay available.
-RELIEF = {"floor_dark": 0.12, "floor_rough": 0.75, "face_rough": 0.32, "bump": 0.6, "bump_dist": 0.0012}
+RELIEF = {"floor_dark": 0.12, "floor_rough": 0.75, "face_rough": 0.5, "bump": 0.6, "bump_dist": 0.0012}
 
 
 def exaggerate_relief(material, face_y=PLATE_FACE_Y, cell_y=PLATE_CELL_Y, floor_dark=0.45, floor_rough=0.75, face_rough=0.32, bump=0.6, bump_dist=0.0012, floor_metal=0.0, floor_spec=None, lines=True):
