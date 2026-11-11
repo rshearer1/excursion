@@ -31,6 +31,13 @@ floor_z = floor.location.z if floor else z0 - 0.7
 
 coll = bpy.data.collections.new("LEDWall")
 scene.collection.children.link(coll)
+# WALL_LIT=1: the front lights (KeyLight, Graze) are linked to LitCol only, so they never touched
+# the wall and the speaker looked pasted in front of it. This lets them light the wall too.
+if os.environ.get("WALL_LIT") == "1":
+    _lit = bpy.data.collections.get("LitCol")
+    if _lit is not None:
+        _lit.children.link(coll)
+    print("wall: lit by front lights", _lit is not None)
 
 
 def box(name, center, size, mat):
@@ -66,7 +73,8 @@ m.use_nodes = True
 nt = m.node_tree
 N, L = nt.nodes, nt.links
 bsdf = N["Principled BSDF"]
-bsdf.inputs["Base Color"].default_value = (0.006, 0.006, 0.007, 1)  # the black face between emitters
+_face = float(os.environ.get("WALL_FACE", 0.006))  # how much room light the black face between emitters reflects
+bsdf.inputs["Base Color"].default_value = (_face, _face, _face * 1.15, 1)
 bsdf.inputs["Roughness"].default_value = 0.5
 bsdf.inputs["Specular IOR Level"].default_value = 0.35
 
@@ -256,3 +264,26 @@ for side in (-1, 1):
 
 log["wall"] = {"size_m": [W, H], "cabinets": f"{COLS}x{ROWS} @ {TILE * 1000:.0f} mm", "pitch_mm": PITCH * 1000, "centre": [cx, cy, cz], "gain": NITS}
 print("wall:", json.dumps(log))
+
+# WALL_WASH=<watts>: one soft front wash from above the camera that lights the speakers AND the
+# wall face together, so both sit in the same light (the speaker's shadow lands on the screen).
+_wash = float(os.environ.get("WALL_WASH", 0))
+if _wash > 0:
+    import math as _m
+    from mathutils import Vector as _V
+    _c = _V(wall_center) if "wall_center" in globals() else None
+    _scope = bpy.data.objects.get("Scope")
+    _aim = _V((_scope.location.x, _scope.location.y, _scope.location.z)) if _scope is not None else _V((0.0, 1.2, 0.1))
+    _src = _V((_aim.x - 0.6, _aim.y - 5.0, _aim.z + 1.6))
+    _d = bpy.data.lights.new("WallWash", "SPOT")
+    _d.energy = _wash
+    _d.color = (1.0, 0.9, 0.82)
+    _d.spot_size = _m.radians(50)
+    _d.spot_blend = 0.9
+    _d.shadow_soft_size = 0.25
+    _d.volume_factor = 0.05
+    _o = bpy.data.objects.new("WallWash", _d)
+    scene.collection.objects.link(_o)
+    _o.location = _src
+    _o.rotation_euler = (_aim - _src).to_track_quat("-Z", "Y").to_euler()
+    print("wall: wash %g W from %s" % (_wash, tuple(round(v, 2) for v in _src)))
