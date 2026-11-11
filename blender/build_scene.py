@@ -824,66 +824,59 @@ def plate_material(name, cell_mm=6.0):
     L.new(gloss.outputs["Result"], bsdf.inputs["Roughness"])
     return m
 
-# the mid's N-compass waveguide, modelled: PMC's CAD has it as a coarse eight-tooth cog. The
-# real part is a smooth flared horn with eight soft petals (valleys on the 45-degree lines,
-# ridges between). The cog faces are deleted from the cabinet and this surface sits in the
-# hole, from the dome pocket out to a thin flange on the plate. Profiles were read off the
-# CAD: ridges run from ~18 mm deep at the dome to the plate at 3.3 mm, valleys stay ~18 mm
-# deep out to r 38 mm then climb to meet the ridges at the rim.
-WAVEGUIDE_R_IN = 0.0273  # just outside the mid pocket wall (r_cut 27 mm), so the seam is covered
-WAVEGUIDE_R_OUT = 0.052  # where the horn meets the plate
-# On the real PMC6-2 the waveguide sits down in a round dish cut into the panel (nothing stands
-# proud). The CAD has a ragged stepped ring there instead, reaching ~65 mm at the top and
-# bottom; exact booleans now cut a clean dish over it: a straight wall down to the plate face,
-# then a 45-degree sloped wall to a flat floor 6 mm below the plate. The flange is that floor
-# (it covers whatever of the CAD lies deeper than the cut). Depths are behind the baffle front.
-WAVEGUIDE_PLATE_FACE = 0.0065  # the mid/tweeter plate face (6.47 mm behind the baffle front)
-WAVEGUIDE_RECESS_R = 0.066  # dish radius at the plate face
-WAVEGUIDE_PLATE = 0.0125  # dish floor depth (6 mm below the plate face)
-WAVEGUIDE_FLOOR_R = WAVEGUIDE_RECESS_R - (WAVEGUIDE_PLATE - WAVEGUIDE_PLATE_FACE)  # 45-degree wall
-WAVEGUIDE_FLANGE = WAVEGUIDE_FLOOR_R  # the flange: the dish floor's outer edge, where the modelled wall starts
-WAVEGUIDE_PETALS = 12  # the PMC6-2 photo shows ~12 soft petals (Robert, 2026-11-11)
-
-
-# Petals (Robert, 2026-11-11, from the photo): 12 dark sunken lobes, narrow where they leave
-# the dome and widening outward to a rounded end short of the rim (a flower, not a star).
-WAVEGUIDE_FLUTE_DEPTH = 0.007  # metres a petal sinks below the horn surface at its deepest
-WAVEGUIDE_FLUTE_ROOT = 0.30  # petal width at the dome as a fraction of its widest
-WAVEGUIDE_FLUTE_END = 0.88  # where the rounded end of a petal reaches (0 dome .. 1 rim)
+# the mid's waveguide, rebuilt from PMC's CAD (2026-11-11). The CAD surface is the real shape
+# but only ~1900 coarse triangles, so it is replaced by a fine mesh that follows a height
+# table measured from that same CAD (blender/measure_waveguide.mjs -> kits/PMC6-2.waveguide.json).
+# What the CAD (and the product photo) show, depths behind the baffle front:
+#   - a flat pocket floor 21.47 mm deep around the dome, out to r ~31 mm;
+#   - a smooth horn (a surface of revolution) from there up to the plate face, 6.47 mm, which
+#     it meets flush at r 61.45 mm. There is NO dish, step or bezel around it;
+#   - eight RAISED petals on the horn, centred on 22.5 + 45k degrees: a near-vertical nose at
+#     r 31 mm, up to 6 mm proud at r 36 mm, almost plate level from r 45 mm, gone at the rim.
+#     Each petal meets the horn at a hard crease ~13.5 degrees either side of its crest. The
+#     eight dark spokes in a photo are the channels left between the petals (on 0, 45, 90 ...;
+#     the diagonal ones point at the four screws).
+# Earlier versions guessed this from the photo (8 dashes, 12 sunk petals, a 66 mm dish) and
+# were wrong; nothing here is hand-shaped any more.
+WAVEGUIDE_PLATE_FACE = 0.00647  # the mid/tweeter plate face (6.467 mm behind the baffle front)
+# the cut through the plate: just outside the CAD horn's own boundary ring (r 61.5 mm) and
+# inside the screw counterbores (from r 62.25 mm)
+WAVEGUIDE_RECESS_R = 0.0619
+WAVEGUIDE_TABLE = os.path.join(KITS, "PMC6-2.waveguide.json")
+_wg_table = None
 
 
 def _wg_depth(r, theta):
-    span = WAVEGUIDE_R_OUT - WAVEGUIDE_R_IN
-    u = min(1.0, max(0.0, (WAVEGUIDE_R_OUT - r) / span))  # 1 at the dome, 0 at the rim
-    horn = WAVEGUIDE_PLATE + 0.015 * u ** 2.2  # the smooth flare
-    t = 1.0 - u  # 0 at the dome, 1 at the rim
-    # depth along the petal: a quick start off the dome lip, full depth through the middle,
-    # then a rounded end that closes at WAVEGUIDE_FLUTE_END
-    ramp = min(1.0, t / 0.08)
-    e = max(0.0, min(1.0, (WAVEGUIDE_FLUTE_END - t) / 0.3))
-    amp = WAVEGUIDE_FLUTE_DEPTH * ramp * ramp * (3 - 2 * ramp) * math.sqrt(e * (2 - e))
-    # angular distance from the petal centre: 0 on the centre line, 1 halfway to the next petal
-    period = 2 * math.pi / WAVEGUIDE_PETALS
-    d = abs(((theta + period / 2) % period) - period / 2) / (period / 2)
-    grow = min(1.0, t / 0.6)
-    width = 0.9 * (WAVEGUIDE_FLUTE_ROOT + (1 - WAVEGUIDE_FLUTE_ROOT) * grow * (2 - grow))  # narrow at the dome, widest further out
-    p = max(0.0, 1.0 - d / width)
-    p = p * p * (3 - 2 * p)  # rounded edges
-    return horn + amp * p
+    """Depth (m behind the baffle front) of the CAD waveguide at radius r (m), angle theta
+    (rad, x right / z up seen from the front): bilinear lookup in the measured table."""
+    global _wg_table
+    if _wg_table is None:
+        with open(WAVEGUIDE_TABLE, encoding="utf-8") as fh:
+            _wg_table = json.load(fh)
+    t = _wg_table
+    half = 180.0 / t["fold"]
+    a = abs(((math.degrees(theta) - t["fin0_deg"] + half) % (2 * half)) - half)  # degrees from the nearest petal crest
+    rows = t["depth_mm"]
+    fr = min(max((r * 1000 - t["r0_mm"]) / t["dr_mm"], 0.0), len(rows) - 1.000001)
+    fa = min(max(a / t["da_deg"], 0.0), len(rows[0]) - 1.000001)
+    i, j = int(fr), int(fa)
+    u, v = fr - i, fa - j
+    d = (rows[i][j] * (1 - u) * (1 - v) + rows[i + 1][j] * u * (1 - v)
+         + rows[i][j + 1] * (1 - u) * v + rows[i + 1][j + 1] * u * v)
+    return max(d / 1000, WAVEGUIDE_PLATE_FACE)  # nothing stands proud of the plate
 
 
-def build_waveguide(body, cx, cz, front, prefix):
-    """Cut the round recess, delete the CAD cog from body around (cx, cz) and return the
-    modelled horn object."""
+def build_waveguide(body, cx, cz, front, prefix, r_cut):
+    """Skim a clean circle into the plate, delete the coarse CAD horn from body around
+    (cx, cz) and return the fine horn object built from the measured table. r_cut is the mid
+    piece's cut radius: the horn's flat floor starts there, level with the mid's own floor."""
     # rotation x 90 deg turns local +Z toward the camera (-Y): radius2 is the front end
     top = WAVEGUIDE_PLATE_FACE + 0.0002
     bpy.ops.mesh.primitive_cylinder_add(
         vertices=256, radius=WAVEGUIDE_RECESS_R, depth=top + 0.02,
         location=(cx, front + (top - 0.02) / 2, cz), rotation=(math.pi / 2, 0, 0),
     )
-    # only a clean circular cut through the plate face (and the baffle where the circle crosses
-    # it): the STL is not a clean solid, so a boolean dish below that leaves CAD slivers. The
-    # sloped wall and floor are modelled as part of the waveguide object instead.
+    # only a clean circular edge in the plate face (the STL's plate triangles are long slivers)
     cutter = bpy.context.object
     mod = body.modifiers.new("cut_recess", "BOOLEAN")
     mod.operation = "DIFFERENCE"
@@ -899,35 +892,37 @@ def build_waveguide(body, cx, cz, front, prefix):
         c = f.calc_center_median()
         r = math.hypot(c.x - cx, c.z - cz)
         depth = c.y - front
-        # everything of the CAD under the dish goes (the cog, its stepped ring, the cut faces);
-        # the modelled wall, flange and horn are all that should show. The mid's pocket wall
-        # (r 27 mm) stays.
-        if 0.0274 < r < WAVEGUIDE_RECESS_R + 0.0003 and WAVEGUIDE_PLATE_FACE + 0.0001 < depth < 0.030:
+        # the CAD horn (both skins) and the cut's leftovers go; the mid's pocket wall (r_cut)
+        # and the screw counterbores just outside the circle stay
+        if r_cut + 0.00005 < r < WAVEGUIDE_RECESS_R + 0.00015 and WAVEGUIDE_PLATE_FACE + 0.0001 < depth < 0.030:
             doomed.append(f)
         elif r < WAVEGUIDE_RECESS_R and abs(depth - top) < 0.00015 and f.normal.y < -0.9:
-            doomed.append(f)  # the cut's cap: one flat disc right across the dish
+            doomed.append(f)  # the cut's cap: one flat disc right across the circle
+        elif abs(r - WAVEGUIDE_RECESS_R) < 0.0002 and WAVEGUIDE_PLATE_FACE - 0.0001 < depth < top + 0.0001 and abs(f.normal.y) < 0.5:
+            doomed.append(f)  # the 0.2 mm cut wall: the horn meets the plate flush, no rim line
     bmesh.ops.delete(bm, geom=doomed, context="FACES")
     bm.to_mesh(me)
     bm.free()
-    print(f"waveguide: {len(doomed)} cog faces removed from {prefix or 'hero'}")
+    print(f"waveguide: {len(doomed)} CAD horn faces removed from {prefix or 'hero'}")
 
-    n_t, rings = 256, []
-    # ring radii: an inner lip down the pocket, the horn, then the flange
-    radii = [(0.0270, "lip"), (WAVEGUIDE_R_IN, "horn")]
-    for k in range(1, 41):
-        radii.append((WAVEGUIDE_R_IN + (WAVEGUIDE_R_OUT - WAVEGUIDE_R_IN) * k / 40, "horn"))
-    radii.append((WAVEGUIDE_FLANGE, "flange"))
-    radii.append((WAVEGUIDE_RECESS_R + 0.0004, "wall"))  # the dish's sloped wall, up to just under the plate's cut edge
+    # 0.5 degrees per segment (a multiple of 16, so vertices sit on every crest and channel
+    # centre and match the table's angle step); rings every 0.5 mm, 0.25 mm over the petal noses
+    n_t, rings = 720, []
+    radii = [(r_cut - 0.0001, "lip")]  # tucked 0.1 mm inside the mid piece, a hair below its floor
+    r = r_cut
+    while r < WAVEGUIDE_RECESS_R - 1e-6:
+        radii.append((r, "horn"))
+        r += 0.00025 if 0.0305 <= r < 0.036 else 0.0005
+    radii.append((WAVEGUIDE_RECESS_R, "horn"))
+    radii.append((WAVEGUIDE_RECESS_R + 0.0002, "tuck"))  # just under the plate's cut edge
     bm = bmesh.new()
     for r, kind in radii:
         ring = []
         for j in range(n_t):
             t = 2 * math.pi * j / n_t
             if kind == "lip":
-                depth = 0.027
-            elif kind == "flange":
-                depth = WAVEGUIDE_PLATE - 0.0003
-            elif kind == "wall":
+                depth = _wg_depth(r_cut, t) + 0.00005
+            elif kind == "tuck":
                 depth = WAVEGUIDE_PLATE_FACE + 0.00005
             else:
                 depth = _wg_depth(r, t)
@@ -937,12 +932,10 @@ def build_waveguide(body, cx, cz, front, prefix):
         for j in range(n_t):
             bm.faces.new((a[j], a[(j + 1) % n_t], b[(j + 1) % n_t], b[j]))
     bm.normal_update()
-    bm.faces.ensure_lookup_table()
-    # faces wind so normals point out of the cabinet (-Y): flip if the first face looks inward
-    if bm.faces[0].normal.y > 0:
+    # faces wind so normals point out of the cabinet (-Y): flip if the surface looks inward
+    if sum(f.normal.y * f.calc_area() for f in bm.faces) > 0:
         bmesh.ops.reverse_faces(bm, faces=bm.faces[:])
-    for f in bm.faces:
-        f.smooth = True
+    mark_sharp(bm)  # smooth, but the petal creases and noses stay crisp
     mesh = bpy.data.meshes.new(f"{prefix}Waveguide")
     bm.to_mesh(mesh)
     bm.free()
@@ -1016,7 +1009,7 @@ def build_speaker(model, prefix, location, yaw=0.0, hero=False, scale=(1, 1, 1))
 
     names = {k: names_for(k) for k in ("woofer", "mid", "tweeter")}
     info = {"front_y": front, "w": w, "h": h, "d": d, "drivers": []}
-    mid_centre = None
+    mid_centre = mid_r_cut = None
     for drv in kit["drivers"]:
         cx = drv["x_mm"] / 1000 - w / 2
         cz = drv["y_mm"] / 1000 - h / 2
@@ -1038,9 +1031,12 @@ def build_speaker(model, prefix, location, yaw=0.0, hero=False, scale=(1, 1, 1))
         parts.append(piece)
         info["drivers"].append({"kind": drv["kind"], "name": name, "x": cx, "z": cz, "r": r_cone})
         if drv["kind"] == "mid":
-            mid_centre = (cx, cz)
+            mid_centre, mid_r_cut = (cx, cz), r_cut
     if hero and mid_centre is not None:
-        parts.append(build_waveguide(body, mid_centre[0], mid_centre[1], front, prefix))
+        if os.path.exists(WAVEGUIDE_TABLE):
+            parts.append(build_waveguide(body, mid_centre[0], mid_centre[1], front, prefix, mid_r_cut))
+        else:  # the CAD horn itself is the true shape, only coarser
+            print('note: kits/PMC6-2.waveguide.json missing (node blender/measure_waveguide.mjs) - keeping the CAD horn')
     for obj in parts:
         obj.location = location
         obj.rotation_euler = (0, 0, yaw)

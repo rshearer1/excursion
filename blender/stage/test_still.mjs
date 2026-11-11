@@ -62,7 +62,7 @@ if (clip) {
 
 // ---- rebuild the scene when any speaker/scene source is newer than the .blend
 const blend = path.resolve(ROOT, opt("--blend", "blender/scenes/void.blend")); // --blend: A/B against another scene
-const sources = ["build_scene.py", "speaker_finish.py", "speaker_wear.py", "rigkit.py", "kits/PMC6-2.json"]
+const sources = ["build_scene.py", "speaker_finish.py", "speaker_wear.py", "rigkit.py", "kits/PMC6-2.json", "kits/PMC6-2.waveguide.json"]
   .map((f) => path.join(ROOT, "blender", f))
   .filter((f) => fs.existsSync(f));
 const stale = !fs.existsSync(blend) || sources.some((f) => fs.statSync(f).mtimeMs > fs.statSync(blend).mtimeMs);
