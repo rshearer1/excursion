@@ -37,7 +37,7 @@ print("mc:", json.dumps({"loc": list(loc), "aim": list(aim), "lens": cd.lens, "f
 
 # The wide meter shot looks straight at the key-lit front, which the soft key turns grey; the
 # show cameras see it at an angle. Scale the key (static value and its bass-driven keys) here only.
-KEY_GAIN = float(os.environ.get("MC_KEY_GAIN", 0.35))
+KEY_GAIN = float(os.environ.get("MC_KEY_GAIN", 0.1))  # Robert picked the darkest front (C), 2026-11-11
 key = bpy.data.objects.get("KeyLight")
 if key is not None and KEY_GAIN != 1.0:
     key.data.energy *= KEY_GAIN
