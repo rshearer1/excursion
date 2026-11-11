@@ -369,7 +369,7 @@ def driver_material(name, kind):
         next(s for s in tone.inputs if s.identifier == "B_Color").default_value = (0.008, 0.008, 0.009, 1.0)
         L.new(speckle.outputs["Fac"], next(s for s in tone.inputs if s.identifier == "Factor_Float"))
         blend("Base Color", "RGBA", next(s for s in tone.outputs if s.identifier == "Result_Color"))
-        blend("Roughness", "FLOAT", 0.3)  # dark satin: one broad soft highlight, as in the PMC6-2 photo (no grain term: it speckled the highlight)
+        blend("Roughness", "FLOAT", 0.22)  # semi-gloss: the bowl (R 120 mm) images a softbox as one compact spot ~46 mm across in the photo; 0.3 smeared it into a wash
         # the dust cap (real geometry, see add_woofer_details) is the same doped paper, a touch glossier
         cap = N.new("ShaderNodeMapRange")
         cap.interpolation_type = "SMOOTHSTEP"
@@ -1298,7 +1298,7 @@ screw_rim_mat = make_material("ScrewRimMat", base=(0.18, 0.18, 0.19, 1), rough=0
 screw_rim_mat.node_tree.nodes["Principled BSDF"].inputs["Metallic"].default_value = 1.0
 screw_mat.node_tree.nodes["Principled BSDF"].inputs["Metallic"].default_value = 1.0
 # the thin bright ring round each woofer (product photo): the flange chamfer in bright satin metal
-woofer_rim_mat = make_material("WooferRimMat", base=(0.62, 0.62, 0.64, 1), rough=0.5)  # reads bright all the way round in the photo: a satin silver finish, not a mirror
+woofer_rim_mat = make_material("WooferRimMat", base=(0.36, 0.36, 0.37, 1), rough=0.5)  # reads bright all the way round in the photo: a satin silver finish, not a mirror
 woofer_rim_mat.node_tree.nodes["Principled BSDF"].inputs["Metallic"].default_value = 0.35
 vent_grille_mat = make_material("VentGrilleMat", base=(0.035, 0.035, 0.037, 1), rough=0.5)
 trim_mat = make_material("TrimMat", base=(0.78, 0.79, 0.8, 1), rough=0.38)  # brushed aluminium chassis ring (a mirror would only reflect the void)

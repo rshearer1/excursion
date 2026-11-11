@@ -53,15 +53,15 @@ scene.cycles.samples = 48
 print("neutral: set up")
 
 # NEUTRAL_TOP=<watts>: a product-photo softbox in front of the speaker, ~22 degrees above the
-# lens axis (the reference photo's light, measured from its dome highlight and channel shading)
+# lens axis (the reference photo's light, measured from its dome and woofer highlights)
 if os.environ.get("NEUTRAL_TOP"):
     ld = bpy.data.lights.new("NeutralSoftbox", "AREA")
-    ld.shape = "SQUARE"
-    ld.size = 1.4
+    ld.shape = "DISK"  # the woofer bowls mirror the light: the photo shows one round ~46 mm spot, 14 mm below centre
+    ld.size = float(os.environ.get("NEUTRAL_BOX_SIZE", 0.9))
     ld.energy = float(os.environ["NEUTRAL_TOP"])
     lo = bpy.data.objects.new("NeutralSoftbox", ld)
     scene.collection.objects.link(lo)
-    el = math.radians(22)
+    el = math.radians(float(os.environ.get("NEUTRAL_BOX_EL", 15)))
     lo.location = centre + Vector((0.0, -1.6 * math.cos(el), 1.6 * math.sin(el)))
     lo.rotation_euler = (centre - lo.location).to_track_quat("-Z", "Y").to_euler()
     print("neutral: softbox", ld.energy)
