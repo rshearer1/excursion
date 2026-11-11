@@ -1470,6 +1470,24 @@ _rough.inputs["To Max"].default_value = 0.26
 _fl.new(_noise.outputs["Fac"], _rough.inputs["Value"])
 _fl.new(_rough.outputs["Result"], _fn["Principled BSDF"].inputs["Roughness"])
 assign(floor, floor_mat)
+if not ROOM.get("walls", BASE == "concrete"):
+    # the black void has no walls: the floor used to end in a hard straight line at its far edge,
+    # left and right of the LED wall. Fade it out with distance instead, so it melts into the dark.
+    FLOOR_FADE = (3.0, 6.5)  # metres from the floor's centre: fully there .. fully gone
+    _len = _fn.new("ShaderNodeVectorMath")
+    _len.operation = "LENGTH"
+    _fl.new(_fn.new("ShaderNodeTexCoord").outputs["Object"], _len.inputs[0])
+    _fade = _fn.new("ShaderNodeMapRange")
+    _fade.interpolation_type = "SMOOTHSTEP"
+    _fade.inputs["From Min"].default_value, _fade.inputs["From Max"].default_value = FLOOR_FADE
+    _fade.inputs["To Min"].default_value = 1.0
+    _fade.inputs["To Max"].default_value = 0.0
+    _fl.new(_len.outputs["Value"], _fade.inputs["Value"])
+    _fl.new(_fade.outputs["Result"], _fn["Principled BSDF"].inputs["Alpha"])
+    try:
+        floor_mat.surface_render_method = "DITHERED"  # EEVEE: let the alpha through
+    except (AttributeError, TypeError):
+        pass
 
 # cameras: sorted by name, apply_drive cycles drive.json cuts round-robin over them ---------
 # Both hang off CamRig, an empty at the speaker's centre; apply_drive swings its Z rotation
