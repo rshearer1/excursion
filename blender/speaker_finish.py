@@ -354,6 +354,10 @@ def open_vent(body, x0, x1, z0, z1, d0, d1, front, cavity_mat, name, keep=None, 
         # inset: the bezel's inner ledge (14.5 mm deep, within ~8 mm of the vent edge) stays
         if f.normal.y < -0.9 and x0 + VENT_INSET < c.x < x1 - VENT_INSET and z0 + VENT_INSET < c.z < z1 - VENT_INSET and d0 <= depth <= d1:
             doomed.append(f)
+        elif f.normal.y < -0.9 and x0 < c.x < x1 and z0 < c.z < z1 and d1 - 0.0012 <= depth <= d1:
+            # cell floors inside the inset band too (the ledge the inset protects is 7 mm shallower):
+            # left in, they showed as a pale wedge behind the bottom row of the lower grille
+            doomed.append(f)
     bmesh.ops.delete(bm, geom=doomed, context="FACES")
     # The CAD grille is solid: each cell is a hex plug and the webs are only the gaps between
     # plugs. With the plug tops gone, what is left of each plug is a ring of zero-thickness walls,
