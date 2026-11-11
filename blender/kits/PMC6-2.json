@@ -18,7 +18,8 @@
       "r_cut_mm": 12,
       "depth_mm": 4,
       "plate_depth_mm": 11.1,
-      "back_mm": 10.1
+      "back_mm": 10.1,
+      "skin": "pmc6-2"
     },
     {
       "kind": "woofer",

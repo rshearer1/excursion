@@ -30,6 +30,7 @@ REAL_PARTS = {
     # woofers: the CAD cone edge is at r 53.0 (the 35 % threshold gives 49); "skin" makes
     # build_scene.py re-lathe the measured profile instead of the hand-modelled cap and roll
     ("PMC6-2", "woofer"): {"r_cone_mm": 53.0, "skin": "pmc6-2"},
+    ("PMC6-2", "tweeter"): {"skin": "pmc6-2"},  # build_scene.py re-lathes the surround roll round the dome
 }
 # approximate dome centres (model mm, x right, y up) per model; refined from the geometry
 DOME_HINTS = {

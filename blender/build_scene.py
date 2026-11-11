@@ -1108,6 +1108,55 @@ def build_waveguide(body, cx, cz, front, prefix, r_cut):
 
 
 
+# The PMC6-2 tweeter's surround, from the CAD (mm from the tweeter axis, depth behind the baffle
+# front): the dome skin runs down to r 12.9 (11.25), a groove 12.3 deep, then a rounded roll
+# with its crest at r 14.8 (10.93) and another groove at r 16.3. The product photo shows this
+# zone as two thin bright rings (r ~13.0 and ~15.2): a glint on the dome's edge and one on the
+# roll's crest. The CAD roll is a few coarse facets in the plate's finish, so it rendered as a
+# lumpy grey band; it is re-lathed smooth here in glossy rubber, with a thin satin bead on the
+# dome edge (the bead is from the photo, not the CAD).
+TWEETER_ROLL_MM = [
+    (12.0, 9.95), (12.6, 10.85), (12.7, 10.95), (12.8, 10.82), (12.95, 10.78), (13.05, 10.9), (13.05, 12.28),
+    (13.3, 12.36), (13.4, 12.2), (13.5, 11.97), (13.6, 11.68), (13.8, 11.4), (14.0, 11.24), (14.2, 11.11),
+    (14.4, 11.02), (14.6, 10.95), (14.8, 10.93), (15.0, 10.94), (15.3, 10.99), (15.5, 11.07), (15.7, 11.2),
+    (15.9, 11.35), (16.0, 11.52), (16.15, 11.72), (16.2, 11.93), (16.3, 12.14), (16.3, 12.5),
+]
+TWEETER_BEAD_MM = (12.6, 13.05)  # the profile points between these radii are the bead
+
+
+def add_tweeter_roll(body, cx, cz, front, prefix):
+    """Delete the coarse CAD surround round the tweeter from body and return the smooth lathe
+    (static: the tweeter has no excursion key)."""
+    me = body.data
+    bm = bmesh.new()
+    bm.from_mesh(me)
+    r0, r1 = TWEETER_ROLL_MM[0][0] / 1000, TWEETER_ROLL_MM[-1][0] / 1000
+    doomed = [f for f in bm.faces if r0 + 0.00005 < math.hypot(f.calc_center_median().x - cx, f.calc_center_median().z - cz) < r1 - 0.00002
+              and 0.009 < f.calc_center_median().y - front < 0.0126]
+    bmesh.ops.delete(bm, geom=doomed, context="FACES")
+    bm.to_mesh(me)
+    bm.free()
+    n_t = 192
+    bm = bmesh.new()
+    rings = [[bm.verts.new((cx + r / 1000 * math.cos(2 * math.pi * j / n_t), front + depth / 1000, cz + r / 1000 * math.sin(2 * math.pi * j / n_t))) for j in range(n_t)] for r, depth in TWEETER_ROLL_MM]
+    for (ra, _da), (rb, _db), a, b in zip(TWEETER_ROLL_MM, TWEETER_ROLL_MM[1:], rings, rings[1:]):
+        bead = TWEETER_BEAD_MM[0] <= ra and rb <= TWEETER_BEAD_MM[1] and ra != rb
+        for j in range(n_t):
+            bm.faces.new((a[j], a[(j + 1) % n_t], b[(j + 1) % n_t], b[j])).material_index = 1 if bead else 0
+    bm.normal_update()
+    if sum(f.normal.y * f.calc_area() for f in bm.faces) > 0:
+        bmesh.ops.reverse_faces(bm, faces=bm.faces[:])
+    mark_sharp(bm)
+    mesh = bpy.data.meshes.new(f"{prefix}Tweeter_Roll")
+    bm.to_mesh(mesh)
+    bm.free()
+    obj = new_object(f"{prefix}Tweeter_Roll", mesh)
+    assign(obj, tweeter_roll_mat)
+    assign(obj, mid_ring_mat)  # slot 1: the bead on the dome's edge
+    print(f"tweeter roll: {len(doomed)} CAD faces replaced round the tweeter on {body.name}")
+    return obj
+
+
 def paint_screws(body, model, w, h, front):
     """Give every front screw head its own metal. The screws are part of the CAD body (cabinet
     plastic until now); kits/<model>.screws.json lists them (blender/measure_screws.mjs finds
@@ -1230,6 +1279,7 @@ def build_speaker(model, prefix, location, yaw=0.0, hero=False, scale=(1, 1, 1))
     info = {"front_y": front, "w": w, "h": h, "d": d, "drivers": []}
     mid_centre = mid_r_cut = None
     rim_centres = []
+    tweeter_roll_at = None
     for drv in kit["drivers"]:
         cx = drv["x_mm"] / 1000 - w / 2
         cz = drv["y_mm"] / 1000 - h / 2
@@ -1239,6 +1289,11 @@ def build_speaker(model, prefix, location, yaw=0.0, hero=False, scale=(1, 1, 1))
         piece = cut_piece(body, name, cx, cz, r_cut, front - 0.02, back)
         if drv["kind"] == "tweeter":
             piece.data.materials[0] = tweeter_mat
+            if drv.get("skin") == "pmc6-2":
+                tweeter_roll_at = (cx, cz)
+                # the CAD dome is a few coarse facets (its highlight broke into shards): the same sphere
+                # (radius 15.0 mm, apex 3.9 mm deep), re-lathed smooth
+                add_mid_dome(piece, cx, cz, 0.0119, r_cut, front, 0.0039, 0.00977, y_skin=back - 0.002)
         else:
             amount = EXCURSION if drv["kind"] == "woofer" else MID_EXCURSION
             if drv["kind"] == "woofer" and drv.get("skin") == "pmc6-2":
@@ -1262,6 +1317,8 @@ def build_speaker(model, prefix, location, yaw=0.0, hero=False, scale=(1, 1, 1))
             parts.append(build_waveguide(body, mid_centre[0], mid_centre[1], front, prefix, mid_r_cut))
         else:  # the CAD horn itself is the true shape, only coarser
             print('note: kits/PMC6-2.waveguide.json missing (node blender/measure_waveguide.mjs) - keeping the CAD horn')
+    if tweeter_roll_at is not None:
+        parts.append(add_tweeter_roll(body, tweeter_roll_at[0], tweeter_roll_at[1], front, prefix))
     paint_screws(body, model, w, h, front)
     if rim_centres:
         paint_woofer_rims(body, rim_centres, front)
@@ -1352,6 +1409,7 @@ woofer_rim_mat.node_tree.nodes["Principled BSDF"].inputs["Metallic"].default_val
 vent_grille_mat = make_material("VentGrilleMat", base=(0.035, 0.035, 0.037, 1), rough=0.5)
 trim_mat = make_material("TrimMat", base=(0.78, 0.79, 0.8, 1), rough=0.38)  # brushed aluminium chassis ring (a mirror would only reflect the void)
 trim_mat.node_tree.nodes["Principled BSDF"].inputs["Metallic"].default_value = 1.0
+tweeter_roll_mat = make_material("TweeterRollMat", base=(0.010, 0.010, 0.011, 1), rough=0.3)  # the tweeter's rubber surround: smooth, glossy enough to carry one thin highlight
 mid_ring_mat = make_material("MidRingMat", base=(0.2, 0.2, 0.21, 1), rough=0.45)  # the dome ring: satin grey metal, a thin light line in the photo, not a white one
 mid_ring_mat.node_tree.nodes["Principled BSDF"].inputs["Metallic"].default_value = 1.0
 stand_mat.node_tree.nodes["Principled BSDF"].inputs["Metallic"].default_value = 0.9
@@ -2952,7 +3010,7 @@ def build_pair():
     hero_parts = [
         o for o in list(scene.objects)
         if o.type == "MESH" and o.parent is None and o.location.length < 1e-6
-        and (o.name in ("Cabinet", "Tweeter", "Woofer_L", "Woofer_L_Trim", "Mid", "Woofer_R", "Woofer_R_Trim", "Waveguide", "Badge", "Logo")
+        and (o.name in ("Cabinet", "Tweeter", "Woofer_L", "Woofer_L_Trim", "Mid", "Woofer_R", "Woofer_R_Trim", "Waveguide", "Tweeter_Roll", "Badge", "Logo")
              or o.name.startswith("Vent_"))
     ]
     for o in hero_parts:
