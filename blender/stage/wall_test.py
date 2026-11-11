@@ -201,6 +201,14 @@ if WALL_IMAGE:
     # the image is display-referred: a little gain lifts its whites to LED brightness
     L.new(tex.outputs["Color"], bsdf.inputs["Emission Color"])
     img_strength = mnode("MULTIPLY", mnode("MULTIPLY", mnode("MULTIPLY", emitter, louvre), calib), float(os.environ.get("WALL_IMG_GAIN", 6.0)))
+    # WALL_SPILL: how much harder the screen lights the room and the haze than it shows to the lens.
+    # 1 = physically what the lens sees. The emitters are tiny dots on black, so at 1 the screen
+    # throws almost no light into the haze; a real LED wall visibly glows in mist.
+    spill = float(os.environ.get("WALL_SPILL", 1.0))
+    if spill != 1.0:
+        lp = N.new("ShaderNodeLightPath")
+        img_strength = mnode("MULTIPLY", img_strength, mnode("ADD", spill, mnode("MULTIPLY", lp.outputs["Is Camera Ray"], 1.0 - spill)))
+        log["spill"] = spill
     L.new(img_strength, bsdf.inputs["Emission Strength"])
     log["image"] = {"seq": WALL_IMAGE, "frames": count, "first": first}
 else:
