@@ -845,10 +845,11 @@ WAVEGUIDE_FLANGE = WAVEGUIDE_FLOOR_R  # the flange: the dish floor's outer edge,
 WAVEGUIDE_PETALS = 12  # the PMC6-2 photo shows ~12 soft petals (Robert, 2026-11-11)
 
 
-# Petals (Robert, 2026-11-11, from the photo): long flutes that start wide at the dome and
-# run almost to the rim, narrowing to a point, not short dashes near the rim.
-WAVEGUIDE_FLUTE_DEPTH = 0.007  # metres a flute sinks below the horn surface at its deepest
-WAVEGUIDE_FLUTE_TIP = 0.35  # flute width at the rim as a fraction of its width at the dome (soft, rounded ends)
+# Petals (Robert, 2026-11-11, from the photo): 12 dark sunken lobes, narrow where they leave
+# the dome and widening outward to a rounded end short of the rim (a flower, not a star).
+WAVEGUIDE_FLUTE_DEPTH = 0.007  # metres a petal sinks below the horn surface at its deepest
+WAVEGUIDE_FLUTE_ROOT = 0.30  # petal width at the dome as a fraction of its widest
+WAVEGUIDE_FLUTE_END = 0.88  # where the rounded end of a petal reaches (0 dome .. 1 rim)
 
 
 def _wg_depth(r, theta):
@@ -856,13 +857,16 @@ def _wg_depth(r, theta):
     u = min(1.0, max(0.0, (WAVEGUIDE_R_OUT - r) / span))  # 1 at the dome, 0 at the rim
     horn = WAVEGUIDE_PLATE + 0.015 * u ** 2.2  # the smooth flare
     t = 1.0 - u  # 0 at the dome, 1 at the rim
-    # depth along the flute: a quick start off the dome lip, deepest near the dome, fading to 0 at the rim
+    # depth along the petal: a quick start off the dome lip, full depth through the middle,
+    # then a rounded end that closes at WAVEGUIDE_FLUTE_END
     ramp = min(1.0, t / 0.08)
-    amp = WAVEGUIDE_FLUTE_DEPTH * ramp * ramp * (3 - 2 * ramp) * (1.0 - t) ** 0.8
-    # angular distance from the flute centre: 0 on the centre line, 1 halfway to the next flute
+    e = max(0.0, min(1.0, (WAVEGUIDE_FLUTE_END - t) / 0.3))
+    amp = WAVEGUIDE_FLUTE_DEPTH * ramp * ramp * (3 - 2 * ramp) * math.sqrt(e * (2 - e))
+    # angular distance from the petal centre: 0 on the centre line, 1 halfway to the next petal
     period = 2 * math.pi / WAVEGUIDE_PETALS
     d = abs(((theta + period / 2) % period) - period / 2) / (period / 2)
-    width = 0.95 - (0.95 - WAVEGUIDE_FLUTE_TIP) * t  # wide at the dome, a point at the rim
+    grow = min(1.0, t / 0.6)
+    width = 0.9 * (WAVEGUIDE_FLUTE_ROOT + (1 - WAVEGUIDE_FLUTE_ROOT) * grow * (2 - grow))  # narrow at the dome, widest further out
     p = max(0.0, 1.0 - d / width)
     p = p * p * (3 - 2 * p)  # rounded edges
     return horn + amp * p
