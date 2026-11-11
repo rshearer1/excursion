@@ -2,7 +2,7 @@
 # LT_NOSHAKE=1 when V4_SHAKE=1) and wall_test.py; before wave_test.py (which renders).
 # Blender must run with -y (Camera Shakify's drivers are Python expressions).
 #   V4_SHAKE=1  Camera Shakify captured handheld on every shot camera (replaces the Perlin noise)
-#   V4_LENS=1   OSL physical lens camera (out/look-test/lens.osl) on every DOF camera
+#   V4_LENS=1   OSL physical lens camera (blender/stage/lens.osl) on every DOF camera
 #   V4_FILM=1   film finishing in VoidComp: veiling glare + lens dirt, halation, per-channel
 #               shadow-weighted grain (re-seeded per frame), gate weave + exposure flicker
 # Nothing is saved; speaker materials are untouched.

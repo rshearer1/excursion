@@ -1,5 +1,5 @@
 # Look test overrides, run as a second -P after blender/apply_drive.py (no --render):
-#   blender -b blender/scenes/void.blend -P blender/apply_drive.py -P out/look-test/look_test.py -- <drive.json> --engine cycles --samples 48
+#   blender -b blender/scenes/void.blend -P blender/apply_drive.py -P blender/stage/look_test.py -- <drive.json> --engine cycles --samples 48
 # Env:
 #   LT_NAME     output prefix
 #   LT_FIX=1    apply items 1 (real f-stops), 3 (gel rolloff), 4 (1/f handheld)
