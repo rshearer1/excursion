@@ -81,11 +81,19 @@ export function lookEnv({ out, name, meters, half = false, render }) {
   return env;
 }
 
+/** The texture check's verdict from a render log: { ok, line }. ok is false when the line is absent too. */
+export function textureReport(logText) {
+  const m = /^textures: (OK|MISSING)(.*)$/m.exec(logText);
+  if (!m) return { ok: false, line: "textures: not checked (check_textures.py did not run)" };
+  return { ok: m[1] === "OK", line: m[0].trim() };
+}
+
 /** The -P script list after apply_drive.py (meterCam: the wide meter test shot). */
 export function lookScripts({ meterCam = false, debugLights = false } = {}) {
   const chain = ["-P", S("look_test.py"), "-P", S("wall_test.py"), "-P", S("photo_test.py")];
   if (meterCam) chain.push("-P", S("meter_cam.py"));
   if (debugLights) chain.push("-P", S("debug_lights.py"));
+  chain.push("-P", S("check_textures.py"));  // prints "textures: OK ..." or "textures: MISSING ..." (see textureReport)
   chain.push("-P", S("wave_test.py"));
   return chain;
 }

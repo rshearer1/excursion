@@ -16,7 +16,7 @@ import { spawnSync, execSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { lookEnv, lookScripts, metersFor, GRADE_VF } from "./look.mjs";
+import { lookEnv, lookScripts, metersFor, textureReport, GRADE_VF } from "./look.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(HERE, "..", "..");
@@ -101,7 +101,10 @@ console.log(`rendering ${clip ? "clip " + clip : "frames " + frames} at ${sample
 const r = spawnSync(BLENDER, chain, { cwd: ROOT, env, stdio: ["ignore", log, log] });
 fs.closeSync(log);
 const text = fs.readFileSync(logPath, "utf8");
-if (/Failed to load image|missing texture/i.test(text)) console.warn("WARNING: missing textures in the log (magenta risk)");
+// the scene's own texture check (check_textures.py); the log alone cannot prove textures loaded
+const textures = textureReport(text);
+if (!textures.ok || /Failed to load image/i.test(text)) console.warn(`WARNING: ${textures.line}${/Failed to load image/i.test(text) ? " (and 'Failed to load image' in the log)" : ""}`);
+else console.log(textures.line);
 if (r.status !== 0) {
   console.error(`render failed, see ${logPath}`);
   process.exit(1);
@@ -123,5 +126,5 @@ if (!flag("--no-grade")) {
     }
   }
 }
-fs.writeFileSync(path.join(outDir, "source.txt"), `commit ${commit}\nbranch claude/project-thread-11phqh (current best)\n`);
+fs.writeFileSync(path.join(outDir, "source.txt"), `commit ${commit}\nbranch claude/project-thread-11phqh (current best)\n${textures.line}\n`);
 console.log(`done: ${outDir}`);
