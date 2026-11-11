@@ -20,7 +20,7 @@
 import bpy
 
 # the honeycomb plate: strong edges and cavity (the pattern should read from the wide shot)
-PLATE = {"edge_radius": 0.0015, "edge_gain": 16.0, "edge_lift": 10.0, "edge_gloss": 0.9, "cavity_dist": 0.008, "cavity_dark": 0.9}
+PLATE = {"edge_radius": 0.0015, "edge_gain": 6.0, "edge_lift": 2.0, "edge_gloss": 0.4, "cavity_dist": 0.008, "cavity_dark": 0.9}  # 2026-11-11: the strong edge glow made the engraved hex lines look embossed
 # the cabinet and the waveguide: the same, gentler (screws, vents, trim gaps)
 CABINET = {"edge_radius": 0.0012, "edge_gain": 10.0, "edge_lift": 4.0, "edge_gloss": 0.6, "cavity_dist": 0.004, "cavity_dark": 0.6}
 # the woofer/mid pieces share the cabinet node set; a light cavity only, the cones stay smooth
@@ -116,15 +116,18 @@ def finish(material, edge_radius, edge_gain, edge_lift, edge_gloss, cavity_dist,
     return material
 
 
+# CAD truth (measured 2026-11-11): the plate face is flat at 6.47 mm and the honeycomb is its
+# OUTLINES only: engraved lines 0.8 mm wide and 0.25 mm deep (6.72 mm), as is the "6-2" under
+# the badge. The cells are not sunk. The product photo shows them as thin dark lines.
 # The CAD honeycomb on the hero plate is only 0.25 mm deep: the plate face sits 3.10 mm behind
 # the baffle and the cell floors 3.35 mm (measured from the STL). Too shallow to catch light, so
 # the shader exaggerates it: anything below the plate face is a cell floor, darker and rougher,
 # and the step between them becomes a strong bump, so every cell wall draws a crisp line.
 PLATE_FACE_Y = -0.17748  # object-space y of the plate face on the hero cabinet
 PLATE_CAD_CELL_Y = -0.17723  # object-space y of the cell floors as the CAD has them
-HEX_DEEPEN = 0.0009  # build_scene pushes the cell floors this much deeper (real depth, real shadows)
+HEX_DEEPEN = 0.0012  # build_scene pushes the engraved line floors this much deeper (real depth, real shadows)
 PLATE_CELL_Y = PLATE_CAD_CELL_Y + HEX_DEEPEN  # object-space y of the cell floors after that
-RELIEF = {"floor_dark": 0.45, "floor_rough": 0.75, "face_rough": 0.32, "bump": 0.6, "bump_dist": 0.0012}
+RELIEF = {"floor_dark": 0.12, "floor_rough": 0.75, "face_rough": 0.32, "bump": 0.6, "bump_dist": 0.0012}
 
 
 def exaggerate_relief(material, face_y=PLATE_FACE_Y, cell_y=PLATE_CELL_Y, floor_dark=0.45, floor_rough=0.75, face_rough=0.32, bump=0.6, bump_dist=0.0012):

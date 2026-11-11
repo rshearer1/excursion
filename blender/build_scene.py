@@ -898,9 +898,11 @@ def plate_material(name, cell_mm=6.0):
     if not HEX_BUMP:
         m.node_tree.nodes["Principled BSDF"].inputs["Metallic"].default_value = 0.12  # anodised, not chrome
         speaker_finish.finish(m, **speaker_finish.PLATE)
-        speaker_finish.exaggerate_relief(m, **speaker_finish.RELIEF)
         speaker_wear.surface(m, **speaker_wear.PLATE_SURFACE)
-        return speaker_wear.wear(m, **speaker_wear.WEAR)
+        speaker_wear.wear(m, **speaker_wear.WEAR)
+        # last, so the engraved lines stay dark: wear's pale cavity dust used to fill them and they read as light ridges
+        speaker_finish.exaggerate_relief(m, **speaker_finish.RELIEF)
+        return m
     nt = m.node_tree
     N, L = nt.nodes, nt.links
     bsdf = N["Principled BSDF"]
@@ -1164,7 +1166,8 @@ def build_speaker(model, prefix, location, yaw=0.0, hero=False, scale=(1, 1, 1))
         # read as embedded, as on the real panel; the walls stretch with them.
         moved = 0
         for v in me.vertices:
-            if x0 < v.co.x < x1 and (v.co.z > PLATE_HEX_TOP or v.co.z < PLATE_HEX_BOTTOM) and abs(v.co.y - speaker_finish.PLATE_CAD_CELL_Y) < 0.00005:
+            # every engraved line on the plate: the whole honeycomb and the "6-2" (the old z limits left the fields half deepened)
+            if x0 < v.co.x < x1 and abs(v.co.y - speaker_finish.PLATE_CAD_CELL_Y) < 0.00005:
                 v.co.y += HEX_DEEPEN
                 moved += 1
         print(f"plate: {moved} honeycomb floor vertices pushed {HEX_DEEPEN * 1000:.1f} mm deeper")
