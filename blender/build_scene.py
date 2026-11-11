@@ -67,7 +67,7 @@ SHARP_ANGLE = math.radians(30)
 CABINET_ALBEDO = 0.22  # multiplier on the texture's colour map
 CABINET_ROUGHNESS = (0.42, 0.68)  # the roughness map is remapped into this range (PMC's finish is a flat textured black)
 CABINET_BUMP = 0.22  # displacement-map bump strength on top of the normal map (a fine textured paint, not leather)
-SETTLED_DUST = 0.12  # how much dust has settled on the cabinet's up-facing surfaces (0 = none)
+SETTLED_DUST = 0.03  # how much dust has settled on the cabinet's up-facing surfaces (0 = none; 0.12 turned the top into a pale lilac slab under the back light)
 SMUDGE = 0.08  # roughness variation from handling: 0 = perfectly uniform (the biggest CGI tell)
 # LOOK: "moody" = the single-speaker-in-the-void grade — warm key, dark red rims, almost no
 # fill, big soft dust bokeh, crushed blacks, heavy vignette; show fixtures dimmed to sit inside

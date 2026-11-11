@@ -21,7 +21,7 @@ FSTOPS = {"Cam1_Wide": 5.6, "Cam2_Woofers": 2.8, "Cam3_Macro": 5.6, "Cam6_Side":
 # item 3: highlight rolloff on coloured light. Real gels and LEDs never reach a pure primary;
 # pull every light colour (static and keyed) part way toward white, and cap the top light.
 GEL_DESAT = 0.35   # fraction of saturation removed
-TOPBACK_GAIN = 0.7  # the light that clipped the cabinet top to flat magenta
+TOPBACK_GAIN = float(os.environ.get("LT_TOPBACK", 0.3))  # the light that floods the cabinet top (0.7 still left it a pale lilac slab in the top camera, 2026-11-11)
 
 # item 4: 1/f handheld on top of apply_drive's (tiny, sine) wobble
 SHAKE_LOC = 0.004   # metres
@@ -68,6 +68,18 @@ if os.environ.get("LT_FIX") == "1":
                     fc.update()
                 n_keyed += 1
         if light.name == "TopBack":
+            # LT_TOPBACK_GRAZE=<metres above the cabinet top>: lower the light so it skims the top face
+            # (edge sheen) instead of flooding it; at its built height it hits the top at ~45 degrees
+            # and the whole top reads as a flat lilac slab
+            if os.environ.get("LT_TOPBACK_GRAZE"):
+                from mathutils import Vector
+                cab = bpy.data.objects.get("Cabinet")
+                if cab is not None:
+                    top = max((cab.matrix_world @ Vector(c)).z for c in cab.bound_box)
+                    light.location.z = top + float(os.environ["LT_TOPBACK_GRAZE"])
+                    aim = Vector((light.location.x - 0.1, -0.12, top - 0.1))
+                    light.rotation_euler = (aim - light.location).to_track_quat("-Z", "Y").to_euler()
+                    log["topback_graze"] = round(light.location.z, 3)
             if ad and ad.action:
                 pass
             d.energy *= TOPBACK_GAIN
