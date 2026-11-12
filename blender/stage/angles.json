@@ -1,5 +1,5 @@
 {
-  "_about": "Camera angles for the twin-speaker screen room (void-pair): a wide, a close-up and a medium, so the three read as different shots. Framed with frame_check.py so the cones sit on the thirds lines (Robert, 2026-11-12); focus is pulled onto the speaker so it pops. multicam.mjs renders them side by side, in this order. 'cones' approved by Robert as perfect. Check the picture too, not only the numbers. Phone rule (Robert, 2026-11-12): keep framing top heavy; the cones belong in the middle row of the thirds grid, never the bottom row (phone UI covers the bottom).",
+  "_about": "Camera angles for the twin-speaker screen room (void-pair): a wide, a close-up and a medium, so the three read as different shots. Framed with frame_check.py so the cones sit on the thirds lines (Robert, 2026-11-12); focus is pulled onto the speaker so it pops. multicam.mjs renders them side by side, in this order. 'cones' approved by Robert as perfect. Check the picture too, not only the numbers. Phone rule (Robert, 2026-11-12): keep framing top heavy; the cones belong in the middle row of the thirds grid, never the bottom row (phone UI covers the bottom). Each angle may carry an env block of look trims for that shot only.",
   "angles": [
     {
       "name": "wide",
@@ -9,7 +9,15 @@
       "MC_LENS": "32",
       "MC_SHIFT": "0.0,0.0",
       "MC_FOCUS": "1.4,-0.17,0",
-      "MC_FSTOP": "2"
+      "MC_FSTOP": "2",
+      "env": {
+        "SUBJECT_AT": "1.42,-0.17,0.0",
+        "EDGE_LIGHT": "60",
+        "EDGE_AT": "2.3,0.6,0.5",
+        "CONE_LIGHT": "50",
+        "CONE_AT": "2.15,-1.0,0.75",
+        "WALL_IMG_GAIN": "5"
+      }
     },
     {
       "name": "cones",
@@ -27,7 +35,13 @@
       "MC_LENS": "40",
       "MC_SHIFT": "-0.07,-0.14",
       "MC_FOCUS": "-0.08,-0.17,0",
-      "MC_FSTOP": "2.8"
+      "MC_FSTOP": "2.8",
+      "env": {
+        "EDGE_LIGHT": "60",
+        "EDGE_AT": "-0.9,0.6,0.5",
+        "CONE_LIGHT": "50",
+        "WALL_IMG_GAIN": "5"
+      }
     }
   ]
 }

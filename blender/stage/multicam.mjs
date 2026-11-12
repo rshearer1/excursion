@@ -37,6 +37,7 @@ for (const a of angles) {
     if (a[k] !== undefined) env[k] = String(a[k]);
     else delete env[k];
   }
+  Object.assign(env, a.env || {});  // per-angle look trims (edge light, cone light, screen level ...)
   console.log(`angle ${a.name} ...`);
   const r = spawnSync("node", [path.join(HERE, "test_still.mjs"), ...(clip ? ["--clip", clip] : ["--frames", frames]),
     "--blend", "blender/scenes/void-pair.blend", "--name", part, ...pass], { cwd: ROOT, env, stdio: "inherit" });
