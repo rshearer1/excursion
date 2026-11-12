@@ -213,4 +213,21 @@ if _amb > 0:
         if _wallc is not None:
             _rc.children.link(_wallc)
         _o.light_linking.receiver_collection = _rc
+    # AMBIENT_PULSE=<k>: the soft light swells with the bass (fast up, slow down, so it breathes
+    # rather than flickers): energy = watts * (1 - k/2 + k * envelope). 0 = steady.
+    _k = float(os.environ.get("AMBIENT_PULSE", 0))
+    if _k > 0:
+        import sys as _sys
+        _drive = json.load(open(_sys.argv[_sys.argv.index("--") + 1], encoding="utf-8"))
+        _fr = _drive["frames"]
+        _sc = bpy.context.scene
+        _env = 0.0
+        _lo = max(0, _sc.frame_start - 48)  # run in, so the envelope is settled at the first frame
+        for _f in range(_lo, _sc.frame_end + 1):
+            _b = _fr[min(_f, len(_fr) - 1)].get("bass", 0.0)
+            _env = _b if _b > _env else _env * 0.86 + _b * 0.14
+            if _f >= _sc.frame_start:
+                _d.energy = _amb * (1.0 - _k / 2 + _k * min(_env, 1.0))
+                _d.keyframe_insert("energy", frame=_f)
+        print("air: ambient pulse %g" % _k)
     print("air: ambient front %g W; off: %s" % (_amb, ", ".join(off)))
