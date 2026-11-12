@@ -234,3 +234,17 @@ if _amb > 0:
                 _d.keyframe_insert("energy", frame=_f)
         print("air: ambient pulse %g" % _k)
     print("air: ambient front %g W; off: %s" % (_amb, ", ".join(off)))
+
+# WORLD_GAIN=<k>: multiplier on the world's light (the void world carries a faint studio image
+# for reflections; its bright lamp mirrors in the glossy floor as a white blob from side angles).
+_world_skip = os.environ.get("WORLD_AUTO") == "1" and os.path.splitext(os.path.basename(bpy.data.filepath))[0] not in ("void", "void-pair")
+if os.environ.get("WORLD_GAIN") is not None and not _world_skip:
+    k = float(os.environ["WORLD_GAIN"])
+    w = bpy.context.scene.world
+    n = 0
+    if w is not None and w.node_tree is not None:
+        for node in w.node_tree.nodes:
+            if node.type == "BACKGROUND" and not node.inputs["Strength"].is_linked:
+                node.inputs["Strength"].default_value *= k
+                n += 1
+    print("air: world x%g on %d background nodes" % (k, n))
