@@ -176,3 +176,38 @@ if os.environ.get("SOFT_FRONT") == "1":
                 o.data.spot_blend = max(o.data.spot_blend, 0.8)
             done.append(name)
     print("air: soft front lights", done)
+
+# AMBIENT_FRONT=<watts>: no spotlights on the speakers at all (Robert, 2026-11-12). KeyLight,
+# Graze, their twins and the WallWash spot are switched off, and one big soft panel in front
+# and above passively lights the speaker faces and the screen. It draws nothing in the haze.
+_amb = float(os.environ.get("AMBIENT_FRONT", 0))
+if _amb > 0:
+    from mathutils import Vector as _V
+    off = []
+    for o in bpy.context.scene.objects:
+        if o.type == "LIGHT" and (o.name.endswith(("KeyLight", "Graze")) or o.name == "WallWash"):
+            o.hide_render = True
+            off.append(o.name)
+    _scope = bpy.data.objects.get("Scope")
+    _cx = _scope.location.x if _scope is not None else 0.0
+    _d = bpy.data.lights.new("AmbientFront", "AREA")
+    _d.shape = "RECTANGLE"
+    _d.size, _d.size_y = 3.0, 2.0
+    _d.energy = _amb
+    _d.color = tuple(float(v) for v in os.environ.get("AMBIENT_COLOR", "1.0,0.93,0.88").split(","))
+    _d.volume_factor = 0.0
+    _o = bpy.data.objects.new("AmbientFront", _d)
+    bpy.context.scene.collection.objects.link(_o)
+    _o.location = _V((_cx, -3.0, 1.3))
+    _o.rotation_euler = (_V((_cx, 0.2, 0.0)) - _o.location).to_track_quat("-Z", "Y").to_euler()
+    # keep it off the dust (front-lit motes turn into a snowstorm): light only what the old front
+    # lights lit (LitCol) plus the LED wall
+    _lit = bpy.data.collections.get("LitCol")
+    _wallc = bpy.data.collections.get("LEDWall")
+    if _lit is not None and hasattr(_o, "light_linking"):
+        _rc = bpy.data.collections.new("AmbientCol")
+        _rc.children.link(_lit)
+        if _wallc is not None:
+            _rc.children.link(_wallc)
+        _o.light_linking.receiver_collection = _rc
+    print("air: ambient front %g W; off: %s" % (_amb, ", ".join(off)))
