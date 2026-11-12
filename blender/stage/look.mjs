@@ -119,7 +119,7 @@ export function lookEnv({ out, name, meters, half = false, render }) {
   // The adjustable part of the look comes from controls.json at the repo root (Robert's easy
   // controls); a bad or missing value falls back to the saved look, and an environment variable
   // of the same name still wins (that is how tests override one thing).
-  for (const k of ["WT_B", "WT_SMOKE_GAIN", "WT_RIP_W", "WT_DUST_PUSH", "V4_LENS", "V4_FILM", "V4_SHAKE"]) if (process.env[k]) env[k] = process.env[k];  // tests may override the air ripple
+  for (const k of ["WT_B", "WT_SMOKE_GAIN", "WT_RIP_W", "WT_DUST_PUSH", "V4_LENS", "V4_FILM", "V4_SHAKE", "WALL_IMG_GAIN"]) if (process.env[k]) env[k] = process.env[k];  // tests may override the air ripple
   const c = readControls();
   const put = (k, v) => { if (!process.env[k]) env[k] = String(v); };
   put("AIR_HAZE", c.mist);            // hazer-style even haze (10 veiled the speaker)

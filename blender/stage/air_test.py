@@ -264,3 +264,41 @@ if os.environ.get("RIM_NO_FLOOR") == "1" and not _rim_skip:
                 o.light_linking.receiver_collection = col
                 done.append(o.name)
     print("air: rim lights skip the floor:", done)
+
+# Subject-separation tests (2026-11-12): in wider shots the speaker was a dark box in a dark room
+# and the eye went to the screen. Both lights are big soft panels, draw nothing in the haze and
+# skip the dust; off unless set.
+#   EDGE_LIGHT=<watts>  coloured rim from behind and to one side, so the cabinet edges separate
+#     EDGE_AT="x,y,z" (default behind-right of the left speaker), EDGE_COLOR="r,g,b"
+#   CONE_LIGHT=<watts>  gentle glancing light across the baffle so the cones catch highlights
+#     CONE_AT="x,y,z" (default high front-left), CONE_COLOR="r,g,b"
+#   both aim at SUBJECT_AT="x,y,z" (default the left speaker's baffle)
+def _soft_panel(name, watts, at, aim, color, size):
+    from mathutils import Vector
+    d = bpy.data.lights.new(name, "AREA")
+    d.shape = "DISK"
+    d.size = size
+    d.energy = watts
+    d.color = color
+    d.volume_factor = 0.0
+    o = bpy.data.objects.new(name, d)
+    bpy.context.scene.collection.objects.link(o)
+    o.location = Vector(at)
+    o.rotation_euler = (Vector(aim) - o.location).to_track_quat("-Z", "Y").to_euler()
+    lit = bpy.data.collections.get("MainCol")  # solid things only: lighting the smoke too (LitCol) turned the whole frame milky
+    if lit is not None and hasattr(o, "light_linking"):
+        o.light_linking.receiver_collection = lit
+    return o
+
+
+def _v3(name, default):
+    return tuple(float(v) for v in os.environ.get(name, default).split(","))
+
+
+_subject = _v3("SUBJECT_AT", "-0.02,-0.17,0.0")
+if float(os.environ.get("EDGE_LIGHT", 0)) > 0:
+    _soft_panel("EdgeLight", float(os.environ["EDGE_LIGHT"]), _v3("EDGE_AT", "0.85,0.75,0.55"), _subject, _v3("EDGE_COLOR", "1.0,0.35,0.75"), 0.6)
+    print("air: edge light %s W" % os.environ["EDGE_LIGHT"])
+if float(os.environ.get("CONE_LIGHT", 0)) > 0:
+    _soft_panel("ConeLight", float(os.environ["CONE_LIGHT"]), _v3("CONE_AT", "-0.75,-0.95,0.75"), _subject, _v3("CONE_COLOR", "1.0,0.9,0.85"), 0.7)
+    print("air: cone light %s W" % os.environ["CONE_LIGHT"])
