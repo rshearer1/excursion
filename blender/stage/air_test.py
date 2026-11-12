@@ -121,6 +121,29 @@ if n > 0:
             data.animation_data_create()
             data.animation_data.action = ref.data.animation_data.action  # colour and level follow the back light's cues
             data.energy = watts
+    # BEAM_MOVE=1: the beams sweep in time with the track (one sweep every 2 bars, neighbours
+    # mirrored) and pulse with the bass. Keyed on every frame of the scene range.
+    if os.environ.get("BEAM_MOVE") == "1":
+        import sys
+        drive = json.load(open(sys.argv[sys.argv.index("--") + 1], encoding="utf-8"))
+        fps = drive["fps"]
+        bar_s = 60.0 / drive["grid"]["bpm"] * drive["grid"].get("beatsPerBar", 4)
+        frames = drive["frames"]
+        swing = float(os.environ.get("BEAM_SWING", 1.3))
+        for j in range(n):
+            ob = bpy.data.objects[f"TestBeam_{j}"]
+            ob.data.animation_data_clear()
+            t = (j / (n - 1) - 0.5) if n > 1 else 0.0
+            side = 1.0 if j % 2 == 0 else -1.0
+            for f in range(scene.frame_start, scene.frame_end + 1):
+                ph = 2 * math.pi * (f / fps) / (bar_s * 2) + j * 0.5
+                aim = Vector((cx + t * 4.5 + side * math.sin(ph) * swing, -2.6, aim_z + math.cos(ph * 2) * 0.35))
+                ob.rotation_euler = (aim - ob.location).to_track_quat("-Z", "Y").to_euler()
+                ob.keyframe_insert("rotation_euler", frame=f)
+                bass = frames[min(f, len(frames) - 1)].get("bass", 0.0)
+                ob.data.energy = watts * (0.45 + 0.9 * bass)
+                ob.data.keyframe_insert("energy", frame=f)
+        print("air: beams move, %d frames keyed" % (scene.frame_end - scene.frame_start + 1))
     print("air: beam rig %d beams, %g W, %g deg" % (n, watts, cone))
 
 # AIR_VEIL: multiplier on how much the lights aimed AT the speaker (Graze, KeyLight) light the
