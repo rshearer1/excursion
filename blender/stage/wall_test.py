@@ -65,7 +65,7 @@ def plain(name, color, rough, metal=0.0):
 
 
 cab_mat = plain("LEDCabinetMat", (0.012, 0.012, 0.013), 0.55)  # powder-coated die-cast aluminium
-truss_mat = plain("LEDTrussMat", (0.55, 0.56, 0.58), 0.32, 1.0)  # bare aluminium truss
+truss_mat = plain("LEDTrussMat", (0.55, 0.56, 0.58), float(os.environ.get("WALL_TRUSS_ROUGH", 0.6)), 1.0)  # bare aluminium truss, scuffed: at 0.32 the base plates mirrored the pixel grid as grainy speckle
 
 # ---- the face material: pixel grid on black, content quantised to the grid
 m = bpy.data.materials.new("LEDFaceMat")
@@ -287,3 +287,12 @@ if _wash > 0:
     _o.location = _src
     _o.rotation_euler = (_aim - _src).to_track_quat("-Z", "Y").to_euler()
     print("wall: wash %g W from %s" % (_wash, tuple(round(v, 2) for v in _src)))
+
+# The speaker stands are dark polished metal (rough 0.35): with the wall up, their base plates
+# mirror its pixel grid as coloured grain. A little more roughness blurs that away.
+_sm = bpy.data.materials.get("StandMat")
+if _sm is not None and _sm.node_tree is not None:
+    _sb = _sm.node_tree.nodes.get("Principled BSDF")
+    if _sb is not None and not _sb.inputs["Roughness"].is_linked:
+        _sb.inputs["Roughness"].default_value = max(_sb.inputs["Roughness"].default_value, float(os.environ.get("WALL_STAND_ROUGH", 0.6)))
+        print("wall: stand roughness", _sb.inputs["Roughness"].default_value)
