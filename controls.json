@@ -1,0 +1,19 @@
+{
+  "_how_to": "Change a value, save, then double-click 'Test picture.bat'. A wrong value is ignored and the saved look is used. front_light is the one soft light on the speakers (0 to 600; 150 is the saved look). Colours: purple, red, blue, green, white, amber, pink, cyan.",
+  "mist": 4,
+  "front_light": 150,
+  "screen": {
+    "glow": 8,
+    "catches_light": 0.05
+  },
+  "beams": {
+    "on": true,
+    "moving": true,
+    "count": 6,
+    "brightness": 700,
+    "colours": [
+      "purple",
+      "red"
+    ]
+  }
+}

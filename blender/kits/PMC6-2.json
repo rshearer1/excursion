@@ -18,40 +18,44 @@
       "r_cut_mm": 12,
       "depth_mm": 4,
       "plate_depth_mm": 11.1,
-      "back_mm": 10.1
+      "back_mm": 10.1,
+      "skin": "pmc6-2"
     },
     {
       "kind": "woofer",
-      "x_mm": 107.6,
-      "y_mm": 292.5,
-      "r_cone_mm": 49,
+      "x_mm": 107.51,
+      "y_mm": 292.51,
+      "r_cone_mm": 53,
       "r_surround_mm": 70,
       "r_cut_mm": 78,
       "depth_mm": 15.9,
       "plate_depth_mm": 4,
-      "back_mm": 19.9
+      "back_mm": 19.9,
+      "skin": "pmc6-2"
     },
     {
       "kind": "mid",
       "x_mm": 260,
       "y_mm": 200,
-      "r_cone_mm": 16,
-      "r_surround_mm": 26,
-      "r_cut_mm": 27,
+      "r_cone_mm": 27.5,
+      "r_surround_mm": 28.8,
+      "r_cut_mm": 29,
       "depth_mm": 9.6,
       "plate_depth_mm": 21.5,
-      "back_mm": 21.5
+      "back_mm": 21.5,
+      "dome_r_mm": 27.5
     },
     {
       "kind": "woofer",
-      "x_mm": 107.6,
-      "y_mm": 107.6,
-      "r_cone_mm": 49,
+      "x_mm": 107.51,
+      "y_mm": 107.51,
+      "r_cone_mm": 53,
       "r_surround_mm": 70,
       "r_cut_mm": 78,
       "depth_mm": 15.9,
       "plate_depth_mm": 4,
-      "back_mm": 19.9
+      "back_mm": 19.9,
+      "skin": "pmc6-2"
     }
   ],
   "vents": [
@@ -62,9 +66,13 @@
       "y1_mm": 380,
       "floor_mm": [
         11,
-        12.6
+        22
       ],
-      "note": "honeycomb grille cell floors; removed by build_speaker so the grille is open"
+      "note": "CAD: closed cell floors 21.5 mm deep with a 2 mm wide honeycomb web standing 3 mm proud (top face 18.5 mm). build_speaker deletes the cell floors (11-22 mm) but keeps the web tops (keep_mm) and its side walls, so the grille is an open honeycomb of solid bars",
+      "keep_mm": [
+        18,
+        19
+      ]
     }
   ]
 }

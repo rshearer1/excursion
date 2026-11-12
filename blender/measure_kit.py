@@ -22,6 +22,16 @@ from mathutils import Vector
 HERE = os.path.dirname(os.path.abspath(__file__))
 OUT = os.path.join(HERE, "kits")
 STEP = 2.0  # mm per depth-map cell
+# Where the real part differs from the CAD. PMC6-2 mid: the CAD dome is a 48 mm cap on a bare
+# floor; the real driver is a 55 mm soft dome (PMC spec, product photo) with a narrow surround,
+# so build_scene.py rebuilds the dome skin (dome_r_mm) and cuts the piece at 29 mm.
+REAL_PARTS = {
+    ("PMC6-2", "mid"): {"r_cone_mm": 27.5, "r_surround_mm": 28.8, "r_cut_mm": 29.0, "dome_r_mm": 27.5},
+    # woofers: the CAD cone edge is at r 53.0 (the 35 % threshold gives 49); "skin" makes
+    # build_scene.py re-lathe the measured profile instead of the hand-modelled cap and roll
+    ("PMC6-2", "woofer"): {"r_cone_mm": 53.0, "skin": "pmc6-2"},
+    ("PMC6-2", "tweeter"): {"skin": "pmc6-2"},  # build_scene.py re-lathes the surround roll round the dome
+}
 # approximate dome centres (model mm, x right, y up) per model; refined from the geometry
 DOME_HINTS = {
     "PMC6-2": [(257, 201), (260, 314)],
@@ -226,6 +236,8 @@ def measure(path):
 
     drivers.sort(key=lambda d: (-d["y_mm"], d["x_mm"]))
     name = os.path.splitext(os.path.basename(path))[0]
+    for d in drivers:  # real-part facts the CAD does not carry
+        d.update(REAL_PARTS.get((name, d["kind"]), {}))
     kit = {
         "model": name,
         "stl": os.path.relpath(path, os.path.dirname(HERE)).replace("\\", "/"),

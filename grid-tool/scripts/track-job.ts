@@ -4,6 +4,7 @@
 //                        [--cuts bars] [--mood smoke|neon|clean] [--name slug]
 //                        [--drop s[,s]] [--break s[,s]] [--auto seconds] [--hits]
 //                        [--template name] [--scene room] [--rig name]
+//                        [--fps n]   (default 30)
 //
 // --auto 20 picks the reel window for you: it finds the first drop (where the bass level
 // first climbs to 70 % of the track's peak), starts a bar before it on a downbeat, runs for
@@ -183,7 +184,7 @@ function detectGrid(mono: Float32Array, sampleRate: number): Grid & { confidence
 }
 
 // ---------- main ----------
-const FPS = 30;
+const FPS = num("--fps") ?? 30; // --fps 24 for the film look (the locked look renders at the drive fps)
 const wavPath = path.resolve(input);
 const bytes = readFileSync(wavPath);
 const { mono, sampleRate } = decodeWav(bytes);

@@ -1,0 +1,287 @@
+{
+ "model": "PMC6-2",
+ "source": "assets/cache/pmc/PMC6-2.stl",
+ "note": "front screws found by their hex sockets: centre (model mm, x right, y up), head face depth behind the baffle front, socket depth",
+ "screws": [
+  {
+   "x_mm": 376,
+   "y_mm": 381.47,
+   "head_mm": 11.31,
+   "socket_mm": 1.47,
+   "head_r_mm": 3.5
+  },
+  {
+   "x_mm": 65.1,
+   "y_mm": 365.9,
+   "head_mm": 3.37,
+   "socket_mm": 2.87,
+   "head_r_mm": 3.5
+  },
+  {
+   "x_mm": 149.9,
+   "y_mm": 365.9,
+   "head_mm": 3.37,
+   "socket_mm": 2.88,
+   "head_r_mm": 3.5
+  },
+  {
+   "x_mm": 218.03,
+   "y_mm": 362.57,
+   "head_mm": 6.49,
+   "socket_mm": 2.17,
+   "head_r_mm": 4
+  },
+  {
+   "x_mm": 302.03,
+   "y_mm": 362.57,
+   "head_mm": 6.49,
+   "socket_mm": 2.17,
+   "head_r_mm": 4
+  },
+  {
+   "x_mm": 340.5,
+   "y_mm": 361.47,
+   "head_mm": 11.31,
+   "socket_mm": 1.52,
+   "head_r_mm": 3.5
+  },
+  {
+   "x_mm": 411.5,
+   "y_mm": 361.47,
+   "head_mm": 11.31,
+   "socket_mm": 1.52,
+   "head_r_mm": 3.5
+  },
+  {
+   "x_mm": 340.5,
+   "y_mm": 294.47,
+   "head_mm": 11.31,
+   "socket_mm": 1.52,
+   "head_r_mm": 3.5
+  },
+  {
+   "x_mm": 411.5,
+   "y_mm": 294.47,
+   "head_mm": 11.31,
+   "socket_mm": 1.52,
+   "head_r_mm": 3.5
+  },
+  {
+   "x_mm": 218.03,
+   "y_mm": 292.57,
+   "head_mm": 6.49,
+   "socket_mm": 2.17,
+   "head_r_mm": 4
+  },
+  {
+   "x_mm": 302.03,
+   "y_mm": 292.57,
+   "head_mm": 6.49,
+   "socket_mm": 2.17,
+   "head_r_mm": 4
+  },
+  {
+   "x_mm": 22.73,
+   "y_mm": 292.53,
+   "head_mm": 3.37,
+   "socket_mm": 2.85,
+   "head_r_mm": 3.4
+  },
+  {
+   "x_mm": 192.3,
+   "y_mm": 292.5,
+   "head_mm": 3.37,
+   "socket_mm": 2.86,
+   "head_r_mm": 3.5
+  },
+  {
+   "x_mm": 213,
+   "y_mm": 247,
+   "head_mm": 6.49,
+   "socket_mm": 2.16,
+   "head_r_mm": 4
+  },
+  {
+   "x_mm": 307,
+   "y_mm": 247,
+   "head_mm": 6.49,
+   "socket_mm": 2.17,
+   "head_r_mm": 4
+  },
+  {
+   "x_mm": 340.5,
+   "y_mm": 227.47,
+   "head_mm": 11.31,
+   "socket_mm": 1.52,
+   "head_r_mm": 3.5
+  },
+  {
+   "x_mm": 411.5,
+   "y_mm": 227.47,
+   "head_mm": 11.31,
+   "socket_mm": 1.52,
+   "head_r_mm": 3.5
+  },
+  {
+   "x_mm": 65.13,
+   "y_mm": 219.13,
+   "head_mm": 3.37,
+   "socket_mm": 2.86,
+   "head_r_mm": 3.4
+  },
+  {
+   "x_mm": 149.9,
+   "y_mm": 219.1,
+   "head_mm": 3.37,
+   "socket_mm": 2.87,
+   "head_r_mm": 3.5
+  },
+  {
+   "x_mm": 376,
+   "y_mm": 207.47,
+   "head_mm": 11.31,
+   "socket_mm": 1.47,
+   "head_r_mm": 3.5
+  },
+  {
+   "x_mm": 376.03,
+   "y_mm": 192.53,
+   "head_mm": 11.32,
+   "socket_mm": 1.47,
+   "head_r_mm": 3.5
+  },
+  {
+   "x_mm": 65.1,
+   "y_mm": 180.9,
+   "head_mm": 3.37,
+   "socket_mm": 2.87,
+   "head_r_mm": 3.5
+  },
+  {
+   "x_mm": 149.9,
+   "y_mm": 180.9,
+   "head_mm": 3.37,
+   "socket_mm": 2.88,
+   "head_r_mm": 3.5
+  },
+  {
+   "x_mm": 340.54,
+   "y_mm": 172.54,
+   "head_mm": 11.32,
+   "socket_mm": 1.52,
+   "head_r_mm": 3.5
+  },
+  {
+   "x_mm": 411.54,
+   "y_mm": 172.54,
+   "head_mm": 11.32,
+   "socket_mm": 1.52,
+   "head_r_mm": 3.5
+  },
+  {
+   "x_mm": 213,
+   "y_mm": 153,
+   "head_mm": 6.49,
+   "socket_mm": 2.15,
+   "head_r_mm": 4
+  },
+  {
+   "x_mm": 307,
+   "y_mm": 153,
+   "head_mm": 6.49,
+   "socket_mm": 2.16,
+   "head_r_mm": 4
+  },
+  {
+   "x_mm": 218.03,
+   "y_mm": 107.57,
+   "head_mm": 6.49,
+   "socket_mm": 2.17,
+   "head_r_mm": 4
+  },
+  {
+   "x_mm": 302.03,
+   "y_mm": 107.57,
+   "head_mm": 6.49,
+   "socket_mm": 2.17,
+   "head_r_mm": 4
+  },
+  {
+   "x_mm": 22.73,
+   "y_mm": 107.53,
+   "head_mm": 3.37,
+   "socket_mm": 2.85,
+   "head_r_mm": 3.4
+  },
+  {
+   "x_mm": 192.3,
+   "y_mm": 107.5,
+   "head_mm": 3.37,
+   "socket_mm": 2.86,
+   "head_r_mm": 3.5
+  },
+  {
+   "x_mm": 340.54,
+   "y_mm": 105.54,
+   "head_mm": 11.32,
+   "socket_mm": 1.52,
+   "head_r_mm": 3.5
+  },
+  {
+   "x_mm": 411.54,
+   "y_mm": 105.54,
+   "head_mm": 11.32,
+   "socket_mm": 1.52,
+   "head_r_mm": 3.5
+  },
+  {
+   "x_mm": 340.54,
+   "y_mm": 38.54,
+   "head_mm": 11.32,
+   "socket_mm": 1.52,
+   "head_r_mm": 3.5
+  },
+  {
+   "x_mm": 411.54,
+   "y_mm": 38.54,
+   "head_mm": 11.32,
+   "socket_mm": 1.52,
+   "head_r_mm": 3.5
+  },
+  {
+   "x_mm": 302.03,
+   "y_mm": 37.57,
+   "head_mm": 6.49,
+   "socket_mm": 2.17,
+   "head_r_mm": 4
+  },
+  {
+   "x_mm": 218,
+   "y_mm": 37.5,
+   "head_mm": 6.49,
+   "socket_mm": 2.17,
+   "head_r_mm": 4
+  },
+  {
+   "x_mm": 65.13,
+   "y_mm": 34.13,
+   "head_mm": 3.37,
+   "socket_mm": 2.86,
+   "head_r_mm": 3.4
+  },
+  {
+   "x_mm": 149.9,
+   "y_mm": 34.1,
+   "head_mm": 3.37,
+   "socket_mm": 2.87,
+   "head_r_mm": 3.5
+  },
+  {
+   "x_mm": 376.03,
+   "y_mm": 18.53,
+   "head_mm": 11.32,
+   "socket_mm": 1.47,
+   "head_r_mm": 3.5
+  }
+ ]
+}

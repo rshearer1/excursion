@@ -36,6 +36,7 @@ describe("room files", () => {
       speakers: [{ id: "R1", model: "PMC6-2", pos: [1, 0], yaw: -10, mount: "stand" }, { id: "R2", model: "PMC6", pos: [1, 0], yaw: 0, mount: 0.4 }],
       cameras: [{ name: "Cam9_Pair", pos: [0.5, -2.6, 0.1], target: [0.5, 0, 0], lens: 35, fstop: 2.8, move: [0, 0.4, 0] }],
       lyricAnchors: { high: [0, 1, 1.2] },
+      pair: { gap: 1.4, toe: 10 },
     };
     expect(parseRoom(roomToJson(room))).toEqual(room);
   });
@@ -48,6 +49,9 @@ describe("room files", () => {
     expect(() => parseRoom({ ...base, cameras: [{ name: "Cam1_Wide", pos: [0, 0, 0], target: [0, 1, 0] }] })).toThrow(/built-in/);
     expect(() => parseRoom({ ...base, cameras: [{ name: "Wide", pos: [0, 0, 0], target: [0, 1, 0] }] })).toThrow(/Cam/);
     expect(() => parseRoom({ ...base, lyricAnchors: { Top: [0, 0, 0] } })).toThrow(/anchor/);
+    expect(() => parseRoom({ ...base, pair: { gap: 9 } })).toThrow(/gap/);
+    expect(() => parseRoom({ ...base, pair: { toe: 90 } })).toThrow(/toe/);
+    expect(parseRoom({ ...base, pair: {} }).pair).toEqual({ gap: 1.4, toe: 10 });
   });
 
   it("every shipped room parses and the four bases have a room file", () => {
