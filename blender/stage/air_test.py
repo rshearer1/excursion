@@ -97,10 +97,13 @@ if n > 0:
     cx = wall.location.x if wall is not None else 0.0
     watts = float(os.environ.get("BEAM_POWER", 900))
     cone = float(os.environ.get("BEAM_CONE", 7))
+    aim_z = float(os.environ.get("BEAM_AIM_Z", -0.6))  # raise to send the beams over the speakers
+    # BEAM_COLORS="r,g,b;r,g,b": fixed colours, alternated along the bar (else: follow the back light)
+    fixed = [tuple(float(v) for v in c.split(",")) for c in os.environ.get("BEAM_COLORS", "").split(";") if c.strip()]
     for j in range(n):
         t = (j / (n - 1) - 0.5) if n > 1 else 0.0
         src = Vector((cx + t * 2.2, 1.0, 1.35))
-        aim = Vector((cx + t * 4.5, -2.6, -0.6))
+        aim = Vector((cx + t * 4.5, -2.6, aim_z))
         data = bpy.data.lights.new(f"TestBeam_{j}", "SPOT")
         data.energy = watts
         data.color = tuple(ref.data.color) if ref is not None else (0.6, 0.3, 1.0)
@@ -112,7 +115,9 @@ if n > 0:
         scene.collection.objects.link(ob)
         ob.location = src
         ob.rotation_euler = (aim - src).to_track_quat("-Z", "Y").to_euler()
-        if ref is not None and ref.data.animation_data and ref.data.animation_data.action:
+        if fixed:
+            data.color = fixed[j % len(fixed)]
+        elif ref is not None and ref.data.animation_data and ref.data.animation_data.action:
             data.animation_data_create()
             data.animation_data.action = ref.data.animation_data.action  # colour and level follow the back light's cues
             data.energy = watts
