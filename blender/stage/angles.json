@@ -1,8 +1,8 @@
 {
-  "_about": "Camera angles for the twin-speaker screen room (void-pair). Robert picked these on 2026-11-12. multicam.mjs renders them side by side, in this order.",
+  "_about": "Camera angles for the twin-speaker screen room (void-pair). Robert picked these on 2026-11-12; framed to the rule of thirds with frame_check.py (no guessing). multicam.mjs renders them side by side, in this order.",
   "angles": [
-    { "name": "three-quarter", "MC_LOC": "2.05,-0.95,0.08", "MC_AIM": "0.65,0.25,0.05", "MC_LENS": "40", "MC_FOCUS": "1.4,-0.15,0" },
-    { "name": "cones", "MC_LOC": "-0.3,-0.85,0.02", "MC_AIM": "-0.05,-0.15,0.0", "MC_LENS": "70", "MC_FOCUS": "-0.08,-0.17,0" },
-    { "name": "close-low", "MC_LOC": "-0.5,-0.75,0.1", "MC_AIM": "0.35,0.3,0.05", "MC_LENS": "50" }
+    { "name": "three-quarter", "_framing": "right speaker's woofers on the right third line, left speaker whole on the left third, both fully in frame", "MC_LOC": "2.05,-0.95,0.08", "MC_AIM": "0.68,0.28,0.05", "MC_LENS": "32", "MC_FOCUS": "1.4,-0.15,0" },
+    { "name": "cones", "_framing": "the two woofers on the left third line at its upper and lower crossings, mid and tweeter on the right third", "MC_LOC": "-0.3,-0.85,0.02", "MC_AIM": "0.0,-0.15,0.0", "MC_LENS": "80", "MC_FOCUS": "-0.08,-0.17,0" },
+    { "name": "close-low", "_framing": "whole cabinet in frame, its top on the upper third line, mid and tweeter on the right third", "MC_LOC": "-0.5,-0.75,0.1", "MC_AIM": "0.27,0.3,0.05", "MC_LENS": "45" }
   ]
 }
