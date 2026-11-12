@@ -61,7 +61,7 @@ export function metersFor({ drivePath, name, explicit, wall }) {
 }
 
 // ---- easy controls: controls.json at the repo root -------------------------------------------
-export const CONTROL_DEFAULTS = { mist: 4, screenGlow: 8, screenCatchesLight: 0.05, frontLight: 90,
+export const CONTROL_DEFAULTS = { mist: 4, screenGlow: 8, screenCatchesLight: 0.05, frontLight: 150,
   beamsOn: true, beamCount: 6, beamBrightness: 700, beamsMoving: true, beamColours: "0.55,0.12,1.0;1.0,0.05,0.08" };
 const COLOURS = { purple: "0.55,0.12,1.0", red: "1.0,0.05,0.08", blue: "0.1,0.25,1.0", green: "0.15,1.0,0.25",
   white: "1.0,1.0,1.0", amber: "1.0,0.55,0.1", pink: "1.0,0.2,0.6", cyan: "0.1,0.9,1.0" };

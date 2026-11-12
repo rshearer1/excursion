@@ -3032,7 +3032,8 @@ def build_pair():
     stand = bpy.data.objects.get("Stand_L")
     if stand is not None:
         twin_stand = stand.copy()
-        scene.collection.objects.link(twin_stand)
+        for col in stand.users_collection:  # same collections as the hero stand (MainCol): the front lights are linked to it, so a twin left in the scene root stayed unlit and black
+            col.objects.link(twin_stand)
         twin_stand.name = PAIR_PREFIX + "Stand"
         twin_stand.location.x += PAIR_GAP
     key_target = bpy.data.objects.get("KeyTarget")
