@@ -30,6 +30,9 @@ if os.environ.get("DUST_COLOR"):
         log["color"] = list(back.data.color)
 
 near = float(os.environ.get("DUST_NEAR", 0))
+if os.environ.get("DUST_AUTO") == "1" and os.path.splitext(os.path.basename(bpy.data.filepath))[0] not in ("void", "void-pair"):
+    near = 0  # the look's default near motes are placed for the void cameras only
+    log["near"] = "default skipped in this room"
 if near > 0 and dust is not None:
     twin = dust.copy()
     twin.name = "DustNear"

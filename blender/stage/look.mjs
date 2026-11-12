@@ -126,6 +126,13 @@ export function lookEnv({ out, name, meters, half = false, render }) {
   put("WALL_FACE", c.screenCatchesLight);  // the screen's black face reflects a little room light
   put("WALL_SPILL", c.screenGlow);         // the screen glows into the mist
   put("WALL_WASH", c.frontLight);          // one soft front light on speakers and screen together
+  // dust (Robert, 2026-11-12 "save"): no squiggly lint, a cooler white, and a few soft motes
+  // close to the lens. The near motes are placed for the void cameras, so as a default
+  // (DUST_AUTO) they only apply in the void rooms.
+  put("DUST_LINT", "0");
+  put("DUST_COLOR", "0.9,0.92,1.0");
+  if (!process.env.DUST_NEAR) Object.assign(env, { DUST_NEAR: "1.05", DUST_AUTO: "1",
+    DUST_NEAR_SIZE: process.env.DUST_NEAR_SIZE || "3", DUST_NEAR_COUNT: process.env.DUST_NEAR_COUNT || "500" });
   // rave beams above the speakers, sweeping with the bars and pulsing with the bass. As a default
   // (BEAM_AUTO) they only apply in the void rooms: they veil the close cameras in stack/concrete/macro.
   if (!process.env.BEAM_RIG) {
