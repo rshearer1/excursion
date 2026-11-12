@@ -83,6 +83,11 @@ export function lookEnv({ out, name, meters, half = false, render }) {
   if (!process.env.WALL_FACE) env.WALL_FACE = "0.05";
   if (!process.env.WALL_SPILL) env.WALL_SPILL = "8";
   if (!process.env.WALL_WASH) env.WALL_WASH = "450";
+  // Robert, 2026-11-12 ("save"): purple/red rave beams above the speakers, sweeping with the bars
+  // and pulsing with the bass. BEAM_RIG=0 turns them off.
+  if (!process.env.BEAM_RIG) Object.assign(env, { BEAM_RIG: "6", BEAM_POWER: process.env.BEAM_POWER || "700",
+    BEAM_AIM_Z: process.env.BEAM_AIM_Z || "1.0", BEAM_MOVE: process.env.BEAM_MOVE || "1",
+    BEAM_COLORS: process.env.BEAM_COLORS || "0.55,0.12,1.0;1.0,0.05,0.08" });
   if (meters) env.WALL_IMAGE = meters;
   if (half) Object.assign(env, { LT_HALF: "1", WT_HALF: "1" });
   if (render.clip) env.WT_CLIP = render.clip;
