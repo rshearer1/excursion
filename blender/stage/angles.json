@@ -3,12 +3,13 @@
   "angles": [
     {
       "name": "three-quarter",
-      "_framing": "his original three-quarter viewpoint: near speaker's woofers on the right third line with the lower woofer on the lower-right crossing, far speaker whole on the left",
-      "MC_LOC": "2.05,-0.95,0.08",
-      "MC_AIM": "0.65,0.25,0.08",
-      "MC_LENS": "36",
-      "MC_SHIFT": "0.046,0.124",
-      "MC_FOCUS": "1.4,-0.15,0"
+      "_framing": "three-quarter: near speaker large and sharp with its woofers on the right third line (lower one on the crossing), wide aperture so the far speaker and screen go soft behind it",
+      "MC_LOC": "2.45,-1.0,0.08",
+      "MC_AIM": "0.7,0.05,0.08",
+      "MC_LENS": "55",
+      "MC_SHIFT": "0.07,0.09",
+      "MC_FOCUS": "1.4,-0.17,0",
+      "MC_FSTOP": "2"
     },
     {
       "name": "cones",
