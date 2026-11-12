@@ -1,32 +1,8 @@
 {
-  "_about": "Camera angles for the twin-speaker screen room (void-pair). Framed with frame_check.py so the cones sit on the thirds lines, one cone per crossing or box where possible (Robert, 2026-11-12); viewpoints are the ones he picked, cameras level, reframed with lens shift. multicam.mjs renders them side by side, in this order. 'cones' approved by Robert as perfect. Check the picture too: numbers alone let a too-side-on view through once.",
+  "_about": "Camera angles for the twin-speaker screen room (void-pair): a wide, a close-up and a medium, so the three read as different shots. Framed with frame_check.py so the cones sit on the thirds lines (Robert, 2026-11-12); focus is pulled onto the speaker so it pops. multicam.mjs renders them side by side, in this order. 'cones' approved by Robert as perfect. Check the picture too, not only the numbers.",
   "angles": [
-    {
-      "name": "three-quarter",
-      "_framing": "three-quarter: near speaker large and sharp with its woofers on the right third line (lower one on the crossing), wide aperture so the far speaker and screen go soft behind it",
-      "MC_LOC": "2.45,-1.0,0.08",
-      "MC_AIM": "0.7,0.05,0.08",
-      "MC_LENS": "55",
-      "MC_SHIFT": "0.07,0.09",
-      "MC_FOCUS": "1.4,-0.17,0",
-      "MC_FSTOP": "2"
-    },
-    {
-      "name": "cones",
-      "_framing": "the two woofers on the left third line at its upper and lower crossings, mid and tweeter on the right third",
-      "MC_LOC": "-0.3,-0.85,0.02",
-      "MC_AIM": "0.0,-0.15,0.0",
-      "MC_LENS": "80",
-      "MC_FOCUS": "-0.08,-0.17,0"
-    },
-    {
-      "name": "close-low",
-      "_framing": "his original close low viewpoint, aimed (no lens shift: a big shift went soft off-axis): the two woofers on the left third crossings, tweeter by the upper-right crossing, mid in the centre box",
-      "MC_LOC": "-0.5,-0.75,0.1",
-      "MC_AIM": "0.395,0.263,-0.09",
-      "MC_LENS": "85",
-      "MC_FOCUS": "-0.11,-0.17,0",
-      "MC_FSTOP": "8"
-    }
+    { "name": "wide", "_framing": "both speakers from his three-quarter viewpoint: near speaker whole and sharp on the right third (lower woofer on the lower-right crossing), far speaker and screen soft behind", "MC_LOC": "2.05,-0.95,0.08", "MC_AIM": "0.65,0.25,0.08", "MC_LENS": "34", "MC_SHIFT": "0.05,0.124", "MC_FOCUS": "1.4,-0.17,0", "MC_FSTOP": "2" },
+    { "name": "cones", "_framing": "close-up: the two woofers on the left third line at its upper and lower crossings, mid and tweeter on the right third", "MC_LOC": "-0.3,-0.85,0.02", "MC_AIM": "0.0,-0.15,0.0", "MC_LENS": "80", "MC_FOCUS": "-0.08,-0.17,0" },
+    { "name": "medium", "_framing": "one whole speaker from his close low viewpoint, sitting in the lower two thirds with its mid driver on the lower-right crossing; the screen soft above and behind", "MC_LOC": "-0.5,-0.75,0.1", "MC_AIM": "0.35,0.3,0.17", "MC_LENS": "40", "MC_SHIFT": "-0.07,0.1", "MC_FOCUS": "-0.08,-0.17,0", "MC_FSTOP": "2.8" }
   ]
 }
