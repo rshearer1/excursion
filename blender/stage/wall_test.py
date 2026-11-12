@@ -65,7 +65,8 @@ def plain(name, color, rough, metal=0.0):
 
 
 cab_mat = plain("LEDCabinetMat", (0.012, 0.012, 0.013), 0.55)  # powder-coated die-cast aluminium
-truss_mat = plain("LEDTrussMat", (0.55, 0.56, 0.58), float(os.environ.get("WALL_TRUSS_ROUGH", 0.6)), 1.0)  # bare aluminium truss, scuffed: at 0.32 the base plates mirrored the pixel grid as grainy speckle
+_tr = float(os.environ.get("WALL_TRUSS_SHADE", 0.55))  # bare aluminium; 0.03 = black powder-coated (test option)
+truss_mat = plain("LEDTrussMat", (_tr, _tr, _tr * 1.04), float(os.environ.get("WALL_TRUSS_ROUGH", 0.6)), 1.0)  # bare aluminium truss, scuffed: at 0.32 the base plates mirrored the pixel grid as grainy speckle
 
 # ---- the face material: pixel grid on black, content quantised to the grid
 m = bpy.data.materials.new("LEDFaceMat")

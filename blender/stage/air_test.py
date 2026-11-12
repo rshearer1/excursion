@@ -190,6 +190,9 @@ if _amb > 0:
     for o in bpy.context.scene.objects:
         if o.type == "LIGHT" and (o.name.endswith(("KeyLight", "Graze")) or o.name == "WallWash"):
             o.hide_render = True
+            o.hide_viewport = True
+            for _c in list(o.users_collection):  # out of the scene altogether: hide_render alone left a hot glow beside the twin
+                _c.objects.unlink(o)
             off.append(o.name)
     _scope = bpy.data.objects.get("Scope")
     _cx = _scope.location.x if _scope is not None else 0.0
