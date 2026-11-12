@@ -1,13 +1,13 @@
 {
-  "_about": "Camera angles for the twin-speaker screen room (void-pair): a wide, a close-up and a medium, so the three read as different shots. Framed with frame_check.py so the cones sit on the thirds lines (Robert, 2026-11-12); focus is pulled onto the speaker so it pops. multicam.mjs renders them side by side, in this order. 'cones' approved by Robert as perfect. Check the picture too, not only the numbers.",
+  "_about": "Camera angles for the twin-speaker screen room (void-pair): a wide, a close-up and a medium, so the three read as different shots. Framed with frame_check.py so the cones sit on the thirds lines (Robert, 2026-11-12); focus is pulled onto the speaker so it pops. multicam.mjs renders them side by side, in this order. 'cones' approved by Robert as perfect. Check the picture too, not only the numbers. Phone rule (Robert, 2026-11-12): keep framing top heavy; the cones belong in the middle row of the thirds grid, never the bottom row (phone UI covers the bottom).",
   "angles": [
     {
       "name": "wide",
-      "_framing": "two-shot framed live in the Blender viewport: both speakers whole on their stands, the near one with its tweeter and mid on the right third line, the far one by the left third, cones in the lower third band, screen behind; focus on the near speaker",
+      "_framing": "two-shot framed live in the Blender viewport: both speakers whole on their stands with their cones in the middle row, the near one sharp by the right third, the far one soft on the left, screen behind",
       "MC_LOC": "1.75,-1.55,-0.05",
       "MC_AIM": "0.8,0.05,-0.05",
       "MC_LENS": "32",
-      "MC_SHIFT": "0.0,0.13",
+      "MC_SHIFT": "0.0,0.0",
       "MC_FOCUS": "1.4,-0.17,0",
       "MC_FSTOP": "2"
     },
@@ -21,11 +21,11 @@
     },
     {
       "name": "medium",
-      "_framing": "one whole speaker from his close low viewpoint, sitting in the lower two thirds with its mid driver on the lower-right crossing; the screen soft above and behind",
+      "_framing": "one whole speaker from his close low viewpoint; both woofers inside the centre box of the thirds grid, mid driver on the right third line at mid height; screen soft behind",
       "MC_LOC": "-0.5,-0.75,0.1",
-      "MC_AIM": "0.35,0.3,0.17",
+      "MC_AIM": "0.35,0.3,0.1",
       "MC_LENS": "40",
-      "MC_SHIFT": "-0.07,0.1",
+      "MC_SHIFT": "-0.07,-0.14",
       "MC_FOCUS": "-0.08,-0.17,0",
       "MC_FSTOP": "2.8"
     }
