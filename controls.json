@@ -1,7 +1,7 @@
 {
-  "_how_to": "Change a value, save, then double-click 'Test picture.bat'. A wrong value is ignored and the saved look is used. Colours: purple, red, blue, green, white, amber, pink, cyan.",
+  "_how_to": "Change a value, save, then double-click 'Test picture.bat'. A wrong value is ignored and the saved look is used. front_light is the one soft light on the speakers (0 to 600; 90 is the saved look). Colours: purple, red, blue, green, white, amber, pink, cyan.",
   "mist": 4,
-  "front_light": 450,
+  "front_light": 90,
   "screen": {
     "glow": 8,
     "catches_light": 0.05

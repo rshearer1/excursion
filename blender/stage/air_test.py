@@ -181,6 +181,9 @@ if os.environ.get("SOFT_FRONT") == "1":
 # Graze, their twins and the WallWash spot are switched off, and one big soft panel in front
 # and above passively lights the speaker faces and the screen. It draws nothing in the haze.
 _amb = float(os.environ.get("AMBIENT_FRONT", 0))
+if os.environ.get("AMBIENT_AUTO") == "1" and os.path.splitext(os.path.basename(bpy.data.filepath))[0] not in ("void", "void-pair"):
+    _amb = 0  # the look's default ambient light is for the void rooms only (approved there)
+    print("air: default ambient light skipped in this room")
 if _amb > 0:
     from mathutils import Vector as _V
     off = []

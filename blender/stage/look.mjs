@@ -61,7 +61,7 @@ export function metersFor({ drivePath, name, explicit, wall }) {
 }
 
 // ---- easy controls: controls.json at the repo root -------------------------------------------
-export const CONTROL_DEFAULTS = { mist: 4, screenGlow: 8, screenCatchesLight: 0.05, frontLight: 450,
+export const CONTROL_DEFAULTS = { mist: 4, screenGlow: 8, screenCatchesLight: 0.05, frontLight: 90,
   beamsOn: true, beamCount: 6, beamBrightness: 700, beamsMoving: true, beamColours: "0.55,0.12,1.0;1.0,0.05,0.08" };
 const COLOURS = { purple: "0.55,0.12,1.0", red: "1.0,0.05,0.08", blue: "0.1,0.25,1.0", green: "0.15,1.0,0.25",
   white: "1.0,1.0,1.0", amber: "1.0,0.55,0.1", pink: "1.0,0.2,0.6", cyan: "0.1,0.9,1.0" };
@@ -86,7 +86,7 @@ export function readControls(file = path.join(ROOT, "controls.json")) {
     else console.warn(`controls.json: "${label}" should be true or false; keeping ${c[key]}.`);
   };
   num(j.mist, 0, 10, "mist", "mist");
-  num(j.front_light, 0, 2000, "frontLight", "front_light");
+  num(j.front_light, 0, 600, "frontLight", "front_light");
   num(j.screen?.glow, 0, 30, "screenGlow", "screen.glow");
   num(j.screen?.catches_light, 0, 0.2, "screenCatchesLight", "screen.catches_light");
   bool(j.beams?.on, "beamsOn", "beams.on");
@@ -125,7 +125,10 @@ export function lookEnv({ out, name, meters, half = false, render }) {
   put("AIR_DENSITY", "0.3");
   put("WALL_FACE", c.screenCatchesLight);  // the screen's black face reflects a little room light
   put("WALL_SPILL", c.screenGlow);         // the screen glows into the mist
-  put("WALL_WASH", c.frontLight);          // one soft front light on speakers and screen together
+  put("WALL_WASH", "450");                 // soft front wash on speakers and screen (rooms without the ambient light)
+  // Robert, 2026-11-12 ("much better"): no spotlights on the speakers; one big soft ambient panel
+  // lights their faces and the screen. As a default (AMBIENT_AUTO) it only applies in the void rooms.
+  if (!process.env.AMBIENT_FRONT) Object.assign(env, { AMBIENT_FRONT: String(c.frontLight), AMBIENT_AUTO: "1" });
   // dust (Robert, 2026-11-12 "save"): no squiggly lint, a cooler white, and a few soft motes
   // close to the lens. The near motes are placed for the void cameras, so as a default
   // (DUST_AUTO) they only apply in the void rooms.
