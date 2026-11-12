@@ -60,6 +60,48 @@ export function metersFor({ drivePath, name, explicit, wall }) {
   return meterImage(own);
 }
 
+// ---- easy controls: controls.json at the repo root -------------------------------------------
+export const CONTROL_DEFAULTS = { mist: 4, screenGlow: 8, screenCatchesLight: 0.05, frontLight: 450,
+  beamsOn: true, beamCount: 6, beamBrightness: 700, beamsMoving: true, beamColours: "0.55,0.12,1.0;1.0,0.05,0.08" };
+const COLOURS = { purple: "0.55,0.12,1.0", red: "1.0,0.05,0.08", blue: "0.1,0.25,1.0", green: "0.15,1.0,0.25",
+  white: "1.0,1.0,1.0", amber: "1.0,0.55,0.1", pink: "1.0,0.2,0.6", cyan: "0.1,0.9,1.0" };
+/** Read controls.json; every value is checked and a bad one keeps the saved look (with a warning). */
+export function readControls(file = path.join(ROOT, "controls.json")) {
+  const c = { ...CONTROL_DEFAULTS };
+  let j;
+  try {
+    j = JSON.parse(fs.readFileSync(file, "utf8"));
+  } catch (e) {
+    if (fs.existsSync(file)) console.warn(`controls.json could not be read (${e.message}); using the saved look.`);
+    return c;
+  }
+  const num = (v, lo, hi, key, label) => {
+    if (v === undefined) return;
+    if (typeof v === "number" && v >= lo && v <= hi) c[key] = v;
+    else console.warn(`controls.json: "${label}" should be a number from ${lo} to ${hi}; keeping ${c[key]}.`);
+  };
+  const bool = (v, key, label) => {
+    if (v === undefined) return;
+    if (typeof v === "boolean") c[key] = v;
+    else console.warn(`controls.json: "${label}" should be true or false; keeping ${c[key]}.`);
+  };
+  num(j.mist, 0, 10, "mist", "mist");
+  num(j.front_light, 0, 2000, "frontLight", "front_light");
+  num(j.screen?.glow, 0, 30, "screenGlow", "screen.glow");
+  num(j.screen?.catches_light, 0, 0.2, "screenCatchesLight", "screen.catches_light");
+  bool(j.beams?.on, "beamsOn", "beams.on");
+  bool(j.beams?.moving, "beamsMoving", "beams.moving");
+  num(j.beams?.count, 1, 12, "beamCount", "beams.count");
+  num(j.beams?.brightness, 0, 3000, "beamBrightness", "beams.brightness");
+  const cols = j.beams?.colours;
+  if (cols !== undefined) {
+    const ok = Array.isArray(cols) && cols.length > 0 && cols.every((n) => COLOURS[String(n).toLowerCase()]);
+    if (ok) c.beamColours = cols.map((n) => COLOURS[String(n).toLowerCase()]).join(";");
+    else console.warn(`controls.json: "beams.colours" should be a list from: ${Object.keys(COLOURS).join(", ")}; keeping the saved colours.`);
+  }
+  return c;
+}
+
 /**
  * Environment for the look scripts.
  * out/name: where wave_test.py writes (a clip lands in <out>/<name>/####.png).
@@ -74,20 +116,26 @@ export function lookEnv({ out, name, meters, half = false, render }) {
     WT_NAME: name, WT_OUT: out, WT_A: "0", WT_B: "1",
     WT_BACKLIGHT: "0", WT_RIP_W: "0.1", WT_SMOKE_GAIN: "3", WT_HAZE_BUMP: "0", WT_DUST_PUSH: "0.1",
   };
-  // air: hazer-style (Robert, 2026-11-11): a lot of even haze, few clumps, so beams and lasers read.
-  // An AIR_* value already in the environment wins.
-  if (!process.env.AIR_HAZE) env.AIR_HAZE = "4";  // 10 veiled the speaker
-  if (!process.env.AIR_DENSITY) env.AIR_DENSITY = "0.3";
-  // Robert, 2026-11-12 (pick 2): the screen shares the speakers' light: its face reflects a little,
-  // it glows into the mist, and one soft front wash falls on speakers and screen together
-  if (!process.env.WALL_FACE) env.WALL_FACE = "0.05";
-  if (!process.env.WALL_SPILL) env.WALL_SPILL = "8";
-  if (!process.env.WALL_WASH) env.WALL_WASH = "450";
-  // Robert, 2026-11-12 ("save"): purple/red rave beams above the speakers, sweeping with the bars
-  // and pulsing with the bass. BEAM_RIG=0 turns them off.
-  if (!process.env.BEAM_RIG) Object.assign(env, { BEAM_RIG: "6", BEAM_AUTO: "1" /* default beams only apply in the void rooms: they veil the close cameras in stack/concrete/macro (checked 12 Nov) */, BEAM_POWER: process.env.BEAM_POWER || "700",
-    BEAM_AIM_Z: process.env.BEAM_AIM_Z || "1.0", BEAM_MOVE: process.env.BEAM_MOVE || "1",
-    BEAM_COLORS: process.env.BEAM_COLORS || "0.55,0.12,1.0;1.0,0.05,0.08" });
+  // The adjustable part of the look comes from controls.json at the repo root (Robert's easy
+  // controls); a bad or missing value falls back to the saved look, and an environment variable
+  // of the same name still wins (that is how tests override one thing).
+  const c = readControls();
+  const put = (k, v) => { if (!process.env[k]) env[k] = String(v); };
+  put("AIR_HAZE", c.mist);            // hazer-style even haze (10 veiled the speaker)
+  put("AIR_DENSITY", "0.3");
+  put("WALL_FACE", c.screenCatchesLight);  // the screen's black face reflects a little room light
+  put("WALL_SPILL", c.screenGlow);         // the screen glows into the mist
+  put("WALL_WASH", c.frontLight);          // one soft front light on speakers and screen together
+  // rave beams above the speakers, sweeping with the bars and pulsing with the bass. As a default
+  // (BEAM_AUTO) they only apply in the void rooms: they veil the close cameras in stack/concrete/macro.
+  if (!process.env.BEAM_RIG) {
+    env.BEAM_RIG = String(c.beamsOn ? c.beamCount : 0);
+    env.BEAM_AUTO = "1";
+    put("BEAM_POWER", c.beamBrightness);
+    put("BEAM_AIM_Z", "1.0");
+    put("BEAM_MOVE", c.beamsMoving ? "1" : "0");
+    put("BEAM_COLORS", c.beamColours);
+  }
   if (meters) env.WALL_IMAGE = meters;
   if (half) Object.assign(env, { LT_HALF: "1", WT_HALF: "1" });
   if (render.clip) env.WT_CLIP = render.clip;
