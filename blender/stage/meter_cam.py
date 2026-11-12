@@ -32,7 +32,9 @@ cd.dof.use_dof = True
 cd.dof.aperture_fstop = float(os.environ.get("MC_FSTOP", 4.0))
 cd.dof.focus_distance = (Vector(hero.matrix_world.translation) - loc).length if hero else (Vector((0, 0, 0)) - loc).length
 if os.environ.get("MC_FOCUS"):  # "x,y,z": focus on this point instead
-    cd.dof.focus_distance = (vec("MC_FOCUS", "0,0,0") - loc).length
+    # depth along the lens axis, not straight-line distance: with lens shift the subject sits off
+    # axis and the straight-line distance focused behind it
+    cd.dof.focus_distance = (vec("MC_FOCUS", "0,0,0") - loc).dot((aim - loc).normalized())
 
 for mk in scene.timeline_markers:
     mk.camera = None
