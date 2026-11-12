@@ -19,6 +19,8 @@ cd.sensor_fit = "HORIZONTAL"
 cd.sensor_width = 36.0
 cd.lens = float(os.environ.get("MC_LENS", 40))
 cd.clip_start = 0.05
+if os.environ.get("MC_SHIFT"):  # "x,y" lens shift: reframe with a level camera, so verticals stay vertical
+    cd.shift_x, cd.shift_y = (float(v) for v in os.environ["MC_SHIFT"].split(","))
 cam = bpy.data.objects.new("MeterCam", cd)
 scene.collection.objects.link(cam)
 cam.location = loc

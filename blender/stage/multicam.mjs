@@ -33,7 +33,7 @@ const parts = [];
 for (const a of angles) {
   const part = `${name}-${a.name}`;
   const env = { ...process.env };
-  for (const k of ["MC_LOC", "MC_AIM", "MC_LENS", "MC_FOCUS", "MC_FSTOP"]) {
+  for (const k of ["MC_LOC", "MC_AIM", "MC_LENS", "MC_FOCUS", "MC_FSTOP", "MC_SHIFT"]) {
     if (a[k] !== undefined) env[k] = String(a[k]);
     else delete env[k];
   }

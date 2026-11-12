@@ -1,5 +1,5 @@
 # Framing check, no render: where the speakers' key points land in the frame for a camera.
-#   blender -b blender/scenes/void-pair.blend -P blender/stage/frame_check.py -- "loc;aim;lens" ...
+#   blender -b blender/scenes/void-pair.blend -P blender/stage/frame_check.py -- "loc;aim;lens[;shiftx,shifty]" ...
 # loc and aim are "x,y,z" in metres, lens in mm (36 mm sensor across the 1080 px width, as
 # meter_cam.py). Prints each point as (x, y) in frame fractions from the top-left corner:
 # thirds lines are at 0.33 and 0.67; outside 0..1 is out of frame.
@@ -31,11 +31,13 @@ def corners(name):
 
 
 for spec in sys.argv[sys.argv.index("--") + 1:]:
-    loc, aim, lens = spec.split(";")
+    loc, aim, lens, *rest = spec.split(";")
     loc = Vector(float(v) for v in loc.split(","))
     aim = Vector(float(v) for v in aim.split(","))
     cd = bpy.data.cameras.new("FrameCheck")
     cd.sensor_fit, cd.sensor_width, cd.lens = "HORIZONTAL", 36.0, float(lens)
+    if rest:  # optional lens shift "x,y": reframes without tilting the camera (verticals stay vertical)
+        cd.shift_x, cd.shift_y = (float(v) for v in rest[0].split(","))
     cam = bpy.data.objects.new("FrameCheck", cd)
     scene.collection.objects.link(cam)
     cam.location = loc
