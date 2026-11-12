@@ -89,6 +89,9 @@ if k != 1.0:
 # BEAM_RIG=<count>: narrow hard-edged beams from a bar above and behind the LED wall, fanned
 # toward the camera side (a rave back-truss). Test only; colour follows the TopBack light.
 n = int(os.environ.get("BEAM_RIG", 0))
+if os.environ.get("BEAM_AUTO") == "1" and os.path.splitext(os.path.basename(bpy.data.filepath))[0] not in ("void", "void-pair"):
+    n = 0  # the default beams are for the void rooms only; an explicit BEAM_RIG still works anywhere
+    print("air: default beams skipped in this room")
 if n > 0:
     from mathutils import Vector
     scene = bpy.context.scene
