@@ -78,6 +78,11 @@ export function lookEnv({ out, name, meters, half = false, render }) {
   // An AIR_* value already in the environment wins.
   if (!process.env.AIR_HAZE) env.AIR_HAZE = "4";  // 10 veiled the speaker
   if (!process.env.AIR_DENSITY) env.AIR_DENSITY = "0.3";
+  // Robert, 2026-11-12 (pick 2): the screen shares the speakers' light: its face reflects a little,
+  // it glows into the mist, and one soft front wash falls on speakers and screen together
+  if (!process.env.WALL_FACE) env.WALL_FACE = "0.05";
+  if (!process.env.WALL_SPILL) env.WALL_SPILL = "8";
+  if (!process.env.WALL_WASH) env.WALL_WASH = "450";
   if (meters) env.WALL_IMAGE = meters;
   if (half) Object.assign(env, { LT_HALF: "1", WT_HALF: "1" });
   if (render.clip) env.WT_CLIP = render.clip;
