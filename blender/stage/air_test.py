@@ -248,3 +248,19 @@ if os.environ.get("WORLD_GAIN") is not None and not _world_skip:
                 node.inputs["Strength"].default_value *= k
                 n += 1
     print("air: world x%g on %d background nodes" % (k, n))
+
+# RIM_NO_FLOOR=1: the rim lights stop lighting the glossy floor. From three-quarter angles the
+# floor mirrored the rim lamp itself as a hot pink patch (matched by position, 2026-11-12).
+_rim_skip = os.environ.get("RIM_AUTO") == "1" and os.path.splitext(os.path.basename(bpy.data.filepath))[0] not in ("void", "void-pair")
+if os.environ.get("RIM_NO_FLOOR") == "1" and not _rim_skip:
+    floor = bpy.data.objects.get("Floor")
+    done = []
+    if floor is not None:
+        col = bpy.data.collections.new("RimNoFloor")
+        col.objects.link(floor)
+        col.collection_objects[0].light_linking.link_state = "EXCLUDE"
+        for o in bpy.context.scene.objects:
+            if o.type == "LIGHT" and o.name.endswith(("RimLeft", "RimRight")):
+                o.light_linking.receiver_collection = col
+                done.append(o.name)
+    print("air: rim lights skip the floor:", done)

@@ -134,6 +134,9 @@ export function lookEnv({ out, name, meters, half = false, render }) {
   // white blob from side angles (found 2026-11-12). Off in the void rooms (WORLD_AUTO); the
   // picture is otherwise unchanged there. Other rooms keep it.
   if (process.env.WORLD_GAIN === undefined) Object.assign(env, { WORLD_GAIN: "0", WORLD_AUTO: "1" });
+  // rim lights skip the glossy floor in the void rooms: it mirrored the lamp as a hot pink patch
+  // from three-quarter angles (2026-11-12)
+  if (process.env.RIM_NO_FLOOR === undefined) Object.assign(env, { RIM_NO_FLOOR: "1", RIM_AUTO: "1" });
   put("AMBIENT_PULSE", "1.2");  // the soft light swells with the bass (Robert, 2026-11-12 "save")
   // dust (Robert, 2026-11-12 "save"): no squiggly lint, a cooler white, and a few soft motes
   // close to the lens. The near motes are placed for the void cameras, so as a default
