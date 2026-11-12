@@ -159,3 +159,20 @@ if os.environ.get("AIR_VEIL") is not None:
         if o is not None and o.type == "LIGHT":
             o.data.volume_factor *= k
     print("air: veil x%g on %s" % (k, os.environ.get("AIR_VEIL_LIGHTS", "Graze,KeyLight")))
+
+# SOFT_FRONT=1: the lights aimed at the speaker front (Graze, KeyLight; twins share their data)
+# become soft sources that draw no beam in the haze. As hard spots they showed as a white cone
+# and a hot blob beside the speaker from side angles (Robert, 2026-11-12).
+if os.environ.get("SOFT_FRONT") == "1":
+    size = float(os.environ.get("SOFT_FRONT_SIZE", 0.35))
+    done = []
+    for name in ("Graze", "KeyLight"):
+        o = bpy.data.objects.get(name)
+        if o is not None and o.type == "LIGHT":
+            o.data.volume_factor = 0.0
+            if hasattr(o.data, "shadow_soft_size"):
+                o.data.shadow_soft_size = max(o.data.shadow_soft_size, size)
+            if o.data.type == "SPOT":
+                o.data.spot_blend = max(o.data.spot_blend, 0.8)
+            done.append(name)
+    print("air: soft front lights", done)
