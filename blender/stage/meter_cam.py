@@ -56,3 +56,17 @@ if key is not None and KEY_GAIN != 1.0:
                 k.handle_right[1] *= KEY_GAIN
             fc.update()
     print("mc: key gain", KEY_GAIN, "keyed curves", len([c for c in curves if c.data_path == "energy"]))
+
+# MC_PUSH="metres,frame_a,frame_b": a slow push-in toward the aim point between two frames
+# (eased in and out), with focus held on the same point. Off unless set.
+if os.environ.get("MC_PUSH"):
+    _m, _fa, _fb = os.environ["MC_PUSH"].split(",")
+    _m, _fa, _fb = float(_m), int(_fa), int(_fb)
+    _dir = (aim - loc).normalized()
+    _focus0 = cd.dof.focus_distance
+    for _f, _d in ((_fa, 0.0), (_fb, _m)):
+        cam.location = loc + _dir * _d
+        cam.keyframe_insert("location", frame=_f)
+        cd.dof.focus_distance = _focus0 - _d
+        cd.dof.keyframe_insert("focus_distance", frame=_f)
+    print("mc: push %.2f m over frames %d-%d" % (_m, _fa, _fb))
