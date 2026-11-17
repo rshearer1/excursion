@@ -116,7 +116,7 @@ if (!flag("--no-grade")) {
     const seq = path.join(outDir, name, "%04d.png");
     const [a] = clip.split(",");
     spawnSync("ffmpeg", ["-v", "error", "-y", "-framerate", String(JSON.parse(fs.readFileSync(drive, "utf8")).fps || 30), "-start_number", a, "-i", seq,
-      "-vf", GRADE_VF, "-c:v", "libx264", "-crf", "18", "-pix_fmt", "yuv420p",
+      "-vf", GRADE_VF + ",scale=trunc(iw/2)*2:trunc(ih/2)*2" /* x264 needs even sizes; 33 % gives 356x633 */, "-c:v", "libx264", "-crf", "18", "-pix_fmt", "yuv420p",
       path.join(outDir, `${name}_graded.mp4`)], { stdio: "inherit" });
   } else {
     for (const f of frames.split(",")) {

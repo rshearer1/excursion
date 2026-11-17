@@ -283,6 +283,8 @@ if DO_B:
 
 if os.environ.get("WT_HALF") == "1":
     scene.render.resolution_percentage = 50
+if os.environ.get("WT_PERCENT"):  # any render size, e.g. 33 for a multicam panel
+    scene.render.resolution_percentage = int(os.environ["WT_PERCENT"])
 print("wt:", json.dumps(log))
 
 out = os.environ["WT_OUT"]

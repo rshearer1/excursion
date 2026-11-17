@@ -5,6 +5,8 @@
 //   node blender/stage/multicam.mjs --frames 1320        another frame
 //   node blender/stage/multicam.mjs --clip 1272,1343     ~3 s clip
 //   options: --name <n>  --half  --samples <n>  --drive <drive.json>
+//   --fast: each camera at panel size (a third of full size) and 24 samples: about twice as
+//           quick as --half (3.3 s a frame against 6.3 s, measured 2026-11-13) for previews
 //
 // Each angle is an ordinary test_still.mjs run on blender/scenes/void-pair.blend, so it carries
 // the whole saved look. Output: out/current-best/<name>/<name>_multicam.jpg or .mp4.
@@ -26,8 +28,10 @@ if (!clip && frames.includes(",")) {
   process.exit(2);
 }
 const { angles } = JSON.parse(fs.readFileSync(path.join(HERE, "angles.json"), "utf8"));
+const fast = args.includes("--fast");
 const pass = ["--half", "--samples", "--drive"].flatMap((k) =>
   args.includes(k) ? (k === "--half" ? [k] : [k, opt(k)]) : []);
+if (fast && !args.includes("--samples")) pass.push("--samples", "24");
 
 const parts = [];
 for (const a of angles) {
@@ -38,6 +42,7 @@ for (const a of angles) {
     else delete env[k];
   }
   Object.assign(env, a.env || {});  // per-angle look trims (edge light, cone light, screen level ...)
+  if (fast) env.WT_PERCENT = "33";
   console.log(`angle ${a.name} ...`);
   const r = spawnSync("node", [path.join(HERE, "test_still.mjs"), ...(clip ? ["--clip", clip] : ["--frames", frames]),
     "--blend", "blender/scenes/void-pair.blend", "--name", part, ...pass], { cwd: ROOT, env, stdio: "inherit" });
