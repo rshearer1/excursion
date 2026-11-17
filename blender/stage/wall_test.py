@@ -65,8 +65,40 @@ def plain(name, color, rough, metal=0.0):
 
 
 cab_mat = plain("LEDCabinetMat", (0.012, 0.012, 0.013), 0.55)  # powder-coated die-cast aluminium
-_tr = float(os.environ.get("WALL_TRUSS_SHADE", 0.55))  # bare aluminium; 0.03 = black powder-coated (test option)
-truss_mat = plain("LEDTrussMat", (_tr, _tr, _tr * 1.04), float(os.environ.get("WALL_TRUSS_ROUGH", 0.6)), 1.0)  # bare aluminium truss, scuffed: at 0.32 the base plates mirrored the pixel grid as grainy speckle
+# The screen's feet (truss uprights and base plates). Robert, 2026-11-17: the flat bare-silver
+# finish read as untextured grey blocks. Default now: black powder-coated steel with a fine
+# orange-peel texture and uneven sheen, as touring truss and base plates really are.
+# WALL_TRUSS_STYLE=bare gives the old plain aluminium back (WALL_TRUSS_SHADE / WALL_TRUSS_ROUGH).
+if os.environ.get("WALL_TRUSS_STYLE", "black") == "bare":
+    _tr = float(os.environ.get("WALL_TRUSS_SHADE", 0.55))
+    truss_mat = plain("LEDTrussMat", (_tr, _tr, _tr * 1.04), float(os.environ.get("WALL_TRUSS_ROUGH", 0.6)), 1.0)
+else:
+    truss_mat = plain("LEDTrussMat", (0.022, 0.022, 0.024), 0.55)
+    _nt = truss_mat.node_tree
+    _b = _nt.nodes["Principled BSDF"]
+    _co = _nt.nodes.new("ShaderNodeTexCoord")
+    _fine = _nt.nodes.new("ShaderNodeTexNoise")  # orange peel: the powder coat's fine pebble
+    _fine.inputs["Scale"].default_value = 900.0
+    _fine.inputs["Detail"].default_value = 2.0
+    _wear = _nt.nodes.new("ShaderNodeTexNoise")  # broad handling wear: patches a little glossier or duller
+    _wear.inputs["Scale"].default_value = 9.0
+    _wear.inputs["Detail"].default_value = 6.0
+    _wear.inputs["Roughness"].default_value = 0.7
+    for _n in (_fine, _wear):
+        _nt.links.new(_co.outputs["Object"], _n.inputs["Vector"])
+    _ramp = _nt.nodes.new("ShaderNodeMapRange")
+    _ramp.inputs["From Min"].default_value = 0.3
+    _ramp.inputs["From Max"].default_value = 0.7
+    _ramp.inputs["To Min"].default_value = 0.42
+    _ramp.inputs["To Max"].default_value = 0.68
+    _nt.links.new(_wear.outputs["Fac"], _ramp.inputs["Value"])
+    _nt.links.new(_ramp.outputs["Result"], _b.inputs["Roughness"])
+    _bump = _nt.nodes.new("ShaderNodeBump")
+    _bump.inputs["Strength"].default_value = 0.25
+    _bump.inputs["Distance"].default_value = 0.0004
+    _nt.links.new(_fine.outputs["Fac"], _bump.inputs["Height"])
+    _nt.links.new(_bump.outputs["Normal"], _b.inputs["Normal"])
+    _b.inputs["Specular IOR Level"].default_value = 0.4
 
 # ---- the face material: pixel grid on black, content quantised to the grid
 m = bpy.data.materials.new("LEDFaceMat")
