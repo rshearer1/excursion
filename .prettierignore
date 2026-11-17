@@ -1,0 +1,11 @@
+# Data written by tools or measured from CAD: keep their exact layout.
+presets/
+blender/moods/
+blender/kits/
+blender/scenes/
+blender/stage/luts/
+looks/
+**/package-lock.json
+assets/
+out/
+frames/
