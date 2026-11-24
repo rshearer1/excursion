@@ -291,8 +291,19 @@ out = os.environ["WT_OUT"]
 os.makedirs(out, exist_ok=True)
 name = log["name"]
 times = []
+clips = os.environ.get("WT_CLIPS")  # "a-b,c-d": several frame ranges into one folder (a reel's shots from one camera)
 clip = os.environ.get("WT_CLIP")
-if clip:
+if clips:
+    scene.render.filepath = os.path.join(out, name, "")
+    for part in clips.split(","):
+        f0, f1 = (int(x) for x in part.split("-"))
+        scene.frame_start, scene.frame_end = f0, f1
+        t0 = time.perf_counter()
+        bpy.ops.render.render(animation=True)
+        dt = time.perf_counter() - t0
+        times.append({"clip": [f0, f1], "s": round(dt, 1), "s_per_frame": round(dt / (f1 - f0 + 1), 2)})
+        print(f"wt: {name} clip {f0}..{f1} {dt:.1f}s")
+elif clip:
     # "scene": the range apply_drive.py set (a full reel); else "a,b"
     f0, f1 = (scene.frame_start, scene.frame_end) if clip == "scene" else (int(x) for x in clip.split(","))
     scene.frame_start, scene.frame_end = f0, f1
