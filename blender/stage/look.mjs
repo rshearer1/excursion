@@ -22,6 +22,42 @@ export const BLACKS = "curves=all='0/0 0.25/0.12 0.6/0.55 1/1'";
 const lutPath = S(path.join("luts", "print_soft.cube")).replace(/\\/g, "/").replace(/^([A-Z]):/, "$1\\:");
 export const GRADE_VF = `lut3d='${lutPath}',${BLACKS}`;
 
+// Frames round the seven sections of the MiniMeters capture (1400x840): spectrogram, waveform,
+// loudness / stereo scope, VU / oscilloscope, spectrum. x, y, w, h in pixels.
+const METER_SECTIONS = [[6, 6, 466, 266], [478, 6, 628, 266], [1112, 6, 282, 266], [6, 284, 650, 272],
+  [662, 284, 732, 272], [6, 568, 420, 266], [432, 568, 962, 266]];
+const METER_FRAME_COLOR = "0x4A4F60";
+
+/**
+ * A copy of a MiniMeters capture folder with a thin frame drawn round each meter section, made
+ * once and reused (remade when the capture is newer). Returns its first image, or null when
+ * `first` is not a 1400x840 capture in a folder called "meters" (drawn dashboards keep their own look).
+ */
+export function frameMeters(first) {
+  if (!first) return null;
+  const dir = path.dirname(first);
+  if (path.basename(dir) !== "meters") return null;
+  const probe = spawnSync("ffprobe", ["-v", "error", "-select_streams", "v:0", "-show_entries", "stream=width,height", "-of", "csv=p=0", first], { encoding: "utf8" });
+  if ((probe.stdout || "").trim() !== "1400,840") return null;
+  const out = path.join(path.dirname(dir), "meters-framed");
+  const src = fs.readdirSync(dir).filter((f) => /^\d+\.png$/.test(f));
+  const start = Math.min(...src.map((f) => parseInt(f, 10)));
+  const have = fs.existsSync(out) ? fs.readdirSync(out).filter((f) => /^\d+\.png$/.test(f)) : [];
+  const stamp = path.join(out, "sections.txt");
+  const key = JSON.stringify([METER_SECTIONS, METER_FRAME_COLOR]);
+  const fresh = have.length === src.length && fs.existsSync(stamp) && fs.readFileSync(stamp, "utf8") === key &&
+    fs.statSync(stamp).mtimeMs >= fs.statSync(first).mtimeMs;
+  if (!fresh) {
+    fs.mkdirSync(out, { recursive: true });
+    const vf = METER_SECTIONS.map(([x, y, w, h]) => `drawbox=x=${x}:y=${y}:w=${w}:h=${h}:color=${METER_FRAME_COLOR}@1:t=2`).join(",");
+    const r = spawnSync("ffmpeg", ["-v", "error", "-y", "-start_number", String(start), "-i", path.join(dir, "%d.png"),
+      "-vf", vf, "-start_number", String(start), path.join(out, "%d.png")], { stdio: "inherit" });
+    if (r.status !== 0) return null;
+    fs.writeFileSync(stamp, key);
+  }
+  return path.join(out, `${start}.png`);
+}
+
 /** First image of a meter-frame folder (<frame>.png), or null when it has none. */
 export function meterImage(dir) {
   if (!dir || !fs.existsSync(dir)) return null;
@@ -155,7 +191,14 @@ export function lookEnv({ out, name, meters, half = false, render }) {
     put("BEAM_MOVE", c.beamsMoving ? "1" : "0");
     put("BEAM_COLORS", c.beamColours);
   }
-  if (meters) env.WALL_IMAGE = meters;
+  // Robert, 2026-11-24: no lines between the screen's cabinets; a thin frame round each meter
+  // section instead. Only for the real MiniMeters capture (its layout is known); METER_FRAMES=0
+  // turns it off and gives the cabinet seams back.
+  const framed = process.env.METER_FRAMES === "0" ? null : frameMeters(meters);
+  if (framed) {
+    env.WALL_IMAGE = framed;
+    if (process.env.WALL_SEAMLESS === undefined) env.WALL_SEAMLESS = "1";
+  } else if (meters) env.WALL_IMAGE = meters;
   if (half) Object.assign(env, { LT_HALF: "1", WT_HALF: "1" });
   if (render.clip) env.WT_CLIP = render.clip;
   else env.WT_FRAMES = render.frames;

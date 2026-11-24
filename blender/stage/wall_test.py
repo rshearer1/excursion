@@ -20,7 +20,10 @@ for n in ("Scope", "Scope_Glass", "Scope_Bezel"):
 
 TILE = 0.5
 COLS, ROWS = 5, 3
-SEAM = 0.003
+# WALL_SEAMLESS=1: no visible lines between the cabinets (no gap, no cabinet-to-cabinet brightness
+# mismatch), for when the picture carries its own frames round each meter section
+SEAMLESS = os.environ.get("WALL_SEAMLESS") == "1"
+SEAM = 0.0 if SEAMLESS else 0.003
 PITCH = 0.0039
 FRAME = 0.04
 DEPTH = 0.09  # cabinet depth
@@ -192,7 +195,7 @@ background = mnode("MULTIPLY", float(os.environ.get("WALL_BG", 0.05)), mnode("AD
 # cabinet-to-cabinet calibration mismatch: each 500 mm cabinet a few % off its neighbours
 cab_i = mnode("ADD", mnode("FLOOR", mnode("DIVIDE", ux, TILE)), mnode("MULTIPLY", 7.0, mnode("FLOOR", mnode("DIVIDE", vz, TILE))))
 hashv = mnode("FRACT", mnode("MULTIPLY", mnode("SINE", mnode("MULTIPLY", cab_i, 12.9898)), 43758.5453))
-calib = mnode("ADD", 0.94, mnode("MULTIPLY", 0.12, hashv))
+calib = mnode("ADD", 1.0 if SEAMLESS else 0.94, mnode("MULTIPLY", 0.0 if SEAMLESS else 0.12, hashv))
 content = mnode("MULTIPLY", mnode("ADD", mnode("ADD", core, halo), background), calib)
 
 
