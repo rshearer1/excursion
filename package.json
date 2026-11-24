@@ -1,0 +1,14 @@
+{
+  "name": "excursion",
+  "private": true,
+  "description": "Turns a track into a photoreal speaker reel. Shortcuts for the commands documented in README.md; each one runs the existing script unchanged.",
+  "scripts": {
+    "test": "cd grid-tool && npm test",
+    "typecheck": "cd grid-tool && npm run typecheck",
+    "check": "npm run test && npm run typecheck && node scripts/check-syntax.mjs",
+    "dev": "cd grid-tool && npm run dev",
+    "assets": "node scripts/fetch-assets.mjs blender/scenes/void.manifest.json",
+    "still": "node blender/stage/test_still.mjs",
+    "reel": "node blender/make_reel.mjs"
+  }
+}

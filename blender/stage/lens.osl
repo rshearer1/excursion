@@ -1,0 +1,85 @@
+/* Excursion physical lens: a thin-lens camera with the faults real glass has.
+ *   barrel distortion (k1, k2)        - inverted Brown model, as in Blender's advanced template
+ *   mechanical vignetting / cat's eye - the aperture is clipped by the lens barrel's rear opening,
+ *                                       an equal circle that slides off-axis toward the frame edge:
+ *                                       bokeh turns to cat's eyes and the corners darken optically
+ *   onion rings + bubble rim          - aspherical-element texture inside each bokeh disc
+ *   focus breathing                   - the field of view narrows as focus comes closer
+ * The aperture sample comes from the camera's own DOF settings (f-stop, blades, focus object). */
+
+float invert_distortion(float x, float y, float k1, float k2)
+{
+  float u = sqrt(x * x + y * y);
+  if (u < 1e-8) {
+    return 1.0;
+  }
+  float d = u;
+  for (int i = 0; i < 30; i++) {
+    float d2 = d * d;
+    float f = u - d * (1 + d2 * (k1 + d2 * k2));
+    float fp = -(1 + d2 * (3 * k1 + d2 * 5 * k2));
+    float diff = f / fp;
+    d -= diff;
+    if (fabs(diff) < 1e-7) {
+      return d / u;
+    }
+  }
+  return -1.0;
+}
+
+shader camera(float focal_length = 50.0,
+              float fstop = 2.8,
+              float k1 = -0.02,
+              float k2 = 0.0,
+              float cat_eye = 0.55,   /* how far the barrel's opening slides at the frame corner, in aperture radii */
+              float onion = 0.12,
+              float bubble = 0.25,
+              float breathing = 0.35,
+              float sensor_w = 20.25,  /* mm, the fitted sensor (portrait 9:16 cut from a 36 mm height) */
+              float sensor_h = 36.0,
+              output point position = 0.0,
+              output vector direction = 0.0,
+              output color throughput = 1.0)
+{
+  vector sensor_size = vector(sensor_w, sensor_h, 0.0);
+  float focal_distance = 10.0;
+  getattribute("cam:focal_distance", focal_distance);
+
+  point Pr = camera_shader_raster_position() - vector(0.5);
+  /* normalised radius: 1.0 at the frame's half-diagonal */
+  float half_diag = 0.5 * hypot(sensor_size[0], sensor_size[1]);
+  vector Pmm = vector(Pr[0] * sensor_size[0], Pr[1] * sensor_size[1], 0.0);
+
+  float distort = invert_distortion(Pmm[0] / half_diag, Pmm[1] / half_diag, k1, k2);
+  if (distort < 0.0) {
+    throughput = color(0.0);
+    return;
+  }
+  Pmm *= distort;
+
+  /* breathing: closer focus, a slightly longer effective focal length */
+  float f_eff = focal_length * (1.0 + breathing * (focal_length * 1e-3) / max(focal_distance, 0.05));
+  vector Pcam = Pmm / f_eff;
+  direction = normalize(vector(Pcam[0], Pcam[1], 1.0));
+
+  vector a;
+  getattribute("cam:aperture_position", a);  /* unit-free; times the focal length in metres gives the lens point */
+  float R = 1.0 / (2.0 * max(fstop, 0.5));  /* aperture radius in the same units */
+  float ra = length(a);
+  if (ra > 1e-9) {
+    /* cat's eye: the rear opening (radius R) is shifted toward the image point's direction */
+    vector rimg = Pmm / half_diag;
+    vector shift = rimg * (cat_eye * R);
+    if (length(a + shift) > R * 1.02) {
+      throughput = color(0.0);
+      return;
+    }
+    float u = ra / R;
+    float tex = 1.0 + onion * sin(u * M_2PI * 3.5) + bubble * smoothstep(0.75, 1.0, u);
+    throughput = color(tex / (1.0 + 0.5 * bubble));
+  }
+
+  position = a * (focal_length * 1e-3);
+  point Pfocus = direction * focal_distance / direction[2];
+  direction = normalize(Pfocus - position);
+}
