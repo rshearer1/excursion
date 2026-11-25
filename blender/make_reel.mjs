@@ -7,6 +7,9 @@
 //   --no-look renders as before. --meters <dir> picks the wall's meter frames (default out/meters when
 //   its drive.txt names this drive, else frames drawn from the track into out/meters-<name>;
 //   --wall waveform gives the old plain waveform). --clip a,b renders only scene frames a..b (a short check).
+//   --angles (cycles look only): the reel cuts between the framed shots in blender/stage/angles.json
+//   (wide, close-up, medium) on the drive's cuts, in the twin-speaker screen room (void-pair), each
+//   shot with its own lighting trims. One Blender run per angle renders that angle's shots.
 //
 // Steps: fetch scene assets -> build scene if missing (or its room file changed) -> apply drive + render frames -> ffmpeg mux.
 // Audio is resolved from drive.audio.file sitting NEXT TO the drive.json (or pass --audio).
@@ -58,7 +61,8 @@ const drive = JSON.parse(await readFile(drivePath, "utf8"));
 const range = drive.range;
 const startFrame = range ? Math.max(1, Math.round(range.start * drive.fps) + 1) : 1;
 const name = path.basename(drivePath).replace(/\.drive\.json$/, "");
-const sceneName = drive.scene || "void";
+const useAngles = flag("--angles");
+const sceneName = useAngles ? "void-pair" : drive.scene || "void";
 const sceneBlend = path.join(root, "blender", "scenes", `${sceneName}.blend`);
 // a room (presets/rooms/<scene>.json) builds on one of the four bases; its assets are the base's
 const roomFile = path.join(root, "presets", "rooms", `${sceneName}.json`);
@@ -106,7 +110,35 @@ if (flag("--slate")) applyArgs.push("--slate");
 if (opt("--samples")) applyArgs.push("--samples", opt("--samples"));
 if (opt("--mood")) applyArgs.push("--mood", opt("--mood"));
 if (opt("--rig")) applyArgs.push("--rig", opt("--rig"));
-await run(blender, applyArgs, look ? "apply drive + look + render" : "apply drive + render", lookEnvVars);
+if (useAngles) {
+  if (!look) {
+    console.error("--angles needs --engine cycles with the look on.");
+    process.exit(1);
+  }
+  // the shots: the drive's cuts inside the rendered range, the angles taken in turn
+  const { angles } = JSON.parse(await readFile(path.join(root, "blender", "stage", "angles.json"), "utf8"));
+  const first = startFrame;
+  const last = range ? Math.min(drive.frames.length, Math.round(range.end * drive.fps)) : drive.frames.length;
+  const cutFrames = [...new Set([first, ...(drive.cuts || []).map((t) => Math.round(t * drive.fps) + 1)])]
+    .filter((f) => f >= first && f <= last).sort((a, b) => a - b);
+  const [c0, c1] = clip || [first, last];
+  const shots = angles.map(() => []);
+  cutFrames.forEach((f, n) => {
+    const a = Math.max(f, c0), b = Math.min(n + 1 < cutFrames.length ? cutFrames[n + 1] - 1 : last, c1);
+    if (a <= b) shots[n % angles.length].push(`${a}-${b}`);
+  });
+  const chain = ["-b", "-y", sceneBlend, "-P", path.join(root, "blender", "apply_drive.py"), ...lookScripts({ meterCam: true }),
+    ...applyArgs.slice(applyArgs.indexOf("--"))];
+  for (const [i, a] of angles.entries()) {
+    if (!shots[i].length) continue;
+    const env = { ...lookEnvVars, WT_CLIPS: shots[i].join(",") };
+    for (const k of ["MC_LOC", "MC_AIM", "MC_LENS", "MC_FOCUS", "MC_FSTOP", "MC_SHIFT"]) if (a[k] !== undefined) env[k] = String(a[k]);
+    Object.assign(env, a.env || {});
+    await run(blender, chain, `angle ${a.name}: frames ${env.WT_CLIPS}`, env);
+  }
+} else {
+  await run(blender, applyArgs, look ? "apply drive + look + render" : "apply drive + render", lookEnvVars);
+}
 
 await mkdir(outDir, { recursive: true });
 const reel = path.join(outDir, `${name}${draft ? ".draft" : ""}${clip ? ".clip" : ""}.mp4`);

@@ -302,3 +302,25 @@ if float(os.environ.get("EDGE_LIGHT", 0)) > 0:
 if float(os.environ.get("CONE_LIGHT", 0)) > 0:
     _soft_panel("ConeLight", float(os.environ["CONE_LIGHT"]), _v3("CONE_AT", "-0.75,-0.95,0.75"), _subject, _v3("CONE_COLOR", "1.0,0.9,0.85"), 0.7)
     print("air: cone light %s W" % os.environ["CONE_LIGHT"])
+
+# ---- render speed (2026-11-25): measured at full size on the wide two-speaker shot, 7.1 s a frame.
+# SMOKE_RES: multiplier on the smoke grid's resolution. 0.5 (4.4 cm voxels) gave the same picture
+#   for the saved soft mist and 0.85 s a frame back. SPEED_AUTO=1: both only in the void rooms.
+# DUST_SAMPLES: samples for the dust layer (it is not denoised; motes are tiny emitters). 8 gave
+#   the same motes and 0.5 s a frame back. 0 = the scene's samples.
+_void_room = os.path.splitext(os.path.basename(bpy.data.filepath))[0] in ("void", "void-pair")
+if os.environ.get("SMOKE_RES") and (os.environ.get("SPEED_AUTO") != "1" or _void_room):
+    _k = float(os.environ["SMOKE_RES"])
+    _ng = bpy.data.node_groups.get("SmokeGrid")
+    _cube = next((n for n in _ng.nodes if n.bl_idname == "GeometryNodeVolumeCube"), None) if _ng else None
+    if _cube is not None and _k != 1.0:
+        _res = []
+        for _key in ("Resolution X", "Resolution Y", "Resolution Z"):
+            _cube.inputs[_key].default_value = max(8, int(round(_cube.inputs[_key].default_value * _k)))
+            _res.append(_cube.inputs[_key].default_value)
+        print("air: smoke grid x%g -> %s voxels" % (_k, "x".join(str(v) for v in _res)))
+if os.environ.get("DUST_SAMPLES") and (os.environ.get("SPEED_AUTO") != "1" or _void_room):
+    for _vl in bpy.context.scene.view_layers:
+        if _vl.name == "Dust":
+            _vl.samples = int(os.environ["DUST_SAMPLES"])
+            print("air: dust layer samples", _vl.samples)

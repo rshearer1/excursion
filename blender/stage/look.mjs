@@ -191,6 +191,10 @@ export function lookEnv({ out, name, meters, half = false, render }) {
     put("BEAM_MOVE", c.beamsMoving ? "1" : "0");
     put("BEAM_COLORS", c.beamColours);
   }
+  // render speed (2026-11-25): a coarser smoke grid and fewer samples on the dust layer gave the
+  // same picture on the wide two-speaker shot and 7.1 -> 5.8 s a frame at full size. Checked in
+  // the void rooms only, so as defaults (SPEED_AUTO) they apply there only.
+  if (process.env.SMOKE_RES === undefined && process.env.DUST_SAMPLES === undefined) Object.assign(env, { SMOKE_RES: "0.5", DUST_SAMPLES: "8", SPEED_AUTO: "1" });
   // Robert, 2026-11-24: no lines between the screen's cabinets; a thin frame round each meter
   // section instead. Only for the real MiniMeters capture (its layout is known); METER_FRAMES=0
   // turns it off and gives the cabinet seams back.
